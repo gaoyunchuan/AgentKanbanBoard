@@ -19,10 +19,14 @@ CREATE TABLE IF NOT EXISTS codex_threads (
   preview TEXT NOT NULL DEFAULT '',
   cwd TEXT NOT NULL DEFAULT '',
   branch TEXT NOT NULL DEFAULT '',
+  source_kind TEXT NOT NULL DEFAULT 'codex',
   codex_status TEXT NOT NULL DEFAULT 'unknown',
+  raw_status TEXT NOT NULL DEFAULT 'unknown',
   codex_sub_status TEXT NOT NULL DEFAULT '',
-  board_status TEXT NOT NULL DEFAULT 'untriaged',
-  task_type TEXT NOT NULL DEFAULT '',
+  board_status TEXT NOT NULL DEFAULT 'untriaged'
+    CHECK (board_status IN ('untriaged', 'running', 'review_pending', 'reviewed', 'archived')),
+  task_type TEXT NOT NULL DEFAULT ''
+    CHECK (task_type IN ('', 'feature', 'bugfix', 'review', 'docs', 'ops')),
   module TEXT NOT NULL DEFAULT '',
   sprint TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
@@ -33,6 +37,7 @@ CREATE TABLE IF NOT EXISTS codex_threads (
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  last_synced_at TEXT NOT NULL DEFAULT '',
   raw_json TEXT NOT NULL DEFAULT '{}'
 );
 

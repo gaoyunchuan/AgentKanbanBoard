@@ -6,6 +6,7 @@ export const projects: Project[] = [
     name: "AgentKanbanBoard",
     path: "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard",
     originUrl: "git@github.com:local/AgentKanbanBoard.git",
+    promptTemplate: "继续实现 codex-thread-kanban-view",
     aliases: ["kanban", "codex-thread-kanban"],
     active: true
   },
@@ -29,6 +30,7 @@ export const projects: Project[] = [
 export const initialThreads: ThreadItem[] = [
   {
     id: "th-9918-runtime-waiting",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440001",
     title: "补齐 ThreadSync 只读同步与事件订阅",
     preview: "实现 app-server thread/list、thread/read、status changed 的只读同步边界。",
     projectId: "agent-kanban",
@@ -47,6 +49,7 @@ export const initialThreads: ThreadItem[] = [
   },
   {
     id: "th-7721-review-mapper",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440002",
     title: "状态映射：review_pending 稳定窗口",
     preview: "曾经运行且完成 2 分钟后进入待审核，人工 reviewed 不被同步覆盖。",
     projectId: "agent-kanban",
@@ -65,6 +68,7 @@ export const initialThreads: ThreadItem[] = [
   },
   {
     id: "th-5104-project-match",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440003",
     title: "ProjectMatcher 支持最长路径优先",
     preview: "cwd 精确匹配、子目录匹配、origin URL、alias fallback。",
     projectId: "agent-kanban",
@@ -83,6 +87,7 @@ export const initialThreads: ThreadItem[] = [
   },
   {
     id: "th-4088-ui-filter",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440004",
     title: "固定字段筛选控件压缩成一行",
     preview: "project、status、type、sprint、archive flag 组合筛选。",
     projectId: "agent-kanban",
@@ -100,6 +105,7 @@ export const initialThreads: ThreadItem[] = [
   },
   {
     id: "th-3370-jvirt-openapi",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440005",
     title: "jvirt OpenAPI schema 校验失败排查",
     preview: "新增字段未进入 schema 生成白名单，导致网关校验失败。",
     projectId: "jvirt-api",
@@ -118,6 +124,7 @@ export const initialThreads: ThreadItem[] = [
   },
   {
     id: "th-2197-docs-readme",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440006",
     title: "补一版本地安装说明",
     preview: "说明 ~/.codex-kanban/app.db 与 projects.yaml 的初始化路径。",
     projectId: "agent-kanban",
@@ -135,6 +142,7 @@ export const initialThreads: ThreadItem[] = [
   },
   {
     id: "th-1003-legacy",
+    codexSessionId: "550e8400-e29b-41d4-a716-446655440007",
     title: "旧同步方案：直接解析 session 文件",
     preview: "已废弃，仅保留作为设计取舍记录。",
     projectId: "unknown",

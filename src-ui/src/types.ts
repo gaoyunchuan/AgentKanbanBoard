@@ -12,12 +12,14 @@ export type Project = {
   name: string;
   path: string;
   originUrl?: string;
+  promptTemplate?: string;
   aliases: string[];
   active: boolean;
 };
 
 export type ThreadItem = {
   id: string;
+  codexSessionId?: string;
   title: string;
   preview: string;
   projectId: string;
@@ -40,5 +42,7 @@ export type FilterState = {
   search: string;
   projectId: string;
   boardStatus: string;
+  taskType: string;
+  sprint: string;
   showArchived: boolean;
 };

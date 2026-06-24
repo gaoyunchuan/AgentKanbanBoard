@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Archive,
   CheckCircle2,
@@ -44,6 +45,7 @@ import { cn } from "@/lib/utils";
 import type {
   BoardStatus,
   FilterState,
+  Project,
   TaskType,
   ThreadItem
 } from "@/types";
@@ -83,6 +85,8 @@ const defaultFilters: FilterState = {
   search: "",
   projectId: "all",
   boardStatus: "all",
+  taskType: "all",
+  sprint: "all",
   showArchived: false
 };
 
@@ -155,10 +159,29 @@ function App() {
     setToast(`已恢复：${thread.title}`);
   };
 
-  const openThread = (thread: ThreadItem) => {
-    const link = `codex://threads/${thread.id}`;
-    navigator.clipboard?.writeText(link).catch(() => undefined);
-    setToast(`已生成 Codex deep link：${link}`);
+  const openThread = async (thread: ThreadItem) => {
+    if (!thread.codexSessionId || !isSessionUuid(thread.codexSessionId)) {
+      setToast(`无法打开：${thread.title} 缺少有效 Codex session id`);
+      return;
+    }
+
+    const link = `codex://threads/${thread.codexSessionId}`;
+    const result = await openCodexDeepLink(link);
+    setToast(result.ok ? `已打开 Codex thread：${thread.title}` : result.message);
+  };
+
+  const openProject = async (projectId: string, prompt?: string) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project?.path.startsWith("/")) {
+      setToast("无法打开：请先修正项目绝对路径");
+      return;
+    }
+
+    const query = new URLSearchParams({ path: project.path });
+    if (prompt) query.set("prompt", prompt);
+    const link = `codex://new?${query.toString()}`;
+    const result = await openCodexDeepLink(link);
+    setToast(result.ok ? `已打开 Codex 项目入口：${project.name}` : result.message);
   };
 
   const syncOnce = () => {
@@ -283,7 +306,7 @@ function App() {
                 <RotateCcw className="h-3.5 w-3.5" />
                 同步
               </Button>
-              <Button size="sm" onClick={() => setToast("项目入口：codex://new?path=<project-path>")}>
+              <Button size="sm" onClick={() => openProject("agent-kanban")}>
                 <ExternalLink className="h-3.5 w-3.5" />
                 打开 Codex
               </Button>
@@ -291,7 +314,7 @@ function App() {
           </header>
 
           {view === "projects" ? (
-            <ProjectsView />
+            <ProjectsView onOpenProject={openProject} />
           ) : (
             <section className="flex min-h-0 flex-1 flex-col gap-2 p-3">
               <CollapsibleBand
@@ -352,7 +375,7 @@ function App() {
                 </div>
 
                 {filtersOpen && (
-                  <FilterPanel filters={filters} onChange={setFilters} />
+                  <FilterPanel threads={threads} filters={filters} onChange={setFilters} />
                 )}
 
                 {layout === "list" ? (
@@ -370,6 +393,7 @@ function App() {
                     onArchive={archiveThread}
                     onUnarchive={unarchiveThread}
                     onOpen={openThread}
+                    onUpdate={updateThread}
                   />
                 ) : (
                   <BoardView
@@ -436,16 +460,27 @@ function applyFilters(threads: ThreadItem[], filters: FilterState) {
       searchMatched &&
       (filters.projectId === "all" || thread.projectId === filters.projectId) &&
       (filters.boardStatus === "all" || thread.boardStatus === filters.boardStatus) &&
+      (filters.taskType === "all" || thread.taskType === filters.taskType) &&
+      (filters.sprint === "all" || thread.sprint === filters.sprint) &&
       (filters.showArchived || thread.boardStatus !== "archived")
     );
   });
 }
 
 function rankThread(thread: ThreadItem, view: ViewKey) {
-  const approvalPenalty = thread.subStatus.includes("approval") ? -20 : 0;
   const updatedAt = new Date(thread.updatedAt.replace(" ", "T")).getTime();
-  const ageRank = Number.isNaN(updatedAt) ? 0 : -updatedAt / 100000000;
-  return approvalPenalty + (view === "review_pending" ? ageRank : ageRank / 10);
+  const safeUpdatedAt = Number.isNaN(updatedAt) ? 0 : updatedAt;
+
+  if (view === "running") {
+    const approvalRank = thread.subStatus.includes("approval") ? 0 : 1;
+    return approvalRank * 10_000_000_000_000 - safeUpdatedAt;
+  }
+
+  if (view === "review_pending") {
+    return safeUpdatedAt;
+  }
+
+  return -safeUpdatedAt;
 }
 
 function viewTitle(view: ViewKey) {
@@ -577,16 +612,19 @@ function MetricCard({
 }
 
 function FilterPanel({
+  threads,
   filters,
   onChange
 }: {
+  threads: ThreadItem[];
   filters: FilterState;
   onChange: (filters: FilterState) => void;
 }) {
   const set = (patch: Partial<FilterState>) => onChange({ ...filters, ...patch });
+  const sprints = Array.from(new Set(threads.map((thread) => thread.sprint).filter(Boolean))).sort();
 
   return (
-    <div className="grid gap-2 border-b bg-secondary/30 px-3 py-2 md:grid-cols-3">
+    <div className="grid gap-2 border-b bg-secondary/30 px-3 py-2 md:grid-cols-5">
       <FieldSelect
         label="项目"
         value={filters.projectId}
@@ -604,6 +642,24 @@ function FilterPanel({
           ...Object.entries(statusLabels)
         ]}
         onChange={(value) => set({ boardStatus: value })}
+      />
+      <FieldSelect
+        label="类型"
+        value={filters.taskType}
+        values={[
+          ["all", "全部类型"],
+          ...taskTypes.map((type) => [type, type] as const)
+        ]}
+        onChange={(value) => set({ taskType: value })}
+      />
+      <FieldSelect
+        label="Sprint"
+        value={filters.sprint}
+        values={[
+          ["all", "全部 Sprint"],
+          ...sprints.map((sprint) => [sprint, sprint] as const)
+        ]}
+        onChange={(value) => set({ sprint: value })}
       />
       <button
         className={cn(
@@ -658,7 +714,8 @@ function ThreadList({
   onMarkReviewed,
   onArchive,
   onUnarchive,
-  onOpen
+  onOpen,
+  onUpdate
 }: {
   threads: ThreadItem[];
   expandedRows: string[];
@@ -667,6 +724,7 @@ function ThreadList({
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
+  onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
 }) {
   return (
     <div className="thin-scrollbar min-h-0 flex-1 overflow-auto">
@@ -722,7 +780,7 @@ function ThreadList({
                 />
               </div>
               {expanded && (
-                <div className="min-w-0 space-y-1 bg-secondary/25 px-8 py-2 text-[11px]">
+                <div className="min-w-0 space-y-2 bg-secondary/25 px-8 py-2 text-[11px]">
                   <div className="text-foreground">{thread.preview}</div>
                   <div className="truncate text-muted-foreground">
                     cwd: <span className="font-mono">{thread.cwd}</span>
@@ -736,6 +794,28 @@ function ThreadList({
                     last_running: <span>{thread.lastSeenRunningAt ?? "--"}</span>
                     <span className="px-1">·</span>
                     notes: <span>{thread.notes || "--"}</span>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-[140px_1fr_1fr_2fr]">
+                    <InlineSelect
+                      value={thread.taskType}
+                      values={taskTypes.map((value) => [value, value] as const)}
+                      onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
+                    />
+                    <InlineInput
+                      value={thread.module}
+                      placeholder="module"
+                      onChange={(module) => onUpdate(thread.id, { module })}
+                    />
+                    <InlineInput
+                      value={thread.sprint}
+                      placeholder="sprint"
+                      onChange={(sprint) => onUpdate(thread.id, { sprint })}
+                    />
+                    <InlineInput
+                      value={thread.notes}
+                      placeholder="notes"
+                      onChange={(notes) => onUpdate(thread.id, { notes })}
+                    />
                   </div>
                 </div>
               )}
@@ -772,6 +852,25 @@ function InlineSelect({
   );
 }
 
+function InlineInput({
+  value,
+  placeholder,
+  onChange
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Input
+      value={value}
+      placeholder={placeholder}
+      className="h-7 rounded border-0 bg-secondary/70 px-2 shadow-none"
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
 function RowActions({
   thread,
   onOpen,
@@ -787,7 +886,11 @@ function RowActions({
 }) {
   return (
     <div className="flex items-center justify-end gap-0">
-      <IconButton label="打开 Codex" onClick={() => onOpen(thread)}>
+      <IconButton
+        label={thread.codexSessionId ? "打开 Codex" : "缺少 Codex session id"}
+        disabled={!thread.codexSessionId || !isSessionUuid(thread.codexSessionId)}
+        onClick={() => onOpen(thread)}
+      >
         <ExternalLink className="h-3.5 w-3.5" />
       </IconButton>
       {thread.boardStatus !== "archived" && (
@@ -810,10 +913,12 @@ function RowActions({
 
 function IconButton({
   label,
+  disabled = false,
   onClick,
   children
 }: {
   label: string;
+  disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -824,6 +929,7 @@ function IconButton({
           variant="ghost"
           size="icon"
           className="h-5 w-5 rounded-sm"
+          disabled={disabled}
           onClick={onClick}
           aria-label={label}
         >
@@ -884,6 +990,16 @@ function BoardView({
                       values={taskTypes.map((value) => [value, value] as const)}
                       onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
                     />
+                    <InlineInput
+                      value={thread.module}
+                      placeholder="module"
+                      onChange={(module) => onUpdate(thread.id, { module })}
+                    />
+                    <InlineInput
+                      value={thread.sprint}
+                      placeholder="sprint"
+                      onChange={(sprint) => onUpdate(thread.id, { sprint })}
+                    />
                   </div>
                   <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>{thread.updatedAt}</span>
@@ -905,7 +1021,27 @@ function BoardView({
   );
 }
 
-function ProjectsView() {
+function ProjectsView({ onOpenProject }: { onOpenProject: (projectId: string, prompt?: string) => void }) {
+  const [projectRows, setProjectRows] = useState<Project[]>(projects);
+  const updateProject = (id: string, patch: Partial<Project>) => {
+    setProjectRows((current) =>
+      current.map((project) => (project.id === id ? { ...project, ...patch } : project))
+    );
+  };
+  const addProject = () => {
+    const id = `project-${projectRows.length + 1}`;
+    setProjectRows((current) => [
+      ...current,
+      {
+        id,
+        name: "New Project",
+        path: "/Users/gaoyunchuan/workspace",
+        aliases: [],
+        active: true
+      }
+    ]);
+  };
+
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-2 p-3">
       <div className="rounded-md border bg-card shadow-sm">
@@ -914,21 +1050,47 @@ function ProjectsView() {
             <FolderKanban className="h-4 w-4 text-primary" />
             项目注册表
           </div>
-          <Button size="sm">
-            <Settings2 className="h-3.5 w-3.5" />
-            编辑 projects.yaml
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={addProject}>
+              <Settings2 className="h-3.5 w-3.5" />
+              新增
+            </Button>
+            <Button size="sm">
+              <Settings2 className="h-3.5 w-3.5" />
+              编辑 projects.yaml
+            </Button>
+          </div>
         </div>
         <div className="divide-y">
-          {projects.map((project) => (
-            <div key={project.id} className="grid grid-cols-[220px_1fr_240px_90px] gap-3 px-3 py-2">
+          {projectRows.map((project) => (
+            <div key={project.id} className="grid grid-cols-[220px_1fr_240px_160px] gap-3 px-3 py-2">
               <div className="min-w-0">
-                <div className="truncate font-medium">{project.name}</div>
-                <div className="text-[11px] text-muted-foreground">{project.active ? "active" : "inactive"}</div>
+                <Input
+                  value={project.name}
+                  className="h-7 border-0 bg-secondary/70 px-2 shadow-none"
+                  onChange={(event) => updateProject(project.id, { name: event.target.value })}
+                />
+                <button
+                  className="mt-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  onClick={() => updateProject(project.id, { active: !project.active })}
+                >
+                  {project.active ? "active" : "inactive"}
+                </button>
               </div>
               <div className="min-w-0">
-                <div className="truncate font-mono text-[11px]">{project.path}</div>
-                <div className="truncate text-[11px] text-muted-foreground">{project.originUrl ?? "--"}</div>
+                <Input
+                  value={project.path}
+                  className="h-7 border-0 bg-secondary/70 px-2 font-mono text-[11px] shadow-none"
+                  onChange={(event) => updateProject(project.id, { path: event.target.value })}
+                />
+                <Input
+                  value={project.originUrl ?? ""}
+                  placeholder="origin URL"
+                  className="mt-1 h-7 border-0 bg-secondary/70 px-2 text-[11px] shadow-none"
+                  onChange={(event) =>
+                    updateProject(project.id, { originUrl: event.target.value || undefined })
+                  }
+                />
               </div>
               <div className="flex flex-wrap gap-1">
                 {project.aliases.map((alias) => (
@@ -937,9 +1099,19 @@ function ProjectsView() {
                   </Badge>
                 ))}
               </div>
-              <Button variant="outline" size="sm">
-                打开
-              </Button>
+              <div className="flex items-start justify-end gap-1">
+                <Button variant="outline" size="sm" onClick={() => updateProject(project.id, { active: !project.active })}>
+                  {project.active ? "禁用" : "启用"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!project.active}
+                  onClick={() => onOpenProject(project.id, project.promptTemplate)}
+                >
+                  打开
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -976,6 +1148,23 @@ function ProjectsView() {
       </div>
     </section>
   );
+}
+
+function isSessionUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function openCodexDeepLink(link: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await invoke("open_codex_deeplink", { target: link });
+    return { ok: true };
+  } catch (error) {
+    await navigator.clipboard?.writeText(link).catch(() => undefined);
+    return {
+      ok: false,
+      message: `已复制 Codex deep link，请在 Codex Desktop 打开：${String(error)}`
+    };
+  }
 }
 
 export default App;
