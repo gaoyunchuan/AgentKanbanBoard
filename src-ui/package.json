@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build:app": "cd .. && src-ui/node_modules/.bin/tauri build --ci --bundles app --no-sign",
+    "build:dmg": "cd .. && make build-dmg",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run"
   },
@@ -23,6 +25,7 @@
     "tailwind-merge": "^2.5.5"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

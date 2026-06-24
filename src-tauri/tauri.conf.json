@@ -4,10 +4,21 @@
   "version": "0.1.0",
   "identifier": "local.codex.thread-kanban",
   "build": {
-    "beforeDevCommand": "cd ../src-ui && npm run dev",
-    "beforeBuildCommand": "cd ../src-ui && npm run build",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
     "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../src-ui/dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   },
   "app": {
     "windows": [

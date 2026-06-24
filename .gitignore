@@ -1,1 +1,8 @@
 .codex
+.DS_Store
+*.log
+
+src-ui/node_modules/
+src-ui/dist/
+src-tauri/gen/
+src-tauri/target/
