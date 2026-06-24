@@ -35,7 +35,7 @@ The system SHALL allow users to manually mark threads reviewed, archive threads,
 
 #### Scenario: Mark reviewed
 - **WHEN** a user marks a thread as reviewed
-- **THEN** the system SHALL set board status to `reviewed` and review state to `approved` unless the user selected another review state
+- **THEN** the system SHALL set board status to `reviewed`
 
 #### Scenario: Archive thread
 - **WHEN** a user archives a thread
@@ -43,4 +43,4 @@ The system SHALL allow users to manually mark threads reviewed, archive threads,
 
 #### Scenario: Unarchive thread
 - **WHEN** a user restores an archived thread
-- **THEN** the system SHALL clear the archive flag and return the thread to `reviewed` or `review_pending` according to its latest review state
+- **THEN** the system SHALL clear the archive flag and return the thread to the latest non-archived board status that can be inferred from local events, defaulting to `review_pending`

@@ -59,7 +59,7 @@
 
 ### 5. 固定字段优先于自由标签
 
-首版字段固定为 priority、owner、reviewer、task_type、module、sprint、risk_level、review_state。这些字段足够支撑待审核、运行中和高优先级等聚焦视图，也便于后续做表格筛选。
+首版字段固定为 task_type、module、sprint。这些字段足够支撑待审核、运行中和按项目模块聚焦的视图，也便于后续做表格筛选。
 
 自由标签灵活但容易失控，会让首版职责从“注意力管理”扩散为通用任务系统，因此不纳入首版。
 

@@ -8,7 +8,7 @@
 
 - [ ] 2.1 Create SQLite schema and migrations for `projects`, `codex_threads`, `thread_events`, and `filter_presets`.
 - [ ] 2.2 Implement repository functions for project CRUD, thread upsert, field updates, status updates, archive actions, event inserts, and preset queries.
-- [ ] 2.3 Seed built-in filter presets for Running, Review Pending, My Reviews, High Priority, Untriaged, and Archived.
+- [ ] 2.3 Seed built-in filter presets for Running, Review Pending, Untriaged, and Archived.
 - [ ] 2.4 Add persistence tests for default field values, enum validation, archived visibility, and idempotent thread upsert.
 
 ## 3. Codex Read-Only Sync
@@ -27,7 +27,7 @@
 - [ ] 4.3 Implement longest-path-wins behavior when multiple project paths match the same thread cwd.
 - [ ] 4.4 Classify unmatched threads as unknown and include them in untriaged views.
 - [ ] 4.5 Re-run classification for affected unarchived threads when project configuration changes.
-- [ ] 4.6 Add classification tests for exact match, child path match, origin URL match, alias match, longest path priority, inactive projects, and unknown fallback.
+- [ ] 4.6 Add classification tests for exact match, child path match, origin URL match, alias match, longest path precedence, inactive projects, and unknown fallback.
 
 ## 5. Board Status Engine
 
@@ -40,19 +40,19 @@
 
 ## 6. Fields, Filtering, and Presets
 
-- [ ] 6.1 Implement fixed field editing for priority, owner, reviewer, task type, module, sprint, risk level, review state, and notes.
-- [ ] 6.2 Enforce enum values for priority, task type, review state, and risk level.
-- [ ] 6.3 Implement structured filtering by project, board status, Codex status, review state, priority, owner, reviewer, task type, module, sprint, risk level, archive flag, and updated time range.
-- [ ] 6.4 Implement sorting for Running and Review Pending views according to waiting approval, updated time, priority, risk, and review age.
+- [ ] 6.1 Implement fixed field editing for task type, module, sprint, and notes.
+- [ ] 6.2 Enforce enum values for task type.
+- [ ] 6.3 Implement structured filtering by project, board status, Codex status, task type, module, sprint, archive flag, and updated time range.
+- [ ] 6.4 Implement sorting for Running and Review Pending views according to waiting approval, updated time, and review age.
 - [ ] 6.5 Add filter tests for combined filters, built-in presets, archived hidden by default, and reviewed retention.
 
 ## 7. User Interface
 
 - [ ] 7.1 Build the main navigation with Inbox, Running, Review Pending, All Active, Archived, and Projects entries.
 - [ ] 7.2 Build the Kanban view with columns for untriaged, running, review pending, reviewed, and archived when archive display is enabled.
-- [ ] 7.3 Build the Running focused list with project, thread title, Codex status, sub status, last activity, owner, and Open in Codex action.
-- [ ] 7.4 Build the Review Pending focused list with project, thread title, priority, reviewer, risk level, last activity, Open in Codex, Mark reviewed, and Archive actions.
-- [ ] 7.5 Build filter controls for project, priority, owner, reviewer, type, sprint, risk level, status, and Show archived.
+- [ ] 7.3 Build the Running focused list with project, thread title, Codex status, sub status, last activity, and Open in Codex action.
+- [ ] 7.4 Build the Review Pending focused list with project, thread title, last activity, Open in Codex, Mark reviewed, and Archive actions.
+- [ ] 7.5 Build filter controls for project, type, sprint, status, and Show archived.
 - [ ] 7.6 Build thread card and row components that expose fixed field editing, archive/unarchive, mark reviewed, and status badges.
 
 ## 8. Codex Deep Link Navigation

@@ -8,7 +8,7 @@ Codex Desktop 中的 threads 分散在不同项目和会话中，运行状态、
 - 新增项目注册表和项目识别规则，通过 thread cwd、origin URL、目录别名把 thread 归属到项目。
 - 新增看板状态流转：未分类、运行中、待人工审核、已审核、已归档。
 - 新增运行中聚焦视图和待人工审核聚焦视图，作为一级入口。
-- 新增固定字段标签和筛选，包括 priority、owner、reviewer、task_type、module、sprint、risk_level、review_state。
+- 新增固定字段标签和筛选，包括 task_type、module、sprint。
 - 新增归档与恢复归档能力，归档后默认从活跃视图隐藏。
 - 新增 Codex Desktop deep link 操作，用于打开项目入口和打开已有 thread 详情。
 - 明确不接管 Codex 执行：不调用 thread/start、turn/start、approval 相关写操作，不替代 Codex Desktop 任务详情页。
