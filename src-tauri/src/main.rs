@@ -1,4 +1,177 @@
+use codex_kanban::config::AppConfig;
 use codex_kanban::deeplink::{ensure_codex_deeplink, project_deeplink, thread_deeplink};
+use codex_kanban::domain::{FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadRecord};
+use codex_kanban::project_matcher::ProjectRule;
+use codex_kanban::repository::Repository;
+use codex_kanban::thread_sync::{CodexAppServerClient, ReadOnlyCodexClient, ThreadSync};
+use serde::Serialize;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Serialize)]
+struct BoardData {
+    threads: Vec<ThreadRecord>,
+    projects: Vec<ProjectRecord>,
+    sync_error: Option<String>,
+}
+
+#[tauri::command]
+fn load_board_data() -> Result<BoardData, String> {
+    refresh_board_data(true)
+}
+
+#[tauri::command]
+fn sync_codex_threads() -> Result<BoardData, String> {
+    refresh_board_data(true)
+}
+
+#[tauri::command]
+fn update_thread_fields(
+    thread_id: String,
+    task_type: Option<String>,
+    module: String,
+    sprint: String,
+    notes: String,
+) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    let parsed_task_type = task_type
+        .as_deref()
+        .and_then(|value| if value.is_empty() { None } else { Some(value) })
+        .map(|value| TaskType::parse(value).ok_or_else(|| format!("不支持的 task_type：{value}")))
+        .transpose()?;
+
+    repository
+        .update_thread_fields(&thread_id, parsed_task_type, &module, &sprint, &notes)
+        .map_err(|error| error.to_string())?;
+    read_board_data(&repository, None)
+}
+
+#[tauri::command]
+fn mark_thread_reviewed(thread_id: String) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    repository
+        .mark_reviewed(&thread_id)
+        .map_err(|error| error.to_string())?;
+    read_board_data(&repository, None)
+}
+
+#[tauri::command]
+fn archive_thread(thread_id: String) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    repository
+        .archive_thread(&thread_id)
+        .map_err(|error| error.to_string())?;
+    read_board_data(&repository, None)
+}
+
+#[tauri::command]
+fn unarchive_thread(thread_id: String) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    repository
+        .unarchive_thread(&thread_id)
+        .map_err(|error| error.to_string())?;
+    read_board_data(&repository, None)
+}
+
+fn refresh_board_data(force_sync: bool) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    repository
+        .seed_builtin_presets()
+        .map_err(|error| error.to_string())?;
+
+    let client = ReadOnlyCodexClient::new();
+    let mut sync_error = None;
+    let should_sync = force_sync
+        || repository
+            .list_threads(FilterQuery {
+                include_archived: true,
+                ..FilterQuery::default()
+            })
+            .map_err(|error| error.to_string())?
+            .is_empty();
+
+    if should_sync {
+        match client.call("thread/list") {
+            Ok(threads) => {
+                seed_projects_from_synced_threads(&repository, &threads)?;
+                let projects = project_rules(&repository)?;
+                let sync = ThreadSync::new(Box::new(ReadOnlyCodexClient::new()));
+                if let Err(error) = sync.sync_recent_into(
+                    &repository,
+                    &projects,
+                    &AppConfig::default(),
+                    &current_utc_text(),
+                ) {
+                    sync_error = Some(error);
+                }
+            }
+            Err(error) => sync_error = Some(error),
+        }
+    }
+
+    read_board_data(&repository, sync_error)
+}
+
+fn read_board_data(
+    repository: &Repository,
+    sync_error: Option<String>,
+) -> Result<BoardData, String> {
+    Ok(BoardData {
+        threads: repository
+            .list_threads(FilterQuery {
+                include_archived: true,
+                ..FilterQuery::default()
+            })
+            .map_err(|error| error.to_string())?,
+        projects: repository
+            .list_projects(true)
+            .map_err(|error| error.to_string())?,
+        sync_error,
+    })
+}
+
+fn seed_projects_from_synced_threads(
+    repository: &Repository,
+    threads: &[codex_kanban::thread_sync::SyncedThread],
+) -> Result<(), String> {
+    for thread in threads {
+        if thread.cwd.trim().is_empty() {
+            continue;
+        }
+        repository
+            .upsert_project(ProjectInput {
+                id: project_id_for_path(&thread.cwd),
+                name: basename(&thread.cwd).unwrap_or("Codex Project").to_string(),
+                path: thread.cwd.clone(),
+                origin_url: thread.origin_url.clone(),
+                aliases: basename(&thread.cwd)
+                    .map(|value| vec![value.to_string()])
+                    .unwrap_or_default(),
+                active: true,
+            })
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn project_rules(repository: &Repository) -> Result<Vec<ProjectRule>, String> {
+    Ok(repository
+        .list_projects(false)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|project| ProjectRule {
+            id: project.id,
+            name: project.name,
+            path: project.path,
+            origin_url: project.origin_url,
+            aliases: project.aliases,
+            active: project.active,
+        })
+        .collect())
+}
+
+fn open_repository() -> Result<Repository, String> {
+    Repository::open_default().map_err(|error| error.to_string())
+}
 
 #[tauri::command]
 fn build_thread_deeplink(thread_id: String) -> Result<String, String> {
@@ -33,9 +206,60 @@ fn open_codex_deeplink(target: String) -> Result<String, String> {
     Ok(target)
 }
 
+fn basename(path: &str) -> Option<&str> {
+    path.trim_end_matches('/').rsplit('/').next()
+}
+
+fn project_id_for_path(path: &str) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in path.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("project-{hash:016x}")
+}
+
+fn current_utc_text() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    unix_seconds_to_utc_text(seconds)
+}
+
+fn unix_seconds_to_utc_text(seconds: i64) -> String {
+    let days = seconds.div_euclid(86_400);
+    let day_seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let second = day_seconds % 60;
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            load_board_data,
+            sync_codex_threads,
+            update_thread_fields,
+            mark_thread_reviewed,
+            archive_thread,
+            unarchive_thread,
             build_thread_deeplink,
             build_project_deeplink,
             open_codex_deeplink

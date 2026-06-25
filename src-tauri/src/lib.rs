@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn board_status_mapper_protects_manual_decisions_and_uses_settle_window() {
+    fn board_status_mapper_protects_manual_decisions_and_maps_finished_threads_to_review_pending() {
         let config = AppConfig::default();
         let now = "2026-06-24T12:05:00Z";
 
@@ -156,7 +156,7 @@ mod tests {
             now,
             config: &config,
         });
-        let too_early = BoardStatusMapper::map_runtime(StatusInput {
+        let finished = BoardStatusMapper::map_runtime(StatusInput {
             codex_status: "idle",
             previous_status: BoardStatus::Running,
             has_running_history: true,
@@ -178,7 +178,7 @@ mod tests {
         });
 
         assert_eq!(active, BoardStatus::Running);
-        assert_eq!(too_early, BoardStatus::Running);
+        assert_eq!(finished, BoardStatus::ReviewPending);
         assert_eq!(settled, BoardStatus::ReviewPending);
     }
 
@@ -194,7 +194,7 @@ mod tests {
                 false,
                 false,
                 None,
-                BoardStatus::Untriaged,
+                BoardStatus::ReviewPending,
             ),
             (
                 "running",
@@ -435,6 +435,75 @@ mod tests {
     }
 
     #[test]
+    fn readonly_client_reads_threads_from_codex_state_sqlite() {
+        let temp_path =
+            std::env::temp_dir().join(format!("codex-kanban-state-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&temp_path);
+        let connection = rusqlite::Connection::open(&temp_path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE threads (
+                    id TEXT PRIMARY KEY,
+                    rollout_path TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    model_provider TEXT NOT NULL,
+                    cwd TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    sandbox_policy TEXT NOT NULL,
+                    approval_mode TEXT NOT NULL,
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    has_user_event INTEGER NOT NULL DEFAULT 0,
+                    archived INTEGER NOT NULL DEFAULT 0,
+                    archived_at INTEGER,
+                    git_sha TEXT,
+                    git_branch TEXT,
+                    git_origin_url TEXT,
+                    preview TEXT NOT NULL DEFAULT '',
+                    recency_at_ms INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT INTO threads (
+                    id, rollout_path, created_at, updated_at, source, model_provider, cwd,
+                    title, sandbox_policy, approval_mode, git_branch, git_origin_url, preview,
+                    recency_at_ms
+                ) VALUES (
+                    '019ef927-4206-7823-a752-eb0364a6f11b',
+                    '/Users/me/.codex/sessions/thread.jsonl',
+                    1782296500,
+                    1782296699,
+                    'vscode',
+                    'openai',
+                    '/Users/me/project',
+                    '接入真实数据',
+                    'workspace-write',
+                    'never',
+                    'main',
+                    'git@example.com:me/project.git',
+                    '用户要求接入真实 Codex Desktop 数据',
+                    1782296699015
+                );",
+            )
+            .unwrap();
+        drop(connection);
+
+        let client = ReadOnlyCodexClient::with_state_db_path(temp_path.clone());
+        let threads = client.call("thread/list").unwrap();
+
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].id, "019ef927-4206-7823-a752-eb0364a6f11b");
+        assert_eq!(threads[0].title, "接入真实数据");
+        assert_eq!(threads[0].cwd, "/Users/me/project");
+        assert_eq!(threads[0].branch, "main");
+        assert_eq!(
+            threads[0].origin_url.as_deref(),
+            Some("git@example.com:me/project.git")
+        );
+
+        let _ = std::fs::remove_file(temp_path);
+    }
+
+    #[test]
     fn thread_sync_initial_sync_classifies_threads_and_avoids_duplicate_events() {
         struct FakeClient {
             threads: Vec<super::thread_sync::SyncedThread>,
@@ -465,6 +534,9 @@ mod tests {
                 source_kind: "codex".to_string(),
                 codex_status: "running".to_string(),
                 raw_status: "running".to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: false,
                 created_at: "2026-06-24T11:00:00Z".to_string(),
                 updated_at: "2026-06-24T11:05:00Z".to_string(),
             }],
@@ -501,6 +573,222 @@ mod tests {
     }
 
     #[test]
+    fn thread_sync_maps_codex_archived_threads_to_archived_board_status() {
+        struct FakeClient {
+            threads: Vec<super::thread_sync::SyncedThread>,
+        }
+
+        impl CodexAppServerClient for FakeClient {
+            fn call(&self, method: &str) -> Result<Vec<super::thread_sync::SyncedThread>, String> {
+                assert_eq!(method, "thread/list");
+                Ok(self.threads.clone())
+            }
+        }
+
+        let repo = Repository::open_in_memory().unwrap();
+        let sync = ThreadSync::new(Box::new(FakeClient {
+            threads: vec![super::thread_sync::SyncedThread {
+                id: "t-archived".to_string(),
+                title: "Archived".to_string(),
+                preview: String::new(),
+                cwd: "/repo".to_string(),
+                source_kind: "codex".to_string(),
+                codex_status: "archived".to_string(),
+                raw_status: "archived".to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: true,
+                created_at: "2026-06-24T11:00:00Z".to_string(),
+                updated_at: "2026-06-24T11:05:00Z".to_string(),
+            }],
+        }));
+
+        let report = sync
+            .sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T11:05:00Z")
+            .unwrap();
+        let visible = repo.list_threads(FilterQuery::default()).unwrap();
+        let archived = repo
+            .list_threads(FilterQuery {
+                include_archived: true,
+                board_status: Some(BoardStatus::Archived),
+                ..FilterQuery::default()
+            })
+            .unwrap();
+
+        assert_eq!(report.upserted, 1);
+        assert!(visible.is_empty());
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].codex_status, "archived");
+        assert_eq!(archived[0].board_status, BoardStatus::Archived);
+        assert_eq!(repo.count_thread_events("t-archived").unwrap(), 1);
+    }
+
+    #[test]
+    fn thread_sync_archives_threads_not_updated_for_thirty_days() {
+        struct FakeClient {
+            threads: Vec<super::thread_sync::SyncedThread>,
+        }
+
+        impl CodexAppServerClient for FakeClient {
+            fn call(&self, method: &str) -> Result<Vec<super::thread_sync::SyncedThread>, String> {
+                assert_eq!(method, "thread/list");
+                Ok(self.threads.clone())
+            }
+        }
+
+        let repo = Repository::open_in_memory().unwrap();
+        let sync = ThreadSync::new(Box::new(FakeClient {
+            threads: vec![super::thread_sync::SyncedThread {
+                id: "t-stale".to_string(),
+                title: "Stale".to_string(),
+                preview: String::new(),
+                cwd: "/repo".to_string(),
+                source_kind: "codex".to_string(),
+                codex_status: "idle".to_string(),
+                raw_status: "idle".to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: false,
+                created_at: "2026-05-01T11:00:00Z".to_string(),
+                updated_at: "2026-05-25T11:05:00Z".to_string(),
+            }],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T11:05:00Z")
+            .unwrap();
+
+        let archived = repo
+            .list_threads(FilterQuery {
+                include_archived: true,
+                board_status: Some(BoardStatus::Archived),
+                ..FilterQuery::default()
+            })
+            .unwrap();
+
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].id, "t-stale");
+        assert_eq!(repo.count_thread_events("t-stale").unwrap(), 1);
+    }
+
+    #[test]
+    fn thread_sync_maps_historical_non_archived_statuses_to_review_pending() {
+        struct FakeClient {
+            threads: Vec<super::thread_sync::SyncedThread>,
+        }
+
+        impl CodexAppServerClient for FakeClient {
+            fn call(&self, method: &str) -> Result<Vec<super::thread_sync::SyncedThread>, String> {
+                assert_eq!(method, "thread/list");
+                Ok(self.threads.clone())
+            }
+        }
+
+        fn thread_with_status(id: &str, status: &str) -> super::thread_sync::SyncedThread {
+            super::thread_sync::SyncedThread {
+                id: id.to_string(),
+                title: id.to_string(),
+                preview: String::new(),
+                cwd: "/repo".to_string(),
+                source_kind: "codex".to_string(),
+                codex_status: status.to_string(),
+                raw_status: status.to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: false,
+                created_at: "2026-06-24T11:00:00Z".to_string(),
+                updated_at: "2026-06-24T11:05:00Z".to_string(),
+            }
+        }
+
+        let repo = Repository::open_in_memory().unwrap();
+        let sync = ThreadSync::new(Box::new(FakeClient {
+            threads: vec![
+                thread_with_status("t-idle", "idle"),
+                thread_with_status("t-not-loaded", "notLoaded"),
+                thread_with_status("t-unknown", "unknown"),
+            ],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T11:05:00Z")
+            .unwrap();
+
+        let stored = repo
+            .list_threads(FilterQuery {
+                include_archived: true,
+                ..FilterQuery::default()
+            })
+            .unwrap();
+
+        assert_eq!(stored.len(), 3);
+        assert!(stored
+            .iter()
+            .all(|thread| thread.board_status == BoardStatus::ReviewPending));
+    }
+
+    #[test]
+    fn thread_sync_moves_finished_running_thread_to_review_pending_immediately() {
+        use std::cell::RefCell;
+
+        struct FakeClient {
+            batches: RefCell<Vec<Vec<super::thread_sync::SyncedThread>>>,
+        }
+
+        impl CodexAppServerClient for FakeClient {
+            fn call(&self, method: &str) -> Result<Vec<super::thread_sync::SyncedThread>, String> {
+                assert_eq!(method, "thread/list");
+                Ok(self.batches.borrow_mut().remove(0))
+            }
+        }
+
+        fn thread_with_status(status: &str) -> super::thread_sync::SyncedThread {
+            super::thread_sync::SyncedThread {
+                id: "t-finished".to_string(),
+                title: "Finished".to_string(),
+                preview: String::new(),
+                cwd: "/repo".to_string(),
+                source_kind: "codex".to_string(),
+                codex_status: status.to_string(),
+                raw_status: status.to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: false,
+                created_at: "2026-06-24T11:00:00Z".to_string(),
+                updated_at: "2026-06-24T11:01:00Z".to_string(),
+            }
+        }
+
+        let repo = Repository::open_in_memory().unwrap();
+        let sync = ThreadSync::new(Box::new(FakeClient {
+            batches: RefCell::new(vec![
+                vec![thread_with_status("running")],
+                vec![thread_with_status("idle")],
+                vec![thread_with_status("idle")],
+            ]),
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T11:00:00Z")
+            .unwrap();
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T11:01:00Z")
+            .unwrap();
+        let finished = repo.get_thread("t-finished").unwrap().unwrap();
+        assert_eq!(finished.board_status, BoardStatus::ReviewPending);
+        assert_eq!(
+            finished.last_seen_completed_at.as_deref(),
+            Some("2026-06-24T11:01:00Z")
+        );
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T11:04:00Z")
+            .unwrap();
+        let settled = repo.get_thread("t-finished").unwrap().unwrap();
+
+        assert_eq!(settled.board_status, BoardStatus::ReviewPending);
+        assert_eq!(
+            settled.last_seen_completed_at.as_deref(),
+            Some("2026-06-24T11:01:00Z")
+        );
+    }
+
+    #[test]
     fn thread_sync_uses_configured_intervals_and_status_event_refresh() {
         struct FakeClient {
             threads: Vec<super::thread_sync::SyncedThread>,
@@ -532,6 +820,9 @@ mod tests {
                 source_kind: "codex".to_string(),
                 codex_status: "running".to_string(),
                 raw_status: "running".to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: false,
                 created_at: "2026-06-24T11:00:00Z".to_string(),
                 updated_at: "2026-06-24T11:05:00Z".to_string(),
             }],
@@ -574,6 +865,9 @@ mod tests {
                 source_kind: "codex".to_string(),
                 codex_status: "new-runtime-value".to_string(),
                 raw_status: "new-runtime-value".to_string(),
+                branch: "main".to_string(),
+                origin_url: None,
+                archived: false,
                 created_at: "2026-06-24T11:00:00Z".to_string(),
                 updated_at: "2026-06-24T11:10:00Z".to_string(),
             },
@@ -595,7 +889,7 @@ mod tests {
                 ..FilterQuery::default()
             })
             .unwrap();
-        assert_eq!(stored[0].board_status, BoardStatus::Untriaged);
+        assert_eq!(stored[0].board_status, BoardStatus::ReviewPending);
         assert_eq!(stored[0].task_type, Some(TaskType::Docs));
         assert_eq!(stored[0].module, "Docs");
         assert_eq!(stored[0].notes, "keep");

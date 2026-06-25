@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::path::Path;
 
 use crate::domain::{
     BoardStatus, CodexThreadUpsert, FilterPreset, FilterQuery, ProjectInput, ProjectRecord,
@@ -14,6 +15,21 @@ pub struct Repository {
 }
 
 impl Repository {
+    pub fn open_default() -> rusqlite::Result<Self> {
+        let path = default_app_db_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        }
+        Self::open_path(&path)
+    }
+
+    pub fn open_path(path: &Path) -> rusqlite::Result<Self> {
+        let connection = Connection::open(path)?;
+        connection.execute_batch(INIT_SQL)?;
+        Ok(Self { connection })
+    }
+
     pub fn open_in_memory() -> rusqlite::Result<Self> {
         let connection = Connection::open_in_memory()?;
         connection.execute_batch(INIT_SQL)?;
@@ -314,15 +330,18 @@ impl Repository {
     pub fn update_runtime_markers(
         &self,
         thread_id: &str,
-        last_seen_running_at: Option<&str>,
-        last_seen_completed_at: Option<&str>,
+        is_running: bool,
+        observed_at: &str,
     ) -> rusqlite::Result<()> {
         self.connection.execute(
             "UPDATE codex_threads
-             SET last_seen_running_at = COALESCE(?2, last_seen_running_at),
-                 last_seen_completed_at = COALESCE(?3, last_seen_completed_at)
+             SET last_seen_running_at = CASE WHEN ?2 = 1 THEN ?3 ELSE last_seen_running_at END,
+                 last_seen_completed_at = CASE
+                   WHEN ?2 = 1 THEN NULL
+                   ELSE COALESCE(last_seen_completed_at, ?3)
+                 END
              WHERE id = ?1",
-            params![thread_id, last_seen_running_at, last_seen_completed_at],
+            params![thread_id, bool_to_i64(is_running), observed_at],
         )?;
         Ok(())
     }
@@ -354,6 +373,36 @@ impl Repository {
             reason: reason.to_string(),
         })?;
         Ok(true)
+    }
+
+    pub fn set_synced_archived_if_changed(
+        &self,
+        thread_id: &str,
+        reason: &str,
+    ) -> rusqlite::Result<bool> {
+        let previous = self.current_board_status(thread_id)?;
+        let changed = previous != Some(BoardStatus::Archived);
+        self.connection.execute(
+            "UPDATE codex_threads
+             SET board_status = 'archived',
+                 manual_status_override = 0,
+                 archived_at = COALESCE(archived_at, ?2),
+                 updated_at = ?2
+             WHERE id = ?1",
+            params![thread_id, now_text()],
+        )?;
+
+        if changed {
+            self.insert_event(ThreadEventInput {
+                thread_id: thread_id.to_string(),
+                event_type: "status_changed".to_string(),
+                from_status: previous,
+                to_status: Some(BoardStatus::Archived),
+                reason: reason.to_string(),
+            })?;
+        }
+
+        Ok(changed)
     }
 
     pub fn count_thread_events(&self, thread_id: &str) -> rusqlite::Result<i64> {
@@ -505,4 +554,12 @@ fn int_to_bool(value: i64) -> bool {
 
 fn now_text() -> String {
     "2026-06-24T00:00:00Z".to_string()
+}
+
+fn default_app_db_path() -> std::path::PathBuf {
+    std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".codex-kanban")
+        .join("app.db")
 }

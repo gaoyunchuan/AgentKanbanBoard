@@ -40,9 +40,9 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip";
-import { initialThreads, projects } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import type {
+  BoardData,
   BoardStatus,
   FilterState,
   Project,
@@ -79,7 +79,7 @@ const statusTone: Record<
   archived: "secondary"
 };
 
-const taskTypes: TaskType[] = ["feature", "bugfix", "review", "docs", "ops"];
+const taskTypes: TaskType[] = ["unset", "feature", "bugfix", "review", "docs", "ops"];
 
 const defaultFilters: FilterState = {
   search: "",
@@ -90,14 +90,22 @@ const defaultFilters: FilterState = {
   showArchived: false
 };
 
-const projectName = (projectId: string) =>
+const unknownProject: Project = {
+  id: "unknown",
+  name: "Unknown",
+  path: "",
+  aliases: [],
+  active: true
+};
+
+const projectName = (projects: Project[], projectId: string) =>
   projects.find((project) => project.id === projectId)?.name ?? "Unknown";
 
 const countByStatus = (threads: ThreadItem[], status: BoardStatus) =>
   threads.filter((thread) => thread.boardStatus === status).length;
 
 function App() {
-  const [threads, setThreads] = usePersistentThreads();
+  const { threads, setThreads, projects, setProjects, reloadBoardData } = useBoardData();
   const [view, setView] = useState<ViewKey>("active");
   const [layout, setLayout] = useState<LayoutMode>("list");
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -105,13 +113,13 @@ function App() {
   const [summaryOpen, setSummaryOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
-  const [toast, setToast] = useState("只读同步边界已启用");
+  const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
 
   const visibleThreads = useMemo(() => {
-    return applyFilters(applyView(threads, view), filters)
+    return applyFilters(applyView(threads, view, filters.showArchived), filters, projects)
       .slice()
       .sort((a, b) => rankThread(a, view) - rankThread(b, view));
-  }, [filters, threads, view]);
+  }, [filters, projects, threads, view]);
 
   const counts = useMemo(
     () => ({
@@ -125,37 +133,60 @@ function App() {
   );
 
   const updateThread = (id: string, patch: Partial<ThreadItem>) => {
+    const target = threads.find((thread) => thread.id === id);
+    const nextThread = target ? { ...target, ...patch } : undefined;
     setThreads((current) =>
       current.map((thread) => (thread.id === id ? { ...thread, ...patch } : thread))
     );
+
+    if (
+      nextThread &&
+      ("taskType" in patch || "module" in patch || "sprint" in patch || "notes" in patch)
+    ) {
+      void invokeBoardData("update_thread_fields", {
+        threadId: id,
+        taskType: nextThread.taskType === "unset" ? null : nextThread.taskType,
+        module: nextThread.module,
+        sprint: nextThread.sprint,
+        notes: nextThread.notes
+      })
+        .then(({ threads, projects }) => {
+          setThreads(threads);
+          setProjects(projects);
+        })
+        .catch((error) => setToast(`字段保存失败：${String(error)}`));
+    }
   };
 
-  const markReviewed = (thread: ThreadItem) => {
+  const markReviewed = async (thread: ThreadItem) => {
     updateThread(thread.id, {
       boardStatus: "reviewed",
       subStatus: "manual reviewed",
       updatedAt: nowLabel()
     });
+    await applyRemoteBoardCommand("mark_thread_reviewed", { threadId: thread.id });
     setToast(`已标记审核完成：${thread.title}`);
   };
 
-  const archiveThread = (thread: ThreadItem) => {
+  const archiveThread = async (thread: ThreadItem) => {
     updateThread(thread.id, {
       boardStatus: "archived",
       archivedAt: nowLabel(),
       subStatus: "manual archived",
       updatedAt: nowLabel()
     });
+    await applyRemoteBoardCommand("archive_thread", { threadId: thread.id });
     setToast(`已归档：${thread.title}`);
   };
 
-  const unarchiveThread = (thread: ThreadItem) => {
+  const unarchiveThread = async (thread: ThreadItem) => {
     updateThread(thread.id, {
       boardStatus: "review_pending",
       archivedAt: undefined,
       subStatus: "restored",
       updatedAt: nowLabel()
     });
+    await applyRemoteBoardCommand("unarchive_thread", { threadId: thread.id });
     setToast(`已恢复：${thread.title}`);
   };
 
@@ -184,20 +215,20 @@ function App() {
     setToast(result.ok ? `已打开 Codex 项目入口：${project.name}` : result.message);
   };
 
-  const syncOnce = () => {
-    setThreads((current) =>
-      current.map((thread, index) =>
-        index === 0
-          ? {
-              ...thread,
-              updatedAt: nowLabel(),
-              subStatus:
-                thread.subStatus === "waiting approval" ? "typing" : "waiting approval"
-            }
-          : thread
-      )
-    );
-    setToast("已模拟一次只读同步：保留本地人工字段");
+  const applyRemoteBoardCommand = async (command: string, args: Record<string, unknown>) => {
+    try {
+      const next = await invokeBoardData(command, args);
+      setThreads(next.threads);
+      setProjects(next.projects);
+      if (next.syncError) setToast(next.syncError);
+    } catch (error) {
+      setToast(`操作失败：${String(error)}`);
+    }
+  };
+
+  const syncOnce = async () => {
+    const next = await reloadBoardData(true);
+    setToast(next.syncError ?? "已从 Codex Desktop 真实数据完成只读同步");
   };
 
   return (
@@ -314,7 +345,7 @@ function App() {
           </header>
 
           {view === "projects" ? (
-            <ProjectsView onOpenProject={openProject} />
+            <ProjectsView projects={projects} setProjects={setProjects} onOpenProject={openProject} />
           ) : (
             <section className="flex min-h-0 flex-1 flex-col gap-2 p-3">
               <CollapsibleBand
@@ -375,7 +406,12 @@ function App() {
                 </div>
 
                 {filtersOpen && (
-                  <FilterPanel threads={threads} filters={filters} onChange={setFilters} />
+                  <FilterPanel
+                    threads={threads}
+                    projects={projects}
+                    filters={filters}
+                    onChange={setFilters}
+                  />
                 )}
 
                 {layout === "list" ? (
@@ -394,10 +430,12 @@ function App() {
                     onUnarchive={unarchiveThread}
                     onOpen={openThread}
                     onUpdate={updateThread}
+                    projects={projects}
                   />
                 ) : (
                   <BoardView
                     threads={visibleThreads}
+                    projects={projects}
                     onUpdate={updateThread}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
@@ -414,40 +452,45 @@ function App() {
   );
 }
 
-function usePersistentThreads() {
-  const [threads, setThreads] = useState<ThreadItem[]>(() => {
-    const cached = localStorage.getItem("codex-kanban-prototype");
-    if (!cached) return initialThreads;
-    try {
-      return JSON.parse(cached) as ThreadItem[];
-    } catch {
-      return initialThreads;
-    }
-  });
+function useBoardData() {
+  const [threads, setThreads] = useState<ThreadItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([unknownProject]);
+
+  const applyBoardData = (data: MappedBoardData) => {
+    setThreads(data.threads);
+    setProjects(data.projects);
+    return data;
+  };
+
+  const reloadBoardData = async (forceSync = false) => {
+    const command = forceSync ? "sync_codex_threads" : "load_board_data";
+    return applyBoardData(await invokeBoardData(command));
+  };
 
   useEffect(() => {
-    localStorage.setItem("codex-kanban-prototype", JSON.stringify(threads));
-  }, [threads]);
+    void reloadBoardData(false);
+  }, []);
 
-  return [threads, setThreads] as const;
+  return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }
 
-function applyView(threads: ThreadItem[], view: ViewKey) {
+function applyView(threads: ThreadItem[], view: ViewKey, showArchived: boolean) {
   if (view === "running") return threads.filter((thread) => thread.boardStatus === "running");
   if (view === "review_pending")
     return threads.filter((thread) => thread.boardStatus === "review_pending");
   if (view === "inbox") return threads.filter((thread) => thread.boardStatus === "untriaged");
   if (view === "archived") return threads.filter((thread) => thread.boardStatus === "archived");
+  if (view === "active" && showArchived) return threads;
   return threads.filter((thread) => thread.boardStatus !== "archived");
 }
 
-function applyFilters(threads: ThreadItem[], filters: FilterState) {
+function applyFilters(threads: ThreadItem[], filters: FilterState, projects: Project[]) {
   return threads.filter((thread) => {
     const searchText = [
       thread.title,
       thread.preview,
       thread.module,
-      projectName(thread.projectId),
+      projectName(projects, thread.projectId),
       thread.cwd
     ]
       .join(" ")
@@ -480,7 +523,22 @@ function rankThread(thread: ThreadItem, view: ViewKey) {
     return safeUpdatedAt;
   }
 
+  if (view === "active") {
+    return activeStatusRank(thread.boardStatus) * 10_000_000_000_000 - safeUpdatedAt;
+  }
+
   return -safeUpdatedAt;
+}
+
+function activeStatusRank(status: BoardStatus) {
+  const ranks: Record<BoardStatus, number> = {
+    review_pending: 0,
+    reviewed: 1,
+    running: 2,
+    untriaged: 3,
+    archived: 4
+  };
+  return ranks[status];
 }
 
 function viewTitle(view: ViewKey) {
@@ -613,10 +671,12 @@ function MetricCard({
 
 function FilterPanel({
   threads,
+  projects,
   filters,
   onChange
 }: {
   threads: ThreadItem[];
+  projects: Project[];
   filters: FilterState;
   onChange: (filters: FilterState) => void;
 }) {
@@ -709,6 +769,7 @@ function FieldSelect({
 
 function ThreadList({
   threads,
+  projects,
   expandedRows,
   onToggleExpand,
   onMarkReviewed,
@@ -718,6 +779,7 @@ function ThreadList({
   onUpdate
 }: {
   threads: ThreadItem[];
+  projects: Project[];
   expandedRows: string[];
   onToggleExpand: (id: string) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
@@ -756,7 +818,7 @@ function ThreadList({
                     <span className="truncate font-medium">{thread.title}</span>
                   </div>
                   <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-[11px] text-muted-foreground">
-                    <span className="truncate">{projectName(thread.projectId)}</span>
+                    <span className="truncate">{projectName(projects, thread.projectId)}</span>
                     <span>·</span>
                     <span className="truncate font-mono">{thread.id}</span>
                     <span>·</span>
@@ -943,6 +1005,7 @@ function IconButton({
 
 function BoardView({
   threads,
+  projects,
   onUpdate,
   onMarkReviewed,
   onArchive,
@@ -950,13 +1013,14 @@ function BoardView({
   onOpen
 }: {
   threads: ThreadItem[];
+  projects: Project[];
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
 }) {
-  const columns: BoardStatus[] = ["review_pending", "running", "untriaged", "reviewed", "archived"];
+  const columns: BoardStatus[] = ["review_pending", "reviewed", "archived"];
 
   return (
     <div className="thin-scrollbar flex min-h-0 flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden p-2">
@@ -978,7 +1042,7 @@ function BoardView({
                 <div key={thread.id} className="rounded-md border bg-card p-2 shadow-sm">
                   <div className="line-clamp-2 font-medium">{thread.title}</div>
                   <div className="mt-1 truncate text-[11px] text-muted-foreground">
-                    {projectName(thread.projectId)} · {thread.module}
+                    {projectName(projects, thread.projectId)} · {thread.module}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     <Badge variant="outline">{thread.taskType}</Badge>
@@ -1021,8 +1085,19 @@ function BoardView({
   );
 }
 
-function ProjectsView({ onOpenProject }: { onOpenProject: (projectId: string, prompt?: string) => void }) {
+function ProjectsView({
+  projects,
+  setProjects,
+  onOpenProject
+}: {
+  projects: Project[];
+  setProjects: (projects: Project[]) => void;
+  onOpenProject: (projectId: string, prompt?: string) => void;
+}) {
   const [projectRows, setProjectRows] = useState<Project[]>(projects);
+  useEffect(() => {
+    setProjectRows(projects);
+  }, [projects]);
   const updateProject = (id: string, patch: Partial<Project>) => {
     setProjectRows((current) =>
       current.map((project) => (project.id === id ? { ...project, ...patch } : project))
@@ -1165,6 +1240,60 @@ async function openCodexDeepLink(link: string): Promise<{ ok: true } | { ok: fal
       message: `已复制 Codex deep link，请在 Codex Desktop 打开：${String(error)}`
     };
   }
+}
+
+type MappedBoardData = {
+  threads: ThreadItem[];
+  projects: Project[];
+  syncError?: string | null;
+};
+
+async function invokeBoardData(command: string, args?: Record<string, unknown>): Promise<MappedBoardData> {
+  const data = await invoke<BoardData>(command, args);
+  return mapBoardData(data);
+}
+
+function mapBoardData(data: BoardData): MappedBoardData {
+  const projects = [
+    unknownProject,
+    ...data.projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      path: project.path,
+      originUrl: project.origin_url ?? undefined,
+      aliases: project.aliases ?? [],
+      active: project.active
+    }))
+  ];
+
+  return {
+    projects,
+    syncError: data.sync_error,
+    threads: data.threads.map((thread) => ({
+      id: thread.id,
+      codexSessionId: thread.id,
+      title: thread.title,
+      preview: thread.preview,
+      projectId: thread.project_id ?? "unknown",
+      cwd: thread.cwd,
+      branch: thread.branch,
+      boardStatus: thread.board_status,
+      codexStatus: thread.codex_status,
+      subStatus: thread.codex_sub_status || thread.codex_status,
+      taskType: thread.task_type ?? "unset",
+      module: thread.module,
+      sprint: thread.sprint,
+      updatedAt: formatTimestamp(thread.updated_at),
+      createdAt: formatTimestamp(thread.created_at),
+      lastSeenRunningAt: thread.last_seen_running_at ? formatTimestamp(thread.last_seen_running_at) : undefined,
+      archivedAt: thread.archived_at ? formatTimestamp(thread.archived_at) : undefined,
+      notes: thread.notes
+    }))
+  };
+}
+
+function formatTimestamp(value: string) {
+  return value.replace("T", " ").replace(/Z$/, "");
 }
 
 export default App;

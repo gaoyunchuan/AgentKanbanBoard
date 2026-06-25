@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::board_status_mapper::{BoardStatusMapper, StatusInput};
 use crate::config::AppConfig;
@@ -15,6 +16,9 @@ pub struct SyncedThread {
     pub source_kind: String,
     pub codex_status: String,
     pub raw_status: String,
+    pub branch: String,
+    pub origin_url: Option<String>,
+    pub archived: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -23,11 +27,19 @@ pub trait CodexAppServerClient {
     fn call(&self, method: &str) -> Result<Vec<SyncedThread>, String>;
 }
 
-pub struct ReadOnlyCodexClient;
+pub struct ReadOnlyCodexClient {
+    state_db_path: PathBuf,
+}
 
 impl ReadOnlyCodexClient {
     pub fn new() -> Self {
-        Self
+        Self {
+            state_db_path: default_codex_state_db_path(),
+        }
+    }
+
+    pub fn with_state_db_path(state_db_path: PathBuf) -> Self {
+        Self { state_db_path }
     }
 }
 
@@ -45,7 +57,56 @@ impl CodexAppServerClient for ReadOnlyCodexClient {
             return Err(format!("禁止调用 Codex 写方法或未知方法：{method}"));
         }
 
-        Ok(vec![])
+        let connection = rusqlite::Connection::open_with_flags(
+            &self.state_db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|error| {
+            format!(
+                "无法读取 Codex Desktop state sqlite {}：{error}",
+                self.state_db_path.display()
+            )
+        })?;
+        let mut statement = connection
+            .prepare(
+                "SELECT id,
+                        title,
+                        substr(preview, 1, 240),
+                        cwd,
+                        source,
+                        CASE WHEN archived = 1 THEN 'archived' ELSE 'idle' END,
+                        CASE WHEN archived = 1 THEN 'archived' ELSE 'idle' END,
+                        COALESCE(git_branch, ''),
+                        git_origin_url,
+                        archived,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at, 'unixepoch'),
+                        strftime('%Y-%m-%dT%H:%M:%SZ', updated_at, 'unixepoch')
+                 FROM threads
+                 ORDER BY recency_at_ms DESC, updated_at DESC
+                 LIMIT 200",
+            )
+            .map_err(|error| format!("读取 Codex threads 表失败：{error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(SyncedThread {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    preview: row.get(2)?,
+                    cwd: row.get(3)?,
+                    source_kind: row.get(4)?,
+                    codex_status: row.get(5)?,
+                    raw_status: row.get(6)?,
+                    branch: row.get(7)?,
+                    origin_url: row.get(8)?,
+                    archived: row.get::<_, i64>(9)? != 0,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
+                })
+            })
+            .map_err(|error| format!("解析 Codex threads 失败：{error}"))?;
+
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| format!("解析 Codex thread 行失败：{error}"))
     }
 }
 
@@ -91,7 +152,7 @@ impl ThreadSync {
             let project_id = ProjectMatcher::match_thread(
                 &ThreadProjectHint {
                     cwd: Some(thread.cwd.clone()),
-                    origin_url: None,
+                    origin_url: thread.origin_url.clone(),
                 },
                 projects,
             )
@@ -105,7 +166,7 @@ impl ThreadSync {
                     title: thread.title.clone(),
                     preview: thread.preview.clone(),
                     cwd: thread.cwd.clone(),
-                    branch: String::new(),
+                    branch: thread.branch.clone(),
                     source_kind: thread.source_kind.clone(),
                     codex_status: thread.codex_status.clone(),
                     codex_sub_status: String::new(),
@@ -116,7 +177,23 @@ impl ThreadSync {
                 })
                 .map_err(|error| error.to_string())?;
 
-            if !is_known_runtime_status(&thread.codex_status) {
+            if thread.archived || thread.codex_status == "archived" {
+                if repository
+                    .set_synced_archived_if_changed(&thread.id, "codex_archived")
+                    .map_err(|error| error.to_string())?
+                {
+                    events += 1;
+                }
+                continue;
+            }
+
+            if is_stale_thread(&thread.updated_at, now) {
+                if repository
+                    .set_synced_archived_if_changed(&thread.id, "stale_30_days")
+                    .map_err(|error| error.to_string())?
+                {
+                    events += 1;
+                }
                 continue;
             }
 
@@ -126,26 +203,26 @@ impl ThreadSync {
                 .ok_or_else(|| format!("同步后未找到 thread：{}", thread.id))?;
             let is_running = is_running_status(&thread.codex_status);
             repository
-                .update_runtime_markers(
-                    &thread.id,
-                    is_running.then_some(now),
-                    (!is_running).then_some(now),
-                )
+                .update_runtime_markers(&thread.id, is_running, now)
                 .map_err(|error| error.to_string())?;
+            let refreshed = repository
+                .get_thread(&thread.id)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| format!("同步状态标记后未找到 thread：{}", thread.id))?;
 
             let has_running_history = is_running
                 || previous
                     .as_ref()
                     .and_then(|record| record.last_seen_running_at.as_ref())
                     .is_some()
-                || current.last_seen_running_at.is_some();
+                || refreshed.last_seen_running_at.is_some();
             let status = BoardStatusMapper::map_runtime(StatusInput {
                 codex_status: &thread.codex_status,
                 previous_status: current.board_status,
                 has_running_history,
                 is_archived: current.board_status == BoardStatus::Archived,
                 manual_status_override: current.manual_status_override,
-                last_seen_completed_at: Some(now),
+                last_seen_completed_at: refreshed.last_seen_completed_at.as_deref(),
                 now,
                 config,
             });
@@ -205,22 +282,47 @@ pub fn refresh_interval_seconds(visibility: SyncVisibility, config: &AppConfig) 
     }
 }
 
-fn is_known_runtime_status(value: &str) -> bool {
-    matches!(
-        value,
-        "running"
-            | "active"
-            | "waiting_approval"
-            | "waiting approval"
-            | "typing"
-            | "idle"
-            | "completed"
-    )
-}
-
 fn is_running_status(value: &str) -> bool {
     matches!(
         value,
         "running" | "active" | "waiting_approval" | "waiting approval" | "typing"
     )
+}
+
+fn is_stale_thread(updated_at: &str, now: &str) -> bool {
+    seconds_between(updated_at, now)
+        .map(|age| age >= 30 * 24 * 60 * 60)
+        .unwrap_or(false)
+}
+
+fn seconds_between(start: &str, end: &str) -> Option<i64> {
+    Some(parse_utc_seconds(end)? - parse_utc_seconds(start)?)
+}
+
+fn parse_utc_seconds(value: &str) -> Option<i64> {
+    let (date, time) = value.trim_end_matches('Z').split_once('T')?;
+    let mut date_parts = date.split('-').map(|part| part.parse::<i64>().ok());
+    let year = date_parts.next()??;
+    let month = date_parts.next()??;
+    let day = date_parts.next()??;
+    let mut time_parts = time.split(':').map(|part| part.parse::<i64>().ok());
+    let hour = time_parts.next()??;
+    let minute = time_parts.next()??;
+    let second = time_parts.next()??;
+
+    Some((((year * 12 + month) * 31 + day) * 24 + hour) * 3600 + minute * 60 + second)
+}
+
+fn default_codex_state_db_path() -> PathBuf {
+    std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| {
+                let mut path = PathBuf::from(home);
+                path.push(".codex");
+                path
+            })
+        })
+        .unwrap_or_else(|| PathBuf::from(".codex"))
+        .join("state_5.sqlite")
 }
