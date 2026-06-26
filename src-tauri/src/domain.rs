@@ -145,6 +145,7 @@ pub struct ThreadRecord {
     pub last_seen_running_at: Option<String>,
     pub last_seen_completed_at: Option<String>,
     pub manual_status_override: bool,
+    pub manual_status_updated_at: Option<String>,
     pub archived_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,

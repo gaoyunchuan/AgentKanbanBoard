@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
@@ -152,6 +152,7 @@ describe("Codex Kanban App", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   test("loads real Codex data through Tauri commands", async () => {
@@ -160,6 +161,34 @@ describe("Codex Kanban App", () => {
     expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
     expect(screen.queryByText("补齐 ThreadSync 只读同步与事件订阅")).not.toBeInTheDocument();
     expect(invokeMock).toHaveBeenCalledWith("load_board_data", undefined);
+  });
+
+  test("periodically syncs Codex threads while the page is open", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+    currentThreads = [
+      ...currentThreads,
+      {
+        ...backendThreads[1],
+        id: "019ef934-periodic-sync",
+        title: "定时同步新增会话",
+        board_status: "untriaged",
+        updated_at: "2026-06-24T11:35:00Z"
+      }
+    ];
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("sync_codex_threads", undefined);
+    expect(screen.getByText("定时同步新增会话")).toBeInTheDocument();
   });
 
   test("switches focused views and shows running/review data", async () => {

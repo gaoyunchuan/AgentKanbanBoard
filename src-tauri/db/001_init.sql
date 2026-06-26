@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS codex_threads (
   last_seen_running_at TEXT,
   last_seen_completed_at TEXT,
   manual_status_override INTEGER NOT NULL DEFAULT 0,
+  manual_status_updated_at TEXT,
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

@@ -202,6 +202,10 @@ impl ThreadSync {
                 .map_err(|error| error.to_string())?
                 .ok_or_else(|| format!("同步后未找到 thread：{}", thread.id))?;
             let is_running = is_running_status(&thread.codex_status);
+            let manual_status_expired = previous
+                .as_ref()
+                .map(|record| thread_updated_after_manual_status(&thread.updated_at, record))
+                .unwrap_or(false);
             repository
                 .update_runtime_markers(&thread.id, is_running, now)
                 .map_err(|error| error.to_string())?;
@@ -209,6 +213,16 @@ impl ThreadSync {
                 .get_thread(&thread.id)
                 .map_err(|error| error.to_string())?
                 .ok_or_else(|| format!("同步状态标记后未找到 thread：{}", thread.id))?;
+
+            if manual_status_expired && !is_running {
+                if repository
+                    .reopen_for_updated_thread(&thread.id, "thread_updated_after_manual_status")
+                    .map_err(|error| error.to_string())?
+                {
+                    events += 1;
+                }
+                continue;
+            }
 
             let has_running_history = is_running
                 || previous
@@ -220,8 +234,9 @@ impl ThreadSync {
                 codex_status: &thread.codex_status,
                 previous_status: current.board_status,
                 has_running_history,
-                is_archived: current.board_status == BoardStatus::Archived,
-                manual_status_override: current.manual_status_override,
+                is_archived: current.board_status == BoardStatus::Archived
+                    && !manual_status_expired,
+                manual_status_override: current.manual_status_override && !manual_status_expired,
                 last_seen_completed_at: refreshed.last_seen_completed_at.as_deref(),
                 now,
                 config,
@@ -292,6 +307,26 @@ fn is_running_status(value: &str) -> bool {
 fn is_stale_thread(updated_at: &str, now: &str) -> bool {
     seconds_between(updated_at, now)
         .map(|age| age >= 30 * 24 * 60 * 60)
+        .unwrap_or(false)
+}
+
+fn thread_updated_after_manual_status(
+    updated_at: &str,
+    previous: &crate::domain::ThreadRecord,
+) -> bool {
+    if !previous.manual_status_override
+        || !matches!(
+            previous.board_status,
+            BoardStatus::Reviewed | BoardStatus::Archived
+        )
+    {
+        return false;
+    }
+
+    previous
+        .manual_status_updated_at
+        .as_deref()
+        .map(|manual_status_updated_at| updated_at > manual_status_updated_at)
         .unwrap_or(false)
 }
 
