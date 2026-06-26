@@ -75,6 +75,7 @@ export type BackendThread = {
   last_seen_running_at?: string | null;
   last_seen_completed_at?: string | null;
   manual_status_override: boolean;
+  manual_status_updated_at?: string | null;
   archived_at?: string | null;
   created_at: string;
   updated_at: string;

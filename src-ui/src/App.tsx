@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -89,6 +89,8 @@ const defaultFilters: FilterState = {
   sprint: "all",
   showArchived: false
 };
+
+const foregroundSyncIntervalMs = 5_000;
 
 const unknownProject: Project = {
   id: "unknown",
@@ -456,20 +458,25 @@ function useBoardData() {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([unknownProject]);
 
-  const applyBoardData = (data: MappedBoardData) => {
+  const applyBoardData = useCallback((data: MappedBoardData) => {
     setThreads(data.threads);
     setProjects(data.projects);
     return data;
-  };
+  }, []);
 
-  const reloadBoardData = async (forceSync = false) => {
+  const reloadBoardData = useCallback(async (forceSync = false) => {
     const command = forceSync ? "sync_codex_threads" : "load_board_data";
     return applyBoardData(await invokeBoardData(command));
-  };
+  }, [applyBoardData]);
 
   useEffect(() => {
     void reloadBoardData(false);
-  }, []);
+    const timer = window.setInterval(() => {
+      void reloadBoardData(true).catch(() => undefined);
+    }, foregroundSyncIntervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [reloadBoardData]);
 
   return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }

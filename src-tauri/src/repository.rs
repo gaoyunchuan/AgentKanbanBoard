@@ -27,12 +27,14 @@ impl Repository {
     pub fn open_path(path: &Path) -> rusqlite::Result<Self> {
         let connection = Connection::open(path)?;
         connection.execute_batch(INIT_SQL)?;
+        migrate_schema(&connection)?;
         Ok(Self { connection })
     }
 
     pub fn open_in_memory() -> rusqlite::Result<Self> {
         let connection = Connection::open_in_memory()?;
         connection.execute_batch(INIT_SQL)?;
+        migrate_schema(&connection)?;
         Ok(Self { connection })
     }
 
@@ -175,6 +177,7 @@ impl Repository {
             "UPDATE codex_threads
              SET board_status = 'archived',
                  manual_status_override = 1,
+                 manual_status_updated_at = ?2,
                  archived_at = ?2,
                  updated_at = ?2
              WHERE id = ?1",
@@ -196,6 +199,7 @@ impl Repository {
             "UPDATE codex_threads
              SET board_status = 'review_pending',
                  manual_status_override = 0,
+                 manual_status_updated_at = NULL,
                  archived_at = NULL,
                  updated_at = ?2
              WHERE id = ?1",
@@ -361,6 +365,8 @@ impl Repository {
             "UPDATE codex_threads
              SET board_status = ?2,
                  manual_status_override = CASE WHEN ?2 = 'running' THEN 0 ELSE manual_status_override END,
+                 manual_status_updated_at = CASE WHEN ?2 = 'running' THEN NULL ELSE manual_status_updated_at END,
+                 archived_at = CASE WHEN ?2 = 'running' THEN NULL ELSE archived_at END,
                  updated_at = ?3
              WHERE id = ?1",
             params![thread_id, status.as_str(), now_text()],
@@ -375,6 +381,37 @@ impl Repository {
         Ok(true)
     }
 
+    pub fn reopen_for_updated_thread(
+        &self,
+        thread_id: &str,
+        reason: &str,
+    ) -> rusqlite::Result<bool> {
+        let previous = self.current_board_status(thread_id)?;
+        let changed = previous != Some(BoardStatus::ReviewPending);
+        self.connection.execute(
+            "UPDATE codex_threads
+             SET board_status = 'review_pending',
+                 manual_status_override = 0,
+                 manual_status_updated_at = NULL,
+                 archived_at = NULL,
+                 updated_at = ?2
+             WHERE id = ?1",
+            params![thread_id, now_text()],
+        )?;
+
+        if changed {
+            self.insert_event(ThreadEventInput {
+                thread_id: thread_id.to_string(),
+                event_type: "status_changed".to_string(),
+                from_status: previous,
+                to_status: Some(BoardStatus::ReviewPending),
+                reason: reason.to_string(),
+            })?;
+        }
+
+        Ok(changed)
+    }
+
     pub fn set_synced_archived_if_changed(
         &self,
         thread_id: &str,
@@ -386,6 +423,7 @@ impl Repository {
             "UPDATE codex_threads
              SET board_status = 'archived',
                  manual_status_override = 0,
+                 manual_status_updated_at = NULL,
                  archived_at = COALESCE(archived_at, ?2),
                  updated_at = ?2
              WHERE id = ?1",
@@ -473,6 +511,7 @@ impl Repository {
             "UPDATE codex_threads
              SET board_status = ?2,
                  manual_status_override = ?3,
+                 manual_status_updated_at = CASE WHEN ?3 = 1 THEN ?4 ELSE NULL END,
                  updated_at = ?4
              WHERE id = ?1",
             params![thread_id, status.as_str(), bool_to_i64(manual), now_text()],
@@ -505,7 +544,7 @@ impl Repository {
             "SELECT id, project_id, title, preview, cwd, branch, source_kind, codex_status,
                     codex_sub_status, board_status, task_type, module, sprint, notes,
                     first_seen_at, last_seen_running_at, last_seen_completed_at,
-                    manual_status_override, archived_at, created_at, updated_at
+                    manual_status_override, manual_status_updated_at, archived_at, created_at, updated_at
              FROM codex_threads",
         )?;
         let rows = statement.query_map([], |row| {
@@ -530,14 +569,33 @@ impl Repository {
                 last_seen_running_at: row.get(15)?,
                 last_seen_completed_at: row.get(16)?,
                 manual_status_override: int_to_bool(row.get(17)?),
-                archived_at: row.get(18)?,
-                created_at: row.get(19)?,
-                updated_at: row.get(20)?,
+                manual_status_updated_at: row.get(18)?,
+                archived_at: row.get(19)?,
+                created_at: row.get(20)?,
+                updated_at: row.get(21)?,
             })
         })?;
 
         rows.collect()
     }
+}
+
+fn migrate_schema(connection: &Connection) -> rusqlite::Result<()> {
+    let has_manual_status_updated_at = connection
+        .prepare("PRAGMA table_info(codex_threads)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|column| column == "manual_status_updated_at");
+
+    if !has_manual_status_updated_at {
+        connection.execute(
+            "ALTER TABLE codex_threads ADD COLUMN manual_status_updated_at TEXT",
+            [],
+        )?;
+    }
+
+    Ok(())
 }
 
 fn bool_to_i64(value: bool) -> i64 {

@@ -34,6 +34,38 @@ mod tests {
         }
     }
 
+    struct StaticThreadClient {
+        threads: Vec<super::thread_sync::SyncedThread>,
+    }
+
+    impl CodexAppServerClient for StaticThreadClient {
+        fn call(&self, method: &str) -> Result<Vec<super::thread_sync::SyncedThread>, String> {
+            assert_eq!(method, "thread/list");
+            Ok(self.threads.clone())
+        }
+    }
+
+    fn synced_thread(
+        id: &str,
+        codex_status: &str,
+        updated_at: &str,
+    ) -> super::thread_sync::SyncedThread {
+        super::thread_sync::SyncedThread {
+            id: id.to_string(),
+            title: id.to_string(),
+            preview: String::new(),
+            cwd: "/repo".to_string(),
+            source_kind: "codex".to_string(),
+            codex_status: codex_status.to_string(),
+            raw_status: codex_status.to_string(),
+            branch: "main".to_string(),
+            origin_url: None,
+            archived: codex_status == "archived",
+            created_at: "2026-06-24T00:00:00Z".to_string(),
+            updated_at: updated_at.to_string(),
+        }
+    }
+
     #[test]
     fn project_matcher_uses_deepest_path_before_origin_and_alias() {
         let root = project("root", "/repo");
@@ -416,6 +448,59 @@ mod tests {
     }
 
     #[test]
+    fn repository_migrates_existing_thread_table_for_manual_status_timestamp() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "codex-kanban-old-schema-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp_path);
+        let connection = rusqlite::Connection::open(&temp_path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE codex_threads (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    preview TEXT NOT NULL DEFAULT '',
+                    cwd TEXT NOT NULL DEFAULT '',
+                    branch TEXT NOT NULL DEFAULT '',
+                    source_kind TEXT NOT NULL DEFAULT 'codex',
+                    codex_status TEXT NOT NULL DEFAULT 'unknown',
+                    raw_status TEXT NOT NULL DEFAULT 'unknown',
+                    codex_sub_status TEXT NOT NULL DEFAULT '',
+                    board_status TEXT NOT NULL DEFAULT 'untriaged',
+                    task_type TEXT NOT NULL DEFAULT '',
+                    module TEXT NOT NULL DEFAULT '',
+                    sprint TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_running_at TEXT,
+                    last_seen_completed_at TEXT,
+                    manual_status_override INTEGER NOT NULL DEFAULT 0,
+                    archived_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_synced_at TEXT NOT NULL DEFAULT '',
+                    raw_json TEXT NOT NULL DEFAULT '{}'
+                )",
+            )
+            .unwrap();
+        drop(connection);
+
+        let repo = Repository::open_path(&temp_path).unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-old-schema"))
+            .unwrap();
+        repo.mark_reviewed("t-old-schema").unwrap();
+        let stored = repo.get_thread("t-old-schema").unwrap().unwrap();
+
+        assert_eq!(
+            stored.manual_status_updated_at.as_deref(),
+            Some("2026-06-24T00:00:00Z")
+        );
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
     fn thread_sync_allows_only_read_methods_and_handles_unavailable_client() {
         let client = ReadOnlyCodexClient::new();
         assert!(client.call("thread/list").is_ok());
@@ -668,6 +753,124 @@ mod tests {
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0].id, "t-stale");
         assert_eq!(repo.count_thread_events("t-stale").unwrap(), 1);
+    }
+
+    #[test]
+    fn thread_sync_reopens_reviewed_thread_when_codex_updated_after_manual_status() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-reviewed"))
+            .unwrap();
+        repo.mark_reviewed("t-reviewed").unwrap();
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![synced_thread("t-reviewed", "idle", "2026-06-24T00:00:01Z")],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T00:00:01Z")
+            .unwrap();
+        let stored = repo.get_thread("t-reviewed").unwrap().unwrap();
+
+        assert_eq!(stored.board_status, BoardStatus::ReviewPending);
+        assert!(!stored.manual_status_override);
+        assert_eq!(stored.manual_status_updated_at, None);
+    }
+
+    #[test]
+    fn thread_sync_reopens_manually_archived_thread_when_codex_updated_after_manual_status() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-archived-manual"))
+            .unwrap();
+        repo.archive_thread("t-archived-manual").unwrap();
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![synced_thread(
+                "t-archived-manual",
+                "idle",
+                "2026-06-24T00:00:01Z",
+            )],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T00:00:01Z")
+            .unwrap();
+        let stored = repo.get_thread("t-archived-manual").unwrap().unwrap();
+
+        assert_eq!(stored.board_status, BoardStatus::ReviewPending);
+        assert!(!stored.manual_status_override);
+        assert_eq!(stored.archived_at, None);
+        assert_eq!(stored.manual_status_updated_at, None);
+        assert_eq!(repo.list_threads(FilterQuery::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn thread_sync_preserves_manual_status_when_codex_update_is_not_newer() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-reviewed-old"))
+            .unwrap();
+        repo.mark_reviewed("t-reviewed-old").unwrap();
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![synced_thread(
+                "t-reviewed-old",
+                "idle",
+                "2026-06-24T00:00:00Z",
+            )],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T00:00:01Z")
+            .unwrap();
+        let stored = repo.get_thread("t-reviewed-old").unwrap().unwrap();
+
+        assert_eq!(stored.board_status, BoardStatus::Reviewed);
+        assert!(stored.manual_status_override);
+        assert_eq!(
+            stored.manual_status_updated_at.as_deref(),
+            Some("2026-06-24T00:00:00Z")
+        );
+    }
+
+    #[test]
+    fn thread_sync_running_update_overrides_stale_manual_archive() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-running-after-archive"))
+            .unwrap();
+        repo.archive_thread("t-running-after-archive").unwrap();
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![synced_thread(
+                "t-running-after-archive",
+                "running",
+                "2026-06-24T00:00:01Z",
+            )],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T00:00:01Z")
+            .unwrap();
+        let stored = repo.get_thread("t-running-after-archive").unwrap().unwrap();
+
+        assert_eq!(stored.board_status, BoardStatus::Running);
+        assert!(!stored.manual_status_override);
+        assert_eq!(stored.archived_at, None);
+        assert_eq!(stored.manual_status_updated_at, None);
+    }
+
+    #[test]
+    fn thread_sync_codex_archive_and_stale_still_archive_after_manual_status() {
+        let repo = Repository::open_in_memory().unwrap();
+        for id in ["t-codex-archived", "t-stale-after-review"] {
+            repo.upsert_thread(CodexThreadUpsert::minimal(id)).unwrap();
+            repo.mark_reviewed(id).unwrap();
+        }
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![
+                synced_thread("t-codex-archived", "archived", "2026-06-24T00:00:01Z"),
+                synced_thread("t-stale-after-review", "idle", "2026-05-01T00:00:01Z"),
+            ],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-24T00:00:01Z")
+            .unwrap();
+
+        for id in ["t-codex-archived", "t-stale-after-review"] {
+            let stored = repo.get_thread(id).unwrap().unwrap();
+            assert_eq!(stored.board_status, BoardStatus::Archived);
+            assert!(!stored.manual_status_override);
+        }
     }
 
     #[test]
