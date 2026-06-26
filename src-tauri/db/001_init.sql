@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS codex_threads (
   raw_status TEXT NOT NULL DEFAULT 'unknown',
   codex_sub_status TEXT NOT NULL DEFAULT '',
   board_status TEXT NOT NULL DEFAULT 'untriaged'
-    CHECK (board_status IN ('untriaged', 'running', 'review_pending', 'reviewed', 'archived')),
+    CHECK (board_status IN ('untriaged', 'running', 'review_pending', 'reviewed', 'suspended', 'archived')),
   task_type TEXT NOT NULL DEFAULT ''
     CHECK (task_type IN ('', 'feature', 'bugfix', 'review', 'docs', 'ops')),
   module TEXT NOT NULL DEFAULT '',
@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS codex_threads (
   last_seen_completed_at TEXT,
   manual_status_override INTEGER NOT NULL DEFAULT 0,
   manual_status_updated_at TEXT,
+  suspended_until TEXT,
   archived_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

@@ -311,7 +311,8 @@ mod tests {
         let repo = Repository::open_in_memory().unwrap();
         repo.seed_builtin_presets().unwrap();
         let presets = repo.list_filter_presets().unwrap();
-        assert_eq!(presets.len(), 4);
+        assert_eq!(presets.len(), 5);
+        assert!(presets.iter().any(|preset| preset.id == "suspended"));
 
         repo.upsert_project(ProjectInput {
             id: "p1".to_string(),
@@ -397,6 +398,7 @@ mod tests {
                 thread_id: "t-comments".to_string(),
                 author: "我".to_string(),
                 body: "先记录同步间隔需要调整。".to_string(),
+                suspend_until: None,
             })
             .unwrap();
         let second = repo
@@ -404,6 +406,7 @@ mod tests {
                 thread_id: "t-comments".to_string(),
                 author: "我".to_string(),
                 body: "补充离线态提示。".to_string(),
+                suspend_until: None,
             })
             .unwrap();
 
@@ -421,6 +424,56 @@ mod tests {
         let stored = repo.get_thread("t-comments").unwrap().unwrap();
         assert_eq!(stored.comments.len(), 2);
         assert_eq!(stored.comments[0].body, "补充离线态提示，避免误触。");
+    }
+
+    #[test]
+    fn repository_suspends_thread_when_comment_includes_wake_time() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-suspend"))
+            .unwrap();
+
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "t-suspend".to_string(),
+            author: "我".to_string(),
+            body: "等线上日志补齐后再处理。".to_string(),
+            suspend_until: Some("2026-06-27T09:30:00Z".to_string()),
+        })
+        .unwrap();
+
+        let stored = repo.get_thread("t-suspend").unwrap().unwrap();
+        assert_eq!(stored.board_status, BoardStatus::Suspended);
+        assert_eq!(
+            stored.suspended_until.as_deref(),
+            Some("2026-06-27T09:30:00Z")
+        );
+        assert!(stored.manual_status_override);
+        assert_eq!(stored.comments.len(), 1);
+    }
+
+    #[test]
+    fn repository_wakes_due_suspended_threads_back_to_review_pending() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-due"))
+            .unwrap();
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "t-due".to_string(),
+            author: "我".to_string(),
+            body: "明早再看。".to_string(),
+            suspend_until: Some("2026-06-26T09:59:00Z".to_string()),
+        })
+        .unwrap();
+
+        let changed = repo
+            .wake_due_suspended_threads("2026-06-26T10:00:00Z")
+            .unwrap();
+
+        let stored = repo.get_thread("t-due").unwrap().unwrap();
+        assert_eq!(changed, 1);
+        assert_eq!(stored.board_status, BoardStatus::ReviewPending);
+        assert_eq!(stored.suspended_until, None);
+        assert!(!stored.manual_status_override);
     }
 
     #[test]

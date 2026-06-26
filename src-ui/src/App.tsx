@@ -59,6 +59,7 @@ type ViewKey =
   | "inbox"
   | "running"
   | "review_pending"
+  | "suspended"
   | "active"
   | "archived"
   | "projects";
@@ -70,6 +71,7 @@ const statusLabels: Record<BoardStatus, string> = {
   running: "运行中",
   review_pending: "待审核",
   reviewed: "已审核",
+  suspended: "挂起",
   archived: "已归档"
 };
 
@@ -81,6 +83,7 @@ const statusTone: Record<
   running: "default",
   review_pending: "warning",
   reviewed: "success",
+  suspended: "outline",
   archived: "secondary"
 };
 
@@ -134,6 +137,7 @@ function App() {
       inbox: threads.filter((thread) => thread.boardStatus === "untriaged").length,
       running: countByStatus(threads, "running"),
       review: countByStatus(threads, "review_pending"),
+      suspended: countByStatus(threads, "suspended"),
       active: threads.filter((thread) => thread.boardStatus !== "archived").length,
       archived: countByStatus(threads, "archived")
     }),
@@ -176,11 +180,12 @@ function App() {
     setToast(`已标记审核完成：${thread.title}`);
   };
 
-  const addComment = async (threadId: string, body: string) => {
-    const next = await invokeBoardData("create_thread_comment", { threadId, body });
+  const addComment = async (threadId: string, body: string, suspendUntil?: string) => {
+    const args = suspendUntil ? { threadId, body, suspendUntil } : { threadId, body };
+    const next = await invokeBoardData("create_thread_comment", args);
     setThreads(next.threads);
     setProjects(next.projects);
-    setToast("评论已添加");
+    setToast(suspendUntil ? "评论已添加，Thread 已挂起" : "评论已添加");
   };
 
   const editComment = async (commentId: number, body: string) => {
@@ -304,6 +309,14 @@ function App() {
               onClick={() => setView("running")}
             />
             <NavItem
+              active={view === "suspended"}
+              collapsed={!sidebarOpen}
+              icon={<TimerReset className="h-4 w-4" />}
+              label="挂起"
+              count={counts.suspended}
+              onClick={() => setView("suspended")}
+            />
+            <NavItem
               active={view === "inbox"}
               collapsed={!sidebarOpen}
               icon={<Inbox className="h-4 w-4" />}
@@ -377,9 +390,10 @@ function App() {
                 icon={<TimerReset className="h-3.5 w-3.5" />}
                 right={<span className="text-[11px] text-muted-foreground">前台 5s / 后台 30s</span>}
               >
-                <div className="grid gap-2 md:grid-cols-4">
+                <div className="grid gap-2 md:grid-cols-5">
                   <MetricCard label="运行中" value={counts.running} hint="waiting approval 优先" tone="blue" />
                   <MetricCard label="待审核" value={counts.review} hint="按等待时长排序" tone="amber" />
+                  <MetricCard label="挂起" value={counts.suspended} hint="到点自动唤醒" tone="slate" />
                   <MetricCard label="未分类" value={counts.inbox} hint="unknown 项目仍可见" tone="slate" />
                   <MetricCard label="已归档" value={counts.archived} hint="默认隐藏，不删除" tone="green" />
                 </div>
@@ -513,6 +527,7 @@ function applyView(threads: ThreadItem[], view: ViewKey, showArchived: boolean) 
   if (view === "running") return threads.filter((thread) => thread.boardStatus === "running");
   if (view === "review_pending")
     return threads.filter((thread) => thread.boardStatus === "review_pending");
+  if (view === "suspended") return threads.filter((thread) => thread.boardStatus === "suspended");
   if (view === "inbox") return threads.filter((thread) => thread.boardStatus === "untriaged");
   if (view === "archived") return threads.filter((thread) => thread.boardStatus === "archived");
   if (view === "active" && showArchived) return threads;
@@ -569,9 +584,10 @@ function activeStatusRank(status: BoardStatus) {
   const ranks: Record<BoardStatus, number> = {
     review_pending: 0,
     reviewed: 1,
-    running: 2,
-    untriaged: 3,
-    archived: 4
+    suspended: 2,
+    running: 3,
+    untriaged: 4,
+    archived: 5
   };
   return ranks[status];
 }
@@ -581,6 +597,7 @@ function viewTitle(view: ViewKey) {
     inbox: "未分类队列",
     running: "运行中聚焦",
     review_pending: "待人工审核",
+    suspended: "挂起 Threads",
     active: "全部活跃 Threads",
     archived: "归档 Threads",
     projects: "项目注册表"
@@ -594,6 +611,13 @@ function nowLabel() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
     date.getHours()
   )}:${pad(date.getMinutes())}`;
+}
+
+function localDateTimeToIso(value: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
 }
 
 function NavItem({
@@ -824,7 +848,7 @@ function ThreadList({
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
-  onAddComment: (threadId: string, body: string) => Promise<void>;
+  onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (commentId: number, body: string) => Promise<void>;
 }) {
   return (
@@ -898,6 +922,8 @@ function ThreadList({
                     sync: <span>{thread.codexStatus}</span>
                     <span className="px-1">·</span>
                     last_running: <span>{thread.lastSeenRunningAt ?? "--"}</span>
+                    <span className="px-1">·</span>
+                    wake: <span>{thread.suspendedUntil ?? "--"}</span>
                     <span className="px-1">·</span>
                     notes: <span>{thread.notes || "--"}</span>
                   </div>
@@ -975,10 +1001,12 @@ function ThreadComments({
   onEditComment
 }: {
   thread: ThreadItem;
-  onAddComment: (threadId: string, body: string) => Promise<void>;
+  onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (commentId: number, body: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
+  const [suspendOnSubmit, setSuspendOnSubmit] = useState(false);
+  const [wakeTime, setWakeTime] = useState("");
   const [editingId, setEditingId] = useState<number | undefined>();
   const [editingBody, setEditingBody] = useState("");
   const [saving, setSaving] = useState(false);
@@ -986,10 +1014,14 @@ function ThreadComments({
   const submitDraft = async () => {
     const body = draft.trim();
     if (!body) return;
+    const suspendUntil = suspendOnSubmit ? localDateTimeToIso(wakeTime) : undefined;
+    if (suspendOnSubmit && !suspendUntil) return;
     setSaving(true);
     try {
-      await onAddComment(thread.id, body);
+      await onAddComment(thread.id, body, suspendUntil);
       setDraft("");
+      setSuspendOnSubmit(false);
+      setWakeTime("");
     } finally {
       setSaving(false);
     }
@@ -1023,6 +1055,12 @@ function ThreadComments({
         </div>
       </div>
       <div className="space-y-2 p-2">
+        {thread.suspendedUntil && (
+          <div className="flex items-center gap-1.5 rounded-md border border-dashed bg-secondary/35 px-2 py-1 text-[11px] text-muted-foreground">
+            <TimerReset className="h-3.5 w-3.5" />
+            挂起至 {thread.suspendedUntil}
+          </div>
+        )}
         <div className="flex gap-1.5">
           <textarea
             value={draft}
@@ -1039,12 +1077,35 @@ function ThreadComments({
           <Button
             size="icon"
             className="h-8 w-8 shrink-0 rounded-md"
-            disabled={saving || !draft.trim()}
+            disabled={saving || !draft.trim() || (suspendOnSubmit && !localDateTimeToIso(wakeTime))}
             onClick={submitDraft}
             aria-label="保存评论"
           >
             <Send className="h-3.5 w-3.5" />
           </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-md bg-secondary/35 px-2 py-1.5 text-[11px]">
+          <label className="inline-flex h-6 items-center gap-1.5 text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={suspendOnSubmit}
+              className="h-3.5 w-3.5 accent-primary"
+              onChange={(event) => setSuspendOnSubmit(event.target.checked)}
+            />
+            挂起
+          </label>
+          {suspendOnSubmit && (
+            <label className="flex min-w-[190px] flex-1 items-center gap-1.5 text-muted-foreground">
+              <span className="shrink-0">唤醒时间</span>
+              <input
+                type="datetime-local"
+                aria-label="唤醒时间"
+                value={wakeTime}
+                className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setWakeTime(event.target.value)}
+              />
+            </label>
+          )}
         </div>
         {thread.comments.length === 0 ? (
           <div className="rounded-md bg-secondary/45 px-2 py-3 text-center text-muted-foreground">
@@ -1233,10 +1294,10 @@ function BoardView({
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
-  onAddComment: (threadId: string, body: string) => Promise<void>;
+  onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (commentId: number, body: string) => Promise<void>;
 }) {
-  const columns: BoardStatus[] = ["review_pending", "reviewed", "archived"];
+  const columns: BoardStatus[] = ["review_pending", "reviewed", "suspended", "archived"];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1295,6 +1356,9 @@ function BoardView({
                           </Badge>
                           <Badge variant="outline">{thread.taskType}</Badge>
                           <Badge variant="secondary">{thread.sprint || "sprint"}</Badge>
+                          {thread.suspendedUntil && (
+                            <Badge variant="outline">醒 {thread.suspendedUntil}</Badge>
+                          )}
                         </div>
                         {latestComment && !expanded && (
                           <div className="mt-2 line-clamp-2 rounded bg-secondary/45 px-2 py-1 text-[11px] leading-4 text-muted-foreground">
@@ -1489,7 +1553,7 @@ function ProjectsView({
             默认 Presets
           </div>
           <div className="flex flex-wrap gap-1">
-            {["Running", "Review Pending", "Untriaged", "Archived"].map(
+            {["Running", "Review Pending", "Suspended", "Untriaged", "Archived"].map(
               (preset) => (
                 <Badge key={preset} variant="secondary">
                   {preset}
@@ -1564,6 +1628,7 @@ function mapBoardData(data: BoardData): MappedBoardData {
       updatedAt: formatTimestamp(thread.updated_at),
       createdAt: formatTimestamp(thread.created_at),
       lastSeenRunningAt: thread.last_seen_running_at ? formatTimestamp(thread.last_seen_running_at) : undefined,
+      suspendedUntil: thread.suspended_until ? formatTimestamp(thread.suspended_until) : undefined,
       archivedAt: thread.archived_at ? formatTimestamp(thread.archived_at) : undefined,
       notes: thread.notes,
       comments: (thread.comments ?? []).map((comment) => ({

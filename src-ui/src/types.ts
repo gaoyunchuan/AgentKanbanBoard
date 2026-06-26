@@ -3,6 +3,7 @@ export type BoardStatus =
   | "running"
   | "review_pending"
   | "reviewed"
+  | "suspended"
   | "archived";
 
 export type TaskType = "unset" | "feature" | "bugfix" | "review" | "docs" | "ops";
@@ -34,6 +35,7 @@ export type ThreadItem = {
   updatedAt: string;
   createdAt: string;
   lastSeenRunningAt?: string;
+  suspendedUntil?: string;
   archivedAt?: string;
   notes: string;
   comments: ThreadComment[];
@@ -87,6 +89,7 @@ export type BackendThread = {
   last_seen_completed_at?: string | null;
   manual_status_override: boolean;
   manual_status_updated_at?: string | null;
+  suspended_until?: string | null;
   archived_at?: string | null;
   created_at: string;
   updated_at: string;

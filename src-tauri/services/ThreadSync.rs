@@ -317,7 +317,7 @@ fn thread_updated_after_manual_status(
     if !previous.manual_status_override
         || !matches!(
             previous.board_status,
-            BoardStatus::Reviewed | BoardStatus::Archived
+            BoardStatus::Reviewed | BoardStatus::Suspended | BoardStatus::Archived
         )
     {
         return false;

@@ -48,18 +48,26 @@ fn update_thread_fields(
 }
 
 #[tauri::command]
-fn create_thread_comment(thread_id: String, body: String) -> Result<BoardData, String> {
+fn create_thread_comment(
+    thread_id: String,
+    body: String,
+    suspend_until: Option<String>,
+) -> Result<BoardData, String> {
     let repository = open_repository()?;
     let body = body.trim();
     if body.is_empty() {
         return Err("评论不能为空".to_string());
     }
+    let suspend_until = suspend_until
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     repository
         .add_thread_comment(ThreadCommentInput {
             thread_id,
             author: "我".to_string(),
             body: body.to_string(),
+            suspend_until,
         })
         .map_err(|error| error.to_string())?;
     read_board_data(&repository, None)
@@ -108,6 +116,9 @@ fn unarchive_thread(thread_id: String) -> Result<BoardData, String> {
 
 fn refresh_board_data(force_sync: bool) -> Result<BoardData, String> {
     let repository = open_repository()?;
+    repository
+        .wake_due_suspended_threads(&current_utc_text())
+        .map_err(|error| error.to_string())?;
     repository
         .seed_builtin_presets()
         .map_err(|error| error.to_string())?;

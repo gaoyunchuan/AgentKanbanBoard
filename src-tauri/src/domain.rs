@@ -8,6 +8,7 @@ pub enum BoardStatus {
     Running,
     ReviewPending,
     Reviewed,
+    Suspended,
     Archived,
 }
 
@@ -18,6 +19,7 @@ impl BoardStatus {
             Self::Running => "running",
             Self::ReviewPending => "review_pending",
             Self::Reviewed => "reviewed",
+            Self::Suspended => "suspended",
             Self::Archived => "archived",
         }
     }
@@ -28,6 +30,7 @@ impl BoardStatus {
             "running" => Some(Self::Running),
             "review_pending" => Some(Self::ReviewPending),
             "reviewed" => Some(Self::Reviewed),
+            "suspended" => Some(Self::Suspended),
             "archived" => Some(Self::Archived),
             _ => None,
         }
@@ -146,6 +149,7 @@ pub struct ThreadRecord {
     pub last_seen_completed_at: Option<String>,
     pub manual_status_override: bool,
     pub manual_status_updated_at: Option<String>,
+    pub suspended_until: Option<String>,
     pub archived_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -168,6 +172,7 @@ pub struct ThreadCommentInput {
     pub thread_id: String,
     pub author: String,
     pub body: String,
+    pub suspend_until: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

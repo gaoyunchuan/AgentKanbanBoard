@@ -106,7 +106,7 @@ describe("Codex Kanban App", () => {
     localStorage.clear();
     currentThreads = backendThreads.map((thread) => ({ ...thread }));
     invokeMock.mockReset();
-    invokeMock.mockImplementation((command: string, args?: { threadId?: string; commentId?: number; body?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"] }) => {
+    invokeMock.mockImplementation((command: string, args?: { threadId?: string; commentId?: number; body?: string; suspendUntil?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"] }) => {
       if (command === "load_board_data") {
         return Promise.resolve({
           threads: currentThreads,
@@ -160,6 +160,8 @@ describe("Codex Kanban App", () => {
           thread.id === args.threadId
             ? {
                 ...thread,
+                board_status: args.suspendUntil ? "suspended" : thread.board_status,
+                suspended_until: args.suspendUntil ?? thread.suspended_until,
                 comments: [
                   {
                     id: 3,
@@ -364,6 +366,25 @@ describe("Codex Kanban App", () => {
       body: "补充离线态提示，避免误触。"
     });
     expect(await screen.findByText("补充离线态提示，避免误触。")).toBeInTheDocument();
+  });
+
+  test("suspends a thread when a comment is saved with wake time", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
+    await user.type(screen.getByPlaceholderText("添加评论..."), "等明天日志补齐后再看");
+    await user.click(screen.getByRole("checkbox", { name: "挂起" }));
+    await user.type(screen.getByLabelText("唤醒时间"), "2026-06-27T09:30");
+    await user.click(screen.getByRole("button", { name: "保存评论" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("create_thread_comment", {
+      threadId: "019ef88b-6207-7122-9f6e-da4d6d52a9ba",
+      body: "等明天日志补齐后再看",
+      suspendUntil: new Date("2026-06-27T09:30").toISOString()
+    });
+    expect(await screen.findByText("等明天日志补齐后再看")).toBeInTheDocument();
+    expect(screen.getByText(/挂起至/)).toBeInTheDocument();
   });
 
   test("marks reviewed, archives, and restores a thread", async () => {

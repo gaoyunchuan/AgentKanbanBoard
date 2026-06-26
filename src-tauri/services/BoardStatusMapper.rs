@@ -24,8 +24,13 @@ impl BoardStatusMapper {
             return BoardStatus::Running;
         }
 
-        if input.manual_status_override && input.previous_status == BoardStatus::Reviewed {
-            return BoardStatus::Reviewed;
+        if input.manual_status_override {
+            if matches!(
+                input.previous_status,
+                BoardStatus::Reviewed | BoardStatus::Suspended
+            ) {
+                return input.previous_status;
+            }
         }
 
         BoardStatus::ReviewPending
