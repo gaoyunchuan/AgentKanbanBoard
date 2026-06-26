@@ -52,6 +52,16 @@ CREATE TABLE IF NOT EXISTS thread_events (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS thread_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT '我',
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  edited_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS filter_presets (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -64,3 +74,4 @@ CREATE TABLE IF NOT EXISTS filter_presets (
 CREATE INDEX IF NOT EXISTS idx_codex_threads_project ON codex_threads(project_id);
 CREATE INDEX IF NOT EXISTS idx_codex_threads_board_status ON codex_threads(board_status);
 CREATE INDEX IF NOT EXISTS idx_codex_threads_updated_at ON codex_threads(updated_at);
+CREATE INDEX IF NOT EXISTS idx_thread_comments_thread ON thread_comments(thread_id, created_at);

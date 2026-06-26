@@ -149,6 +149,25 @@ pub struct ThreadRecord {
     pub archived_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub comments: Vec<ThreadCommentRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadCommentRecord {
+    pub id: i64,
+    pub thread_id: String,
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub edited_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadCommentInput {
+    pub thread_id: String,
+    pub author: String,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

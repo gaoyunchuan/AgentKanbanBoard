@@ -36,6 +36,17 @@ export type ThreadItem = {
   lastSeenRunningAt?: string;
   archivedAt?: string;
   notes: string;
+  comments: ThreadComment[];
+};
+
+export type ThreadComment = {
+  id: number;
+  threadId: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  editedAt?: string;
 };
 
 export type FilterState = {
@@ -79,6 +90,17 @@ export type BackendThread = {
   archived_at?: string | null;
   created_at: string;
   updated_at: string;
+  comments?: BackendThreadComment[];
+};
+
+export type BackendThreadComment = {
+  id: number;
+  thread_id: string;
+  author: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  edited_at?: string | null;
 };
 
 export type BoardData = {

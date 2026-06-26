@@ -16,7 +16,9 @@ mod tests {
     use super::board_status_mapper::{BoardStatusMapper, StatusInput};
     use super::config::AppConfig;
     use super::deeplink::{project_deeplink, thread_deeplink};
-    use super::domain::{BoardStatus, CodexThreadUpsert, FilterQuery, ProjectInput, TaskType};
+    use super::domain::{
+        BoardStatus, CodexThreadUpsert, FilterQuery, ProjectInput, TaskType, ThreadCommentInput,
+    };
     use super::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
     use super::repository::Repository;
     use super::thread_sync::{
@@ -381,6 +383,44 @@ mod tests {
         repo.unarchive_thread("t1").unwrap();
         let active = repo.list_threads(FilterQuery::default()).unwrap();
         assert_eq!(active[0].board_status, BoardStatus::ReviewPending);
+    }
+
+    #[test]
+    fn repository_adds_and_updates_multiple_thread_comments() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-comments"))
+            .unwrap();
+
+        let first = repo
+            .add_thread_comment(ThreadCommentInput {
+                thread_id: "t-comments".to_string(),
+                author: "我".to_string(),
+                body: "先记录同步间隔需要调整。".to_string(),
+            })
+            .unwrap();
+        let second = repo
+            .add_thread_comment(ThreadCommentInput {
+                thread_id: "t-comments".to_string(),
+                author: "我".to_string(),
+                body: "补充离线态提示。".to_string(),
+            })
+            .unwrap();
+
+        let comments = repo.list_thread_comments("t-comments").unwrap();
+        assert_eq!(comments.len(), 2);
+        assert_eq!(comments[0].id, second.id);
+        assert_eq!(comments[1].id, first.id);
+
+        let updated = repo
+            .update_thread_comment(second.id, "补充离线态提示，避免误触。")
+            .unwrap();
+        assert_eq!(updated.body, "补充离线态提示，避免误触。");
+        assert!(updated.edited_at.is_some());
+
+        let stored = repo.get_thread("t-comments").unwrap().unwrap();
+        assert_eq!(stored.comments.len(), 2);
+        assert_eq!(stored.comments[0].body, "补充离线态提示，避免误触。");
     }
 
     #[test]

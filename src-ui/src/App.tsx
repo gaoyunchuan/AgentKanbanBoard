@@ -14,14 +14,18 @@ import {
   KanbanSquare,
   LayoutList,
   Menu,
+  MessageSquare,
+  Pencil,
   PlayCircle,
   RotateCcw,
   Search,
+  Send,
   Settings2,
   ShieldAlert,
   SlidersHorizontal,
   Star,
-  TimerReset
+  TimerReset,
+  X
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +51,7 @@ import type {
   FilterState,
   Project,
   TaskType,
+  ThreadComment,
   ThreadItem
 } from "@/types";
 
@@ -115,6 +120,7 @@ function App() {
   const [summaryOpen, setSummaryOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
+  const [expandedBoardCardId, setExpandedBoardCardId] = useState<string | undefined>();
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
 
   const visibleThreads = useMemo(() => {
@@ -168,6 +174,20 @@ function App() {
     });
     await applyRemoteBoardCommand("mark_thread_reviewed", { threadId: thread.id });
     setToast(`已标记审核完成：${thread.title}`);
+  };
+
+  const addComment = async (threadId: string, body: string) => {
+    const next = await invokeBoardData("create_thread_comment", { threadId, body });
+    setThreads(next.threads);
+    setProjects(next.projects);
+    setToast("评论已添加");
+  };
+
+  const editComment = async (commentId: number, body: string) => {
+    const next = await invokeBoardData("update_thread_comment", { commentId, body });
+    setThreads(next.threads);
+    setProjects(next.projects);
+    setToast("评论已更新");
   };
 
   const archiveThread = async (thread: ThreadItem) => {
@@ -432,17 +452,25 @@ function App() {
                     onUnarchive={unarchiveThread}
                     onOpen={openThread}
                     onUpdate={updateThread}
+                    onAddComment={addComment}
+                    onEditComment={editComment}
                     projects={projects}
                   />
                 ) : (
                   <BoardView
                     threads={visibleThreads}
                     projects={projects}
+                    expandedCardId={expandedBoardCardId}
+                    onToggleExpand={(id) =>
+                      setExpandedBoardCardId((current) => (current === id ? undefined : id))
+                    }
                     onUpdate={updateThread}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
                     onUnarchive={unarchiveThread}
                     onOpen={openThread}
+                    onAddComment={addComment}
+                    onEditComment={editComment}
                   />
                 )}
               </div>
@@ -783,7 +811,9 @@ function ThreadList({
   onArchive,
   onUnarchive,
   onOpen,
-  onUpdate
+  onUpdate,
+  onAddComment,
+  onEditComment
 }: {
   threads: ThreadItem[];
   projects: Project[];
@@ -794,6 +824,8 @@ function ThreadList({
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
+  onAddComment: (threadId: string, body: string) => Promise<void>;
+  onEditComment: (commentId: number, body: string) => Promise<void>;
 }) {
   return (
     <div className="thin-scrollbar min-h-0 flex-1 overflow-auto">
@@ -832,6 +864,11 @@ function ThreadList({
                     <span className="truncate">{thread.updatedAt}</span>
                     <span>·</span>
                     <span className="truncate">{thread.module} · {thread.sprint}</span>
+                    <span>·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {thread.comments.length}
+                    </span>
                   </div>
                 </button>
                 <div className="min-w-0 space-y-1 text-left">
@@ -849,7 +886,7 @@ function ThreadList({
                 />
               </div>
               {expanded && (
-                <div className="min-w-0 space-y-2 bg-secondary/25 px-8 py-2 text-[11px]">
+                <div className="min-w-0 space-y-2 bg-secondary/25 px-4 py-2 text-[11px] sm:px-8">
                   <div className="text-foreground">{thread.preview}</div>
                   <div className="truncate text-muted-foreground">
                     cwd: <span className="font-mono">{thread.cwd}</span>
@@ -864,28 +901,39 @@ function ThreadList({
                     <span className="px-1">·</span>
                     notes: <span>{thread.notes || "--"}</span>
                   </div>
-                  <div className="grid gap-2 md:grid-cols-[140px_1fr_1fr_2fr]">
-                    <InlineSelect
-                      value={thread.taskType}
-                      values={taskTypes.map((value) => [value, value] as const)}
-                      onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
-                    />
-                    <InlineInput
-                      value={thread.module}
-                      placeholder="module"
-                      onChange={(module) => onUpdate(thread.id, { module })}
-                    />
-                    <InlineInput
-                      value={thread.sprint}
-                      placeholder="sprint"
-                      onChange={(sprint) => onUpdate(thread.id, { sprint })}
-                    />
-                    <InlineInput
-                      value={thread.notes}
-                      placeholder="notes"
-                      onChange={(notes) => onUpdate(thread.id, { notes })}
-                    />
-                  </div>
+                  <ThreadComments
+                    thread={thread}
+                    onAddComment={onAddComment}
+                    onEditComment={onEditComment}
+                  />
+                  <details className="rounded-md border bg-card">
+                    <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 font-medium">
+                      详情与字段
+                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    </summary>
+                    <div className="grid gap-2 border-t p-2 md:grid-cols-[140px_1fr_1fr_2fr]">
+                      <InlineSelect
+                        value={thread.taskType}
+                        values={taskTypes.map((value) => [value, value] as const)}
+                        onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
+                      />
+                      <InlineInput
+                        value={thread.module}
+                        placeholder="module"
+                        onChange={(module) => onUpdate(thread.id, { module })}
+                      />
+                      <InlineInput
+                        value={thread.sprint}
+                        placeholder="sprint"
+                        onChange={(sprint) => onUpdate(thread.id, { sprint })}
+                      />
+                      <InlineInput
+                        value={thread.notes}
+                        placeholder="notes"
+                        onChange={(notes) => onUpdate(thread.id, { notes })}
+                      />
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -918,6 +966,159 @@ function InlineSelect({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function ThreadComments({
+  thread,
+  onAddComment,
+  onEditComment
+}: {
+  thread: ThreadItem;
+  onAddComment: (threadId: string, body: string) => Promise<void>;
+  onEditComment: (commentId: number, body: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState<number | undefined>();
+  const [editingBody, setEditingBody] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submitDraft = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setSaving(true);
+    try {
+      await onAddComment(thread.id, body);
+      setDraft("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startEditing = (comment: ThreadComment) => {
+    setEditingId(comment.id);
+    setEditingBody(comment.body);
+  };
+
+  const submitEdit = async (commentId: number) => {
+    const body = editingBody.trim();
+    if (!body) return;
+    setSaving(true);
+    try {
+      await onEditComment(commentId, body);
+      setEditingId(undefined);
+      setEditingBody("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-md border bg-card">
+      <div className="flex h-8 items-center justify-between border-b px-2">
+        <div className="flex items-center gap-1.5 font-medium">
+          <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+          评论
+          <span className="text-[11px] text-muted-foreground">{thread.comments.length}</span>
+        </div>
+      </div>
+      <div className="space-y-2 p-2">
+        <div className="flex gap-1.5">
+          <textarea
+            value={draft}
+            placeholder="添加评论..."
+            className="min-h-8 flex-1 resize-y rounded-md border bg-background px-2 py-1.5 text-[12px] leading-5 outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void submitDraft();
+              }
+            }}
+          />
+          <Button
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-md"
+            disabled={saving || !draft.trim()}
+            onClick={submitDraft}
+            aria-label="保存评论"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        {thread.comments.length === 0 ? (
+          <div className="rounded-md bg-secondary/45 px-2 py-3 text-center text-muted-foreground">
+            暂无评论
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {thread.comments.map((comment) => {
+              const editing = editingId === comment.id;
+              return (
+                <article
+                  key={comment.id}
+                  data-comment-id={comment.id}
+                  className="border-t pt-2 first:border-t-0 first:pt-0"
+                >
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
+                      {comment.author.slice(0, 1) || "我"}
+                    </span>
+                    <span className="font-medium">{comment.author}</span>
+                    <span className="text-muted-foreground">{comment.createdAt}</span>
+                    {comment.editedAt && <span className="text-muted-foreground">已编辑</span>}
+                    <div className="ml-auto flex items-center gap-0.5">
+                      {editing ? (
+                        <IconButton label="取消编辑" onClick={() => setEditingId(undefined)}>
+                          <X className="h-3.5 w-3.5" />
+                        </IconButton>
+                      ) : (
+                        <IconButton label="编辑评论" onClick={() => startEditing(comment)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </IconButton>
+                      )}
+                    </div>
+                  </div>
+                  {editing ? (
+                    <div className="space-y-1 pl-6">
+                      <textarea
+                        value={editingBody}
+                        className="min-h-[72px] w-full resize-y rounded-md border bg-background px-2 py-1.5 text-[12px] leading-5 outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                        onChange={(event) => setEditingBody(event.target.value)}
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground">
+                          {editingBody.trim().length}/500
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingId(undefined)}
+                          >
+                            取消
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={saving || !editingBody.trim()}
+                            onClick={() => submitEdit(comment.id)}
+                            aria-label="保存编辑"
+                          >
+                            保存
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap pl-6 leading-5 text-foreground">{comment.body}</p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1013,81 +1214,151 @@ function IconButton({
 function BoardView({
   threads,
   projects,
+  expandedCardId,
+  onToggleExpand,
   onUpdate,
   onMarkReviewed,
   onArchive,
   onUnarchive,
-  onOpen
+  onOpen,
+  onAddComment,
+  onEditComment
 }: {
   threads: ThreadItem[];
   projects: Project[];
+  expandedCardId?: string;
+  onToggleExpand: (id: string) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
+  onAddComment: (threadId: string, body: string) => Promise<void>;
+  onEditComment: (commentId: number, body: string) => Promise<void>;
 }) {
   const columns: BoardStatus[] = ["review_pending", "reviewed", "archived"];
 
   return (
-    <div className="thin-scrollbar flex min-h-0 flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden p-2">
-      {columns.map((status) => {
-        const columnThreads = threads.filter((thread) => thread.boardStatus === status);
-        return (
-          <section
-            key={status}
-            className="flex min-h-0 min-w-[292px] flex-1 flex-col rounded-md border bg-secondary/25"
-          >
-            <div className="flex h-9 items-center justify-between border-b bg-card px-2">
-              <div className="flex items-center gap-1.5 font-medium">
-                <Badge variant={statusTone[status]}>{statusLabels[status]}</Badge>
-                <span className="text-[11px] text-muted-foreground">{columnThreads.length}</span>
-              </div>
-            </div>
-            <div className="thin-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-              {columnThreads.map((thread) => (
-                <div key={thread.id} className="rounded-md border bg-card p-2 shadow-sm">
-                  <div className="line-clamp-2 font-medium">{thread.title}</div>
-                  <div className="mt-1 truncate text-[11px] text-muted-foreground">
-                    {projectName(projects, thread.projectId)} · {thread.module}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    <Badge variant="outline">{thread.taskType}</Badge>
-                    <Badge variant="secondary">{thread.sprint}</Badge>
-                  </div>
-                  <div className="mt-2 grid grid-cols-1 gap-1">
-                    <InlineSelect
-                      value={thread.taskType}
-                      values={taskTypes.map((value) => [value, value] as const)}
-                      onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
-                    />
-                    <InlineInput
-                      value={thread.module}
-                      placeholder="module"
-                      onChange={(module) => onUpdate(thread.id, { module })}
-                    />
-                    <InlineInput
-                      value={thread.sprint}
-                      placeholder="sprint"
-                      onChange={(sprint) => onUpdate(thread.id, { sprint })}
-                    />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{thread.updatedAt}</span>
-                    <RowActions
-                      thread={thread}
-                      onOpen={onOpen}
-                      onMarkReviewed={onMarkReviewed}
-                      onArchive={onArchive}
-                      onUnarchive={onUnarchive}
-                    />
-                  </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="thin-scrollbar flex min-h-0 flex-1 items-stretch gap-2 overflow-x-auto overflow-y-hidden p-2">
+        {columns.map((status) => {
+          const columnThreads = threads.filter((thread) => thread.boardStatus === status);
+          return (
+            <section
+              key={status}
+              aria-label={`${statusLabels[status]}列`}
+              className="flex min-h-0 min-w-[288px] max-w-[360px] flex-[0_0_78%] flex-col rounded-md border bg-secondary/25 sm:flex-[0_0_48%] lg:flex-1"
+            >
+              <div className="flex h-9 items-center justify-between border-b bg-card px-2">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Badge variant={statusTone[status]}>{statusLabels[status]}</Badge>
+                  <span className="text-[11px] text-muted-foreground">{columnThreads.length}</span>
                 </div>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+                <span className="text-[11px] text-muted-foreground">横向紧凑</span>
+              </div>
+              <div className="thin-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                {columnThreads.map((thread) => {
+                  const expanded = expandedCardId === thread.id;
+                  const latestComment = thread.comments[0];
+                  return (
+                    <div
+                      key={thread.id}
+                      className={cn(
+                        "rounded-md border bg-card p-2 shadow-sm",
+                        expanded && "border-primary/70 ring-1 ring-primary/30"
+                      )}
+                    >
+                      <button
+                        className="w-full text-left"
+                        onClick={() => onToggleExpand(thread.id)}
+                      >
+                        <div className="flex items-start gap-1.5">
+                          {expanded ? (
+                            <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="line-clamp-2 font-medium">{thread.title}</div>
+                            <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                              {projectName(projects, thread.projectId)} · {thread.module || "module"}
+                            </div>
+                          </div>
+                          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            {thread.comments.length}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1 pl-5">
+                          <Badge variant={statusTone[thread.boardStatus]}>
+                            {statusLabels[thread.boardStatus]}
+                          </Badge>
+                          <Badge variant="outline">{thread.taskType}</Badge>
+                          <Badge variant="secondary">{thread.sprint || "sprint"}</Badge>
+                        </div>
+                        {latestComment && !expanded && (
+                          <div className="mt-2 line-clamp-2 rounded bg-secondary/45 px-2 py-1 text-[11px] leading-4 text-muted-foreground">
+                            {latestComment.author}：{latestComment.body}
+                          </div>
+                        )}
+                      </button>
+
+                      {expanded && (
+                        <div className="mt-2 space-y-2">
+                          <ThreadComments
+                            thread={thread}
+                            onAddComment={onAddComment}
+                            onEditComment={onEditComment}
+                          />
+                          <details className="rounded-md border bg-secondary/35">
+                            <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 text-[11px] font-medium">
+                              详情与字段
+                              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                            </summary>
+                            <div className="grid grid-cols-1 gap-1 border-t p-2">
+                              <InlineSelect
+                                value={thread.taskType}
+                                values={taskTypes.map((value) => [value, value] as const)}
+                                onChange={(value) =>
+                                  onUpdate(thread.id, { taskType: value as TaskType })
+                                }
+                              />
+                              <InlineInput
+                                value={thread.module}
+                                placeholder="module"
+                                onChange={(module) => onUpdate(thread.id, { module })}
+                              />
+                              <InlineInput
+                                value={thread.sprint}
+                                placeholder="sprint"
+                                onChange={(sprint) => onUpdate(thread.id, { sprint })}
+                              />
+                            </div>
+                          </details>
+                        </div>
+                      )}
+
+                      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>{thread.updatedAt}</span>
+                        <RowActions
+                          thread={thread}
+                          onOpen={onOpen}
+                          onMarkReviewed={onMarkReviewed}
+                          onArchive={onArchive}
+                          onUnarchive={onUnarchive}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+      <div className="border-t bg-card/70 px-3 py-1.5 text-[11px] text-muted-foreground">
+        左右滚动查看更多列
+      </div>
     </div>
   );
 }
@@ -1294,7 +1565,16 @@ function mapBoardData(data: BoardData): MappedBoardData {
       createdAt: formatTimestamp(thread.created_at),
       lastSeenRunningAt: thread.last_seen_running_at ? formatTimestamp(thread.last_seen_running_at) : undefined,
       archivedAt: thread.archived_at ? formatTimestamp(thread.archived_at) : undefined,
-      notes: thread.notes
+      notes: thread.notes,
+      comments: (thread.comments ?? []).map((comment) => ({
+        id: comment.id,
+        threadId: comment.thread_id,
+        author: comment.author,
+        body: comment.body,
+        createdAt: formatTimestamp(comment.created_at),
+        updatedAt: formatTimestamp(comment.updated_at),
+        editedAt: comment.edited_at ? formatTimestamp(comment.edited_at) : undefined
+      }))
     }))
   };
 }

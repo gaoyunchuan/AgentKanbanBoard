@@ -51,7 +51,27 @@ const backendThreads: BoardData["threads"] = [
     manual_status_override: false,
     archived_at: null,
     created_at: "2026-06-24T10:22:40Z",
-    updated_at: "2026-06-24T10:23:20Z"
+    updated_at: "2026-06-24T10:23:20Z",
+    comments: [
+      {
+        id: 1,
+        thread_id: "019ef927-4206-7823-a752-eb0364a6f11b",
+        author: "我",
+        body: "先记录同步间隔需要调整。",
+        created_at: "2026-06-24T10:25:00Z",
+        updated_at: "2026-06-24T10:25:00Z",
+        edited_at: null
+      },
+      {
+        id: 2,
+        thread_id: "019ef927-4206-7823-a752-eb0364a6f11b",
+        author: "我",
+        body: "补充离线态提示。",
+        created_at: "2026-06-24T10:26:00Z",
+        updated_at: "2026-06-24T10:26:00Z",
+        edited_at: "2026-06-24T10:27:00Z"
+      }
+    ]
   },
   {
     id: "019ef88b-6207-7122-9f6e-da4d6d52a9ba",
@@ -74,7 +94,8 @@ const backendThreads: BoardData["threads"] = [
     manual_status_override: false,
     archived_at: null,
     created_at: "2026-06-24T07:32:24Z",
-    updated_at: "2026-06-24T07:32:38Z"
+    updated_at: "2026-06-24T07:32:38Z",
+    comments: []
   }
 ];
 
@@ -85,7 +106,7 @@ describe("Codex Kanban App", () => {
     localStorage.clear();
     currentThreads = backendThreads.map((thread) => ({ ...thread }));
     invokeMock.mockReset();
-    invokeMock.mockImplementation((command: string, args?: { threadId?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"] }) => {
+    invokeMock.mockImplementation((command: string, args?: { threadId?: string; commentId?: number; body?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"] }) => {
       if (command === "load_board_data") {
         return Promise.resolve({
           threads: currentThreads,
@@ -134,11 +155,49 @@ describe("Codex Kanban App", () => {
             : thread
         );
       }
+      if (command === "create_thread_comment" && args?.threadId && args.body) {
+        currentThreads = currentThreads.map((thread) =>
+          thread.id === args.threadId
+            ? {
+                ...thread,
+                comments: [
+                  {
+                    id: 3,
+                    thread_id: args.threadId,
+                    author: "我",
+                    body: args.body,
+                    created_at: "2026-06-24T10:28:00Z",
+                    updated_at: "2026-06-24T10:28:00Z",
+                    edited_at: null
+                  },
+                  ...((thread as any).comments ?? [])
+                ]
+              }
+            : thread
+        );
+      }
+      if (command === "update_thread_comment" && args?.commentId && args.body) {
+        currentThreads = currentThreads.map((thread) => ({
+          ...thread,
+          comments: ((thread as any).comments ?? []).map((comment: any) =>
+            comment.id === args.commentId
+              ? {
+                  ...comment,
+                  body: args.body,
+                  updated_at: "2026-06-24T10:29:00Z",
+                  edited_at: "2026-06-24T10:29:00Z"
+                }
+              : comment
+          )
+        }));
+      }
       if (
         command === "mark_thread_reviewed" ||
         command === "archive_thread" ||
         command === "unarchive_thread" ||
-        command === "update_thread_fields"
+        command === "update_thread_fields" ||
+        command === "create_thread_comment" ||
+        command === "update_thread_comment"
       ) {
         return Promise.resolve({
           threads: currentThreads,
@@ -231,9 +290,11 @@ describe("Codex Kanban App", () => {
 
     await user.click(await screen.findByRole("tab", { name: /看板/ }));
 
-    expect(screen.getAllByText("待审核")).toHaveLength(2);
-    expect(screen.getAllByText("运行中")).toHaveLength(2);
-    expect(screen.getAllByText("未分类")).toHaveLength(2);
+    expect(screen.getByLabelText("待审核列")).toBeInTheDocument();
+    expect(screen.getByLabelText("已审核列")).toBeInTheDocument();
+    expect(screen.getByLabelText("已归档列")).toBeInTheDocument();
+    expect(screen.queryByLabelText("运行中列")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("未分类列")).not.toBeInTheDocument();
   });
 
   test("shows archived cards in board view when archived filter is enabled", async () => {
@@ -270,6 +331,39 @@ describe("Codex Kanban App", () => {
 
     expect(screen.getByDisplayValue("Matcher")).toBeInTheDocument();
     expect(invokeMock).toHaveBeenCalledWith("update_thread_fields", expect.any(Object));
+  });
+
+  test("adds and edits comments from an expanded list row", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByText("接入真实数据"));
+    expect(screen.getByText("先记录同步间隔需要调整。")).toBeInTheDocument();
+    expect(screen.getByText("补充离线态提示。")).toBeInTheDocument();
+    expect(screen.getByText("已编辑")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("添加评论..."), "新增排查备注");
+    await user.click(screen.getByRole("button", { name: "保存评论" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("create_thread_comment", {
+      threadId: "019ef927-4206-7823-a752-eb0364a6f11b",
+      body: "新增排查备注"
+    });
+    expect(await screen.findByText("新增排查备注")).toBeInTheDocument();
+
+    const comment = screen.getByText("补充离线态提示。").closest("[data-comment-id]");
+    if (!comment) throw new Error("评论未渲染");
+    await user.click(within(comment as HTMLElement).getByRole("button", { name: "编辑评论" }));
+    const editor = within(comment as HTMLElement).getByDisplayValue("补充离线态提示。");
+    await user.clear(editor);
+    await user.type(editor, "补充离线态提示，避免误触。");
+    await user.click(within(comment as HTMLElement).getByRole("button", { name: "保存编辑" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("update_thread_comment", {
+      commentId: 2,
+      body: "补充离线态提示，避免误触。"
+    });
+    expect(await screen.findByText("补充离线态提示，避免误触。")).toBeInTheDocument();
   });
 
   test("marks reviewed, archives, and restores a thread", async () => {

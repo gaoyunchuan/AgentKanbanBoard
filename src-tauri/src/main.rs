@@ -1,6 +1,8 @@
 use codex_kanban::config::AppConfig;
 use codex_kanban::deeplink::{ensure_codex_deeplink, project_deeplink, thread_deeplink};
-use codex_kanban::domain::{FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadRecord};
+use codex_kanban::domain::{
+    FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadRecord,
+};
 use codex_kanban::project_matcher::ProjectRule;
 use codex_kanban::repository::Repository;
 use codex_kanban::thread_sync::{CodexAppServerClient, ReadOnlyCodexClient, ThreadSync};
@@ -41,6 +43,38 @@ fn update_thread_fields(
 
     repository
         .update_thread_fields(&thread_id, parsed_task_type, &module, &sprint, &notes)
+        .map_err(|error| error.to_string())?;
+    read_board_data(&repository, None)
+}
+
+#[tauri::command]
+fn create_thread_comment(thread_id: String, body: String) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    let body = body.trim();
+    if body.is_empty() {
+        return Err("评论不能为空".to_string());
+    }
+
+    repository
+        .add_thread_comment(ThreadCommentInput {
+            thread_id,
+            author: "我".to_string(),
+            body: body.to_string(),
+        })
+        .map_err(|error| error.to_string())?;
+    read_board_data(&repository, None)
+}
+
+#[tauri::command]
+fn update_thread_comment(comment_id: i64, body: String) -> Result<BoardData, String> {
+    let repository = open_repository()?;
+    let body = body.trim();
+    if body.is_empty() {
+        return Err("评论不能为空".to_string());
+    }
+
+    repository
+        .update_thread_comment(comment_id, body)
         .map_err(|error| error.to_string())?;
     read_board_data(&repository, None)
 }
@@ -225,6 +259,8 @@ fn main() {
             load_board_data,
             sync_codex_threads,
             update_thread_fields,
+            create_thread_comment,
+            update_thread_comment,
             mark_thread_reviewed,
             archive_thread,
             unarchive_thread,

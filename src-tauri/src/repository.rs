@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::domain::{
     BoardStatus, CodexThreadUpsert, FilterPreset, FilterQuery, ProjectInput, ProjectRecord,
-    TaskType, ThreadEventInput, ThreadRecord,
+    TaskType, ThreadCommentInput, ThreadCommentRecord, ThreadEventInput, ThreadRecord,
 };
 use crate::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
 use crate::time::current_utc_text;
@@ -179,6 +179,56 @@ impl Repository {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn add_thread_comment(
+        &self,
+        input: ThreadCommentInput,
+    ) -> rusqlite::Result<ThreadCommentRecord> {
+        let now = self.now_text();
+        self.connection.execute(
+            "INSERT INTO thread_comments (thread_id, author, body, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![input.thread_id, input.author, input.body, now],
+        )?;
+        let id = self.connection.last_insert_rowid();
+        self.touch_thread(&input.thread_id)?;
+        self.get_thread_comment(id)
+    }
+
+    pub fn update_thread_comment(
+        &self,
+        comment_id: i64,
+        body: &str,
+    ) -> rusqlite::Result<ThreadCommentRecord> {
+        let now = self.now_text();
+        let thread_id: String = self.connection.query_row(
+            "SELECT thread_id FROM thread_comments WHERE id = ?1",
+            params![comment_id],
+            |row| row.get(0),
+        )?;
+        self.connection.execute(
+            "UPDATE thread_comments
+             SET body = ?2, updated_at = ?3, edited_at = ?3
+             WHERE id = ?1",
+            params![comment_id, body, now],
+        )?;
+        self.touch_thread(&thread_id)?;
+        self.get_thread_comment(comment_id)
+    }
+
+    pub fn list_thread_comments(
+        &self,
+        thread_id: &str,
+    ) -> rusqlite::Result<Vec<ThreadCommentRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, thread_id, author, body, created_at, updated_at, edited_at
+             FROM thread_comments
+             WHERE thread_id = ?1
+             ORDER BY created_at DESC, id DESC",
+        )?;
+        let rows = statement.query_map(params![thread_id], thread_comment_from_row)?;
+        rows.collect()
     }
 
     pub fn mark_reviewed(&self, thread_id: &str) -> rusqlite::Result<()> {
@@ -592,15 +642,50 @@ impl Repository {
                 archived_at: row.get(19)?,
                 created_at: row.get(20)?,
                 updated_at: row.get(21)?,
+                comments: Vec::new(),
             })
         })?;
 
-        rows.collect()
+        let mut records = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        for record in &mut records {
+            record.comments = self.list_thread_comments(&record.id)?;
+        }
+        Ok(records)
     }
 
     fn now_text(&self) -> String {
         (self.clock)()
     }
+
+    fn touch_thread(&self, thread_id: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE codex_threads SET updated_at = ?2 WHERE id = ?1",
+            params![thread_id, self.now_text()],
+        )?;
+        Ok(())
+    }
+
+    fn get_thread_comment(&self, comment_id: i64) -> rusqlite::Result<ThreadCommentRecord> {
+        self.connection.query_row(
+            "SELECT id, thread_id, author, body, created_at, updated_at, edited_at
+             FROM thread_comments
+             WHERE id = ?1",
+            params![comment_id],
+            thread_comment_from_row,
+        )
+    }
+}
+
+fn thread_comment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadCommentRecord> {
+    Ok(ThreadCommentRecord {
+        id: row.get(0)?,
+        thread_id: row.get(1)?,
+        author: row.get(2)?,
+        body: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+        edited_at: row.get(6)?,
+    })
 }
 
 fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
