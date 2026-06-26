@@ -7,11 +7,14 @@ use crate::domain::{
     TaskType, ThreadEventInput, ThreadRecord,
 };
 use crate::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
+use crate::time::current_utc_text;
 
 const INIT_SQL: &str = include_str!("../db/001_init.sql");
+const LEGACY_FIXED_NOW_TEXT: &str = "2026-06-24T00:00:00Z";
 
 pub struct Repository {
     connection: Connection,
+    clock: Box<dyn Fn() -> String>,
 }
 
 impl Repository {
@@ -25,21 +28,32 @@ impl Repository {
     }
 
     pub fn open_path(path: &Path) -> rusqlite::Result<Self> {
+        Self::open_path_with_clock(path, Box::new(current_utc_text))
+    }
+
+    pub fn open_path_with_clock(
+        path: &Path,
+        clock: Box<dyn Fn() -> String>,
+    ) -> rusqlite::Result<Self> {
         let connection = Connection::open(path)?;
         connection.execute_batch(INIT_SQL)?;
-        migrate_schema(&connection)?;
-        Ok(Self { connection })
+        migrate_schema(&connection, &clock())?;
+        Ok(Self { connection, clock })
     }
 
     pub fn open_in_memory() -> rusqlite::Result<Self> {
+        Self::open_in_memory_with_clock(Box::new(current_utc_text))
+    }
+
+    pub fn open_in_memory_with_clock(clock: Box<dyn Fn() -> String>) -> rusqlite::Result<Self> {
         let connection = Connection::open_in_memory()?;
         connection.execute_batch(INIT_SQL)?;
-        migrate_schema(&connection)?;
-        Ok(Self { connection })
+        migrate_schema(&connection, &clock())?;
+        Ok(Self { connection, clock })
     }
 
     pub fn upsert_project(&self, input: ProjectInput) -> rusqlite::Result<()> {
-        let now = now_text();
+        let now = self.now_text();
         let aliases_json = serde_json::to_string(&input.aliases)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
 
@@ -93,7 +107,7 @@ impl Repository {
     }
 
     pub fn upsert_thread(&self, input: CodexThreadUpsert) -> rusqlite::Result<()> {
-        let now = now_text();
+        let now = self.now_text();
         let raw_json = serde_json::to_string(&input.raw_json)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         let current_status = self.current_board_status(&input.id)?;
@@ -161,7 +175,7 @@ impl Repository {
                 module,
                 sprint,
                 notes,
-                now_text()
+                self.now_text()
             ],
         )?;
         Ok(())
@@ -181,7 +195,7 @@ impl Repository {
                  archived_at = ?2,
                  updated_at = ?2
              WHERE id = ?1",
-            params![thread_id, now_text()],
+            params![thread_id, self.now_text()],
         )?;
         self.insert_event(ThreadEventInput {
             thread_id: thread_id.to_string(),
@@ -203,7 +217,7 @@ impl Repository {
                  archived_at = NULL,
                  updated_at = ?2
              WHERE id = ?1",
-            params![thread_id, now_text()],
+            params![thread_id, self.now_text()],
         )?;
         self.insert_event(ThreadEventInput {
             thread_id: thread_id.to_string(),
@@ -242,7 +256,7 @@ impl Repository {
         for (id, name, filters_json) in presets {
             let filters_json = serde_json::to_string(&filters_json)
                 .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-            let now = now_text();
+            let now = self.now_text();
             self.connection.execute(
                 "INSERT INTO filter_presets (id, name, builtin, filters_json, created_at, updated_at)
                  VALUES (?1, ?2, 1, ?3, ?4, ?4)
@@ -369,7 +383,7 @@ impl Repository {
                  archived_at = CASE WHEN ?2 = 'running' THEN NULL ELSE archived_at END,
                  updated_at = ?3
              WHERE id = ?1",
-            params![thread_id, status.as_str(), now_text()],
+            params![thread_id, status.as_str(), self.now_text()],
         )?;
         self.insert_event(ThreadEventInput {
             thread_id: thread_id.to_string(),
@@ -396,7 +410,7 @@ impl Repository {
                  archived_at = NULL,
                  updated_at = ?2
              WHERE id = ?1",
-            params![thread_id, now_text()],
+            params![thread_id, self.now_text()],
         )?;
 
         if changed {
@@ -427,7 +441,7 @@ impl Repository {
                  archived_at = COALESCE(archived_at, ?2),
                  updated_at = ?2
              WHERE id = ?1",
-            params![thread_id, now_text()],
+            params![thread_id, self.now_text()],
         )?;
 
         if changed {
@@ -475,7 +489,7 @@ impl Repository {
 
             self.connection.execute(
                 "UPDATE codex_threads SET project_id = ?2, updated_at = ?3 WHERE id = ?1",
-                params![thread.id, next_project_id, now_text()],
+                params![thread.id, next_project_id, self.now_text()],
             )?;
             changed += 1;
         }
@@ -493,7 +507,7 @@ impl Repository {
                 input.from_status.map(|value| value.as_str().to_string()),
                 input.to_status.map(|value| value.as_str().to_string()),
                 input.reason,
-                now_text()
+                self.now_text()
             ],
         )?;
         Ok(())
@@ -514,7 +528,12 @@ impl Repository {
                  manual_status_updated_at = CASE WHEN ?3 = 1 THEN ?4 ELSE NULL END,
                  updated_at = ?4
              WHERE id = ?1",
-            params![thread_id, status.as_str(), bool_to_i64(manual), now_text()],
+            params![
+                thread_id,
+                status.as_str(),
+                bool_to_i64(manual),
+                self.now_text()
+            ],
         )?;
         self.insert_event(ThreadEventInput {
             thread_id: thread_id.to_string(),
@@ -578,9 +597,13 @@ impl Repository {
 
         rows.collect()
     }
+
+    fn now_text(&self) -> String {
+        (self.clock)()
+    }
 }
 
-fn migrate_schema(connection: &Connection) -> rusqlite::Result<()> {
+fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     let has_manual_status_updated_at = connection
         .prepare("PRAGMA table_info(codex_threads)")?
         .query_map([], |row| row.get::<_, String>(1))?
@@ -595,6 +618,14 @@ fn migrate_schema(connection: &Connection) -> rusqlite::Result<()> {
         )?;
     }
 
+    connection.execute(
+        "UPDATE codex_threads
+         SET manual_status_updated_at = ?1
+         WHERE manual_status_override = 1
+           AND manual_status_updated_at = ?2",
+        params![now, LEGACY_FIXED_NOW_TEXT],
+    )?;
+
     Ok(())
 }
 
@@ -608,10 +639,6 @@ fn bool_to_i64(value: bool) -> i64 {
 
 fn int_to_bool(value: i64) -> bool {
     value != 0
-}
-
-fn now_text() -> String {
-    "2026-06-24T00:00:00Z".to_string()
 }
 
 fn default_app_db_path() -> std::path::PathBuf {

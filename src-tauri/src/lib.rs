@@ -2,6 +2,7 @@ pub mod config;
 pub mod deeplink;
 pub mod domain;
 pub mod repository;
+pub mod time;
 
 #[path = "../services/BoardStatusMapper.rs"]
 pub mod board_status_mapper;
@@ -64,6 +65,10 @@ mod tests {
             created_at: "2026-06-24T00:00:00Z".to_string(),
             updated_at: updated_at.to_string(),
         }
+    }
+
+    fn fixed_clock(value: &'static str) -> Box<dyn Fn() -> String> {
+        Box::new(move || value.to_string())
     }
 
     #[test]
@@ -380,7 +385,8 @@ mod tests {
 
     #[test]
     fn repository_combines_filters_and_keeps_reviewed_retention_queryable() {
-        let repo = Repository::open_in_memory().unwrap();
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-24T12:05:00Z")).unwrap();
         repo.upsert_thread(CodexThreadUpsert {
             id: "t1".to_string(),
             project_id: Some("p1".to_string()),
@@ -487,7 +493,9 @@ mod tests {
             .unwrap();
         drop(connection);
 
-        let repo = Repository::open_path(&temp_path).unwrap();
+        let repo =
+            Repository::open_path_with_clock(&temp_path, fixed_clock("2026-06-24T00:00:00Z"))
+                .unwrap();
         repo.upsert_thread(CodexThreadUpsert::minimal("t-old-schema"))
             .unwrap();
         repo.mark_reviewed("t-old-schema").unwrap();
@@ -496,6 +504,57 @@ mod tests {
         assert_eq!(
             stored.manual_status_updated_at.as_deref(),
             Some("2026-06-24T00:00:00Z")
+        );
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn repository_repairs_legacy_manual_status_timestamp_on_open() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "codex-kanban-legacy-manual-time-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp_path);
+        {
+            let repo =
+                Repository::open_path_with_clock(&temp_path, fixed_clock("2026-06-26T03:00:00Z"))
+                    .unwrap();
+            repo.upsert_thread(CodexThreadUpsert::minimal("t-legacy-time"))
+                .unwrap();
+            repo.mark_reviewed("t-legacy-time").unwrap();
+        }
+
+        {
+            let repo =
+                Repository::open_path_with_clock(&temp_path, fixed_clock("2026-06-26T04:00:00Z"))
+                    .unwrap();
+            let stored = repo.get_thread("t-legacy-time").unwrap().unwrap();
+            assert_eq!(
+                stored.manual_status_updated_at.as_deref(),
+                Some("2026-06-26T03:00:00Z")
+            );
+        }
+
+        {
+            let connection = rusqlite::Connection::open(&temp_path).unwrap();
+            connection
+                .execute(
+                    "UPDATE codex_threads
+                     SET manual_status_updated_at = '2026-06-24T00:00:00Z'
+                     WHERE id = 't-legacy-time'",
+                    [],
+                )
+                .unwrap();
+        }
+
+        let repo =
+            Repository::open_path_with_clock(&temp_path, fixed_clock("2026-06-26T05:00:00Z"))
+                .unwrap();
+        let stored = repo.get_thread("t-legacy-time").unwrap().unwrap();
+
+        assert_eq!(
+            stored.manual_status_updated_at.as_deref(),
+            Some("2026-06-26T05:00:00Z")
         );
         let _ = std::fs::remove_file(&temp_path);
     }
@@ -757,7 +816,8 @@ mod tests {
 
     #[test]
     fn thread_sync_reopens_reviewed_thread_when_codex_updated_after_manual_status() {
-        let repo = Repository::open_in_memory().unwrap();
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-24T00:00:00Z")).unwrap();
         repo.upsert_thread(CodexThreadUpsert::minimal("t-reviewed"))
             .unwrap();
         repo.mark_reviewed("t-reviewed").unwrap();
@@ -775,8 +835,69 @@ mod tests {
     }
 
     #[test]
+    fn thread_sync_keeps_reviewed_thread_when_manual_review_is_newer_than_codex_update() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T03:00:00Z")).unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal(
+            "019f01cd-1308-7a00-ad1f-62de1725c9aa",
+        ))
+        .unwrap();
+        repo.mark_reviewed("019f01cd-1308-7a00-ad1f-62de1725c9aa")
+            .unwrap();
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![synced_thread(
+                "019f01cd-1308-7a00-ad1f-62de1725c9aa",
+                "idle",
+                "2026-06-26T02:47:53Z",
+            )],
+        }));
+
+        sync.sync_recent_into(&repo, &[], &AppConfig::default(), "2026-06-26T03:05:00Z")
+            .unwrap();
+        let stored = repo
+            .get_thread("019f01cd-1308-7a00-ad1f-62de1725c9aa")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(stored.board_status, BoardStatus::Reviewed);
+        assert!(stored.manual_status_override);
+        assert_eq!(
+            stored.manual_status_updated_at.as_deref(),
+            Some("2026-06-26T03:00:00Z")
+        );
+    }
+
+    #[test]
+    fn repository_events_use_injected_clock_for_manual_review() {
+        let temp_path =
+            std::env::temp_dir().join(format!("codex-kanban-events-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&temp_path);
+        {
+            let repo =
+                Repository::open_path_with_clock(&temp_path, fixed_clock("2026-06-26T03:00:00Z"))
+                    .unwrap();
+            repo.upsert_thread(CodexThreadUpsert::minimal("t-event-time"))
+                .unwrap();
+            repo.mark_reviewed("t-event-time").unwrap();
+        }
+
+        let connection = rusqlite::Connection::open(&temp_path).unwrap();
+        let created_at: String = connection
+            .query_row(
+                "SELECT created_at FROM thread_events WHERE thread_id = 't-event-time'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(created_at, "2026-06-26T03:00:00Z");
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
     fn thread_sync_reopens_manually_archived_thread_when_codex_updated_after_manual_status() {
-        let repo = Repository::open_in_memory().unwrap();
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-24T00:00:00Z")).unwrap();
         repo.upsert_thread(CodexThreadUpsert::minimal("t-archived-manual"))
             .unwrap();
         repo.archive_thread("t-archived-manual").unwrap();
@@ -801,7 +922,8 @@ mod tests {
 
     #[test]
     fn thread_sync_preserves_manual_status_when_codex_update_is_not_newer() {
-        let repo = Repository::open_in_memory().unwrap();
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-24T00:00:00Z")).unwrap();
         repo.upsert_thread(CodexThreadUpsert::minimal("t-reviewed-old"))
             .unwrap();
         repo.mark_reviewed("t-reviewed-old").unwrap();
@@ -827,7 +949,8 @@ mod tests {
 
     #[test]
     fn thread_sync_running_update_overrides_stale_manual_archive() {
-        let repo = Repository::open_in_memory().unwrap();
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-24T00:00:00Z")).unwrap();
         repo.upsert_thread(CodexThreadUpsert::minimal("t-running-after-archive"))
             .unwrap();
         repo.archive_thread("t-running-after-archive").unwrap();
@@ -851,7 +974,8 @@ mod tests {
 
     #[test]
     fn thread_sync_codex_archive_and_stale_still_archive_after_manual_status() {
-        let repo = Repository::open_in_memory().unwrap();
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-24T00:00:00Z")).unwrap();
         for id in ["t-codex-archived", "t-stale-after-review"] {
             repo.upsert_thread(CodexThreadUpsert::minimal(id)).unwrap();
             repo.mark_reviewed(id).unwrap();
