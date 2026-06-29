@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::domain::{
@@ -725,10 +726,33 @@ impl Repository {
         })?;
 
         let mut records = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut comments_by_thread = self.list_all_thread_comments_by_thread()?;
         for record in &mut records {
-            record.comments = self.list_thread_comments(&record.id)?;
+            record.comments = comments_by_thread.remove(&record.id).unwrap_or_default();
         }
         Ok(records)
+    }
+
+    fn list_all_thread_comments_by_thread(
+        &self,
+    ) -> rusqlite::Result<HashMap<String, Vec<ThreadCommentRecord>>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, thread_id, author, body, created_at, updated_at, edited_at
+             FROM thread_comments
+             ORDER BY thread_id ASC, created_at DESC, id DESC",
+        )?;
+        let rows = statement.query_map([], thread_comment_from_row)?;
+        let mut comments_by_thread: HashMap<String, Vec<ThreadCommentRecord>> = HashMap::new();
+
+        for row in rows {
+            let comment = row?;
+            comments_by_thread
+                .entry(comment.thread_id.clone())
+                .or_default()
+                .push(comment);
+        }
+
+        Ok(comments_by_thread)
     }
 
     fn now_text(&self) -> String {

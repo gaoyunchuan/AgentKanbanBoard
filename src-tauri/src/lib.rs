@@ -427,6 +427,67 @@ mod tests {
     }
 
     #[test]
+    fn repository_lists_multiple_threads_with_grouped_comment_order() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
+        repo.upsert_thread(CodexThreadUpsert {
+            id: "t-first".to_string(),
+            updated_at: "2026-06-26T09:00:00Z".to_string(),
+            ..CodexThreadUpsert::minimal("t-first")
+        })
+        .unwrap();
+        repo.upsert_thread(CodexThreadUpsert {
+            id: "t-second".to_string(),
+            updated_at: "2026-06-26T10:00:00Z".to_string(),
+            ..CodexThreadUpsert::minimal("t-second")
+        })
+        .unwrap();
+
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "t-first".to_string(),
+            author: "我".to_string(),
+            body: "first old".to_string(),
+            suspend_until: None,
+        })
+        .unwrap();
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "t-second".to_string(),
+            author: "我".to_string(),
+            body: "second only".to_string(),
+            suspend_until: None,
+        })
+        .unwrap();
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "t-first".to_string(),
+            author: "我".to_string(),
+            body: "first new".to_string(),
+            suspend_until: None,
+        })
+        .unwrap();
+
+        let records = repo
+            .list_threads(FilterQuery {
+                include_archived: true,
+                ..FilterQuery::default()
+            })
+            .unwrap();
+        let first = records
+            .iter()
+            .find(|thread| thread.id == "t-first")
+            .unwrap();
+        let second = records
+            .iter()
+            .find(|thread| thread.id == "t-second")
+            .unwrap();
+
+        assert_eq!(first.comments.len(), 2);
+        assert_eq!(first.comments[0].body, "first new");
+        assert_eq!(first.comments[1].body, "first old");
+        assert_eq!(second.comments.len(), 1);
+        assert_eq!(second.comments[0].body, "second only");
+    }
+
+    #[test]
     fn repository_suspends_thread_when_comment_includes_wake_time() {
         let repo =
             Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
@@ -474,6 +535,7 @@ mod tests {
         assert_eq!(stored.board_status, BoardStatus::ReviewPending);
         assert_eq!(stored.suspended_until, None);
         assert!(!stored.manual_status_override);
+        assert_eq!(repo.count_thread_events("t-due").unwrap(), 2);
     }
 
     #[test]

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive,
   CheckCircle2,
@@ -44,6 +45,7 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip";
+import { sameProjectList, sameThreadList } from "@/boardDataEquality";
 import { cn } from "@/lib/utils";
 import type {
   BoardData,
@@ -108,8 +110,8 @@ const unknownProject: Project = {
   active: true
 };
 
-const projectName = (projects: Project[], projectId: string) =>
-  projects.find((project) => project.id === projectId)?.name ?? "Unknown";
+const projectName = (projectNames: Map<string, string>, projectId: string) =>
+  projectNames.get(projectId) ?? "Unknown";
 
 const countByStatus = (threads: ThreadItem[], status: BoardStatus) =>
   threads.filter((thread) => thread.boardStatus === status).length;
@@ -125,12 +127,16 @@ function App() {
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
   const [expandedBoardCardId, setExpandedBoardCardId] = useState<string | undefined>();
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
+  const projectNames = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.name])),
+    [projects]
+  );
 
   const visibleThreads = useMemo(() => {
-    return applyFilters(applyView(threads, view, filters.showArchived), filters, projects)
+    return applyFilters(applyView(threads, view, filters.showArchived), filters, projectNames)
       .slice()
       .sort((a, b) => rankThread(a, view) - rankThread(b, view));
-  }, [filters, projects, threads, view]);
+  }, [filters, projectNames, threads, view]);
 
   const counts = useMemo(
     () => ({
@@ -453,6 +459,7 @@ function App() {
                 {layout === "list" ? (
                   <ThreadList
                     threads={visibleThreads}
+                    projectNames={projectNames}
                     expandedRows={expandedRows}
                     onToggleExpand={(id) =>
                       setExpandedRows((current) =>
@@ -468,12 +475,11 @@ function App() {
                     onUpdate={updateThread}
                     onAddComment={addComment}
                     onEditComment={editComment}
-                    projects={projects}
                   />
                 ) : (
                   <BoardView
                     threads={visibleThreads}
-                    projects={projects}
+                    projectNames={projectNames}
                     expandedCardId={expandedBoardCardId}
                     onToggleExpand={(id) =>
                       setExpandedBoardCardId((current) => (current === id ? undefined : id))
@@ -499,10 +505,11 @@ function App() {
 function useBoardData() {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([unknownProject]);
+  const silentSyncInFlight = useRef(false);
 
   const applyBoardData = useCallback((data: MappedBoardData) => {
-    setThreads(data.threads);
-    setProjects(data.projects);
+    setThreads((current) => (sameThreadList(current, data.threads) ? current : data.threads));
+    setProjects((current) => (sameProjectList(current, data.projects) ? current : data.projects));
     return data;
   }, []);
 
@@ -511,14 +518,29 @@ function useBoardData() {
     return applyBoardData(await invokeBoardData(command));
   }, [applyBoardData]);
 
+  const syncSilently = useCallback(async () => {
+    if (silentSyncInFlight.current) return;
+    silentSyncInFlight.current = true;
+    try {
+      const data = applyBoardData(await invokeBoardData("sync_codex_threads"));
+      if (data.syncError) {
+        console.warn(data.syncError);
+      }
+    } catch (error) {
+      console.warn(error);
+    } finally {
+      silentSyncInFlight.current = false;
+    }
+  }, [applyBoardData]);
+
   useEffect(() => {
     void reloadBoardData(false);
     const timer = window.setInterval(() => {
-      void reloadBoardData(true).catch(() => undefined);
+      void syncSilently();
     }, foregroundSyncIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, [reloadBoardData]);
+  }, [reloadBoardData, syncSilently]);
 
   return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }
@@ -534,13 +556,13 @@ function applyView(threads: ThreadItem[], view: ViewKey, showArchived: boolean) 
   return threads.filter((thread) => thread.boardStatus !== "archived");
 }
 
-function applyFilters(threads: ThreadItem[], filters: FilterState, projects: Project[]) {
+function applyFilters(threads: ThreadItem[], filters: FilterState, projectNames: Map<string, string>) {
   return threads.filter((thread) => {
     const searchText = [
       thread.title,
       thread.preview,
       thread.module,
-      projectName(projects, thread.projectId),
+      projectName(projectNames, thread.projectId),
       thread.cwd
     ]
       .join(" ")
@@ -828,7 +850,7 @@ function FieldSelect({
 
 function ThreadList({
   threads,
-  projects,
+  projectNames,
   expandedRows,
   onToggleExpand,
   onMarkReviewed,
@@ -840,7 +862,7 @@ function ThreadList({
   onEditComment
 }: {
   threads: ThreadItem[];
-  projects: Project[];
+  projectNames: Map<string, string>;
   expandedRows: string[];
   onToggleExpand: (id: string) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
@@ -851,121 +873,166 @@ function ThreadList({
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (commentId: number, body: string) => Promise<void>;
 }) {
+  const scrollParentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: threads.length,
+    getScrollElement: () => scrollParentRef.current,
+    getItemKey: (index) => threads[index]?.id ?? index,
+    estimateSize: (index) => (expandedRows.includes(threads[index]?.id) ? 260 : 48),
+    overscan: 8,
+    initialRect: { width: 800, height: 600 },
+    measureElement: (element) => {
+      const row = element as HTMLElement;
+      return row.getBoundingClientRect().height || (row.dataset.expanded === "true" ? 260 : 48);
+    }
+  });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [expandedRows, rowVirtualizer]);
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const rowsToRender =
+    virtualRows.length > 0
+      ? virtualRows
+      : Array.from({ length: Math.min(threads.length, 20) }, (_, index) => ({
+          key: threads[index].id,
+          index,
+          start: index * 48
+        }));
+  const totalSize = rowVirtualizer.getTotalSize() || threads.length * 48;
+
   return (
-    <div className="thin-scrollbar min-h-0 flex-1 overflow-auto">
-      <div className="dense-grid sticky top-0 z-10 hidden min-w-[480px] border-b bg-card px-2 py-2 text-[11px] font-medium text-muted-foreground lg:grid">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="dense-grid hidden min-w-[480px] border-b bg-card px-2 py-2 text-[11px] font-medium text-muted-foreground lg:grid">
         <div>Thread / 项目</div>
         <div>状态</div>
         <div className="text-right">操作</div>
       </div>
-      {threads.length === 0 ? (
-        <div className="flex h-44 items-center justify-center text-muted-foreground">
-          当前筛选下没有 thread。
-        </div>
-      ) : (
-        threads.map((thread) => {
-          const expanded = expandedRows.includes(thread.id);
-          return (
-            <div key={thread.id} className="min-w-[480px] border-b last:border-b-0">
-              <div className="dense-grid grid items-center gap-1 px-2 py-2 hover:bg-accent/45">
-                <button
-                  className="min-w-0 text-left"
-                  onClick={() => onToggleExpand(thread.id)}
+      <div ref={scrollParentRef} className="thin-scrollbar min-h-0 flex-1 overflow-auto">
+        {threads.length === 0 ? (
+          <div className="flex h-44 items-center justify-center text-muted-foreground">
+            当前筛选下没有 thread。
+          </div>
+        ) : (
+          <div
+            className="relative min-w-[480px]"
+            style={{ height: `${totalSize}px` }}
+          >
+            {rowsToRender.map((virtualRow) => {
+              const thread = threads[virtualRow.index];
+              const expanded = expandedRows.includes(thread.id);
+              return (
+                <div
+                  key={thread.id}
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  data-expanded={expanded}
+                  data-testid="thread-list-row"
+                  className="absolute left-0 top-0 min-w-[480px] w-full border-b last:border-b-0"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
                 >
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    {expanded ? (
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="truncate font-medium">{thread.title}</span>
-                  </div>
-                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-[11px] text-muted-foreground">
-                    <span className="truncate">{projectName(projects, thread.projectId)}</span>
-                    <span>·</span>
-                    <span className="truncate font-mono">{thread.id}</span>
-                    <span>·</span>
-                    <span className="truncate">{thread.updatedAt}</span>
-                    <span>·</span>
-                    <span className="truncate">{thread.module} · {thread.sprint}</span>
-                    <span>·</span>
-                    <span className="inline-flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" />
-                      {thread.comments.length}
-                    </span>
-                  </div>
-                </button>
-                <div className="min-w-0 space-y-1 text-left">
-                  <Badge variant={statusTone[thread.boardStatus]}>
-                    {statusLabels[thread.boardStatus]}
-                  </Badge>
-                  <div className="truncate text-[10px] text-muted-foreground">{thread.subStatus}</div>
-                </div>
-                <RowActions
-                  thread={thread}
-                  onOpen={onOpen}
-                  onMarkReviewed={onMarkReviewed}
-                  onArchive={onArchive}
-                  onUnarchive={onUnarchive}
-                />
-              </div>
-              {expanded && (
-                <div className="min-w-0 space-y-2 bg-secondary/25 px-4 py-2 text-[11px] sm:px-8">
-                  <div className="text-foreground">{thread.preview}</div>
-                  <div className="truncate text-muted-foreground">
-                    cwd: <span className="font-mono">{thread.cwd}</span>
-                  </div>
-                  <div className="truncate text-muted-foreground">
-                    branch: <span className="font-mono">{thread.branch}</span>
-                  </div>
-                  <div className="truncate text-muted-foreground">
-                    sync: <span>{thread.codexStatus}</span>
-                    <span className="px-1">·</span>
-                    last_running: <span>{thread.lastSeenRunningAt ?? "--"}</span>
-                    <span className="px-1">·</span>
-                    wake: <span>{thread.suspendedUntil ?? "--"}</span>
-                    <span className="px-1">·</span>
-                    notes: <span>{thread.notes || "--"}</span>
-                  </div>
-                  <ThreadComments
-                    thread={thread}
-                    onAddComment={onAddComment}
-                    onEditComment={onEditComment}
-                  />
-                  <details className="rounded-md border bg-card">
-                    <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 font-medium">
-                      详情与字段
-                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                    </summary>
-                    <div className="grid gap-2 border-t p-2 md:grid-cols-[140px_1fr_1fr_2fr]">
-                      <InlineSelect
-                        value={thread.taskType}
-                        values={taskTypes.map((value) => [value, value] as const)}
-                        onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
-                      />
-                      <InlineInput
-                        value={thread.module}
-                        placeholder="module"
-                        onChange={(module) => onUpdate(thread.id, { module })}
-                      />
-                      <InlineInput
-                        value={thread.sprint}
-                        placeholder="sprint"
-                        onChange={(sprint) => onUpdate(thread.id, { sprint })}
-                      />
-                      <InlineInput
-                        value={thread.notes}
-                        placeholder="notes"
-                        onChange={(notes) => onUpdate(thread.id, { notes })}
-                      />
+                  <div className="dense-grid grid items-center gap-1 px-2 py-2 hover:bg-accent/45">
+                    <button
+                      className="min-w-0 text-left"
+                      onClick={() => onToggleExpand(thread.id)}
+                    >
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        {expanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="truncate font-medium">{thread.title}</span>
+                      </div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-[11px] text-muted-foreground">
+                        <span className="truncate">{projectName(projectNames, thread.projectId)}</span>
+                        <span>·</span>
+                        <span className="truncate font-mono">{thread.id}</span>
+                        <span>·</span>
+                        <span className="truncate">{thread.updatedAt}</span>
+                        <span>·</span>
+                        <span className="truncate">{thread.module} · {thread.sprint}</span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          {thread.comments.length}
+                        </span>
+                      </div>
+                    </button>
+                    <div className="min-w-0 space-y-1 text-left">
+                      <Badge variant={statusTone[thread.boardStatus]}>
+                        {statusLabels[thread.boardStatus]}
+                      </Badge>
+                      <div className="truncate text-[10px] text-muted-foreground">{thread.subStatus}</div>
                     </div>
-                  </details>
+                    <RowActions
+                      thread={thread}
+                      onOpen={onOpen}
+                      onMarkReviewed={onMarkReviewed}
+                      onArchive={onArchive}
+                      onUnarchive={onUnarchive}
+                    />
+                  </div>
+                  {expanded && (
+                    <div className="min-w-0 space-y-2 bg-secondary/25 px-4 py-2 text-[11px] sm:px-8">
+                      <div className="text-foreground">{thread.preview}</div>
+                      <div className="truncate text-muted-foreground">
+                        cwd: <span className="font-mono">{thread.cwd}</span>
+                      </div>
+                      <div className="truncate text-muted-foreground">
+                        branch: <span className="font-mono">{thread.branch}</span>
+                      </div>
+                      <div className="truncate text-muted-foreground">
+                        sync: <span>{thread.codexStatus}</span>
+                        <span className="px-1">·</span>
+                        last_running: <span>{thread.lastSeenRunningAt ?? "--"}</span>
+                        <span className="px-1">·</span>
+                        wake: <span>{thread.suspendedUntil ?? "--"}</span>
+                        <span className="px-1">·</span>
+                        notes: <span>{thread.notes || "--"}</span>
+                      </div>
+                      <ThreadComments
+                        thread={thread}
+                        onAddComment={onAddComment}
+                        onEditComment={onEditComment}
+                      />
+                      <details className="rounded-md border bg-card">
+                        <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 font-medium">
+                          详情与字段
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        </summary>
+                        <div className="grid gap-2 border-t p-2 md:grid-cols-[140px_1fr_1fr_2fr]">
+                          <InlineSelect
+                            value={thread.taskType}
+                            values={taskTypes.map((value) => [value, value] as const)}
+                            onChange={(value) => onUpdate(thread.id, { taskType: value as TaskType })}
+                          />
+                          <InlineInput
+                            value={thread.module}
+                            placeholder="module"
+                            onChange={(module) => onUpdate(thread.id, { module })}
+                          />
+                          <InlineInput
+                            value={thread.sprint}
+                            placeholder="sprint"
+                            onChange={(sprint) => onUpdate(thread.id, { sprint })}
+                          />
+                          <InlineInput
+                            value={thread.notes}
+                            placeholder="notes"
+                            onChange={(notes) => onUpdate(thread.id, { notes })}
+                          />
+                        </div>
+                      </details>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })
-      )}
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1274,7 +1341,7 @@ function IconButton({
 
 function BoardView({
   threads,
-  projects,
+  projectNames,
   expandedCardId,
   onToggleExpand,
   onUpdate,
@@ -1286,7 +1353,7 @@ function BoardView({
   onEditComment
 }: {
   threads: ThreadItem[];
-  projects: Project[];
+  projectNames: Map<string, string>;
   expandedCardId?: string;
   onToggleExpand: (id: string) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
@@ -1342,7 +1409,7 @@ function BoardView({
                           <div className="min-w-0 flex-1">
                             <div className="line-clamp-2 font-medium">{thread.title}</div>
                             <div className="mt-1 truncate text-[11px] text-muted-foreground">
-                              {projectName(projects, thread.projectId)} · {thread.module || "module"}
+                              {projectName(projectNames, thread.projectId)} · {thread.module || "module"}
                             </div>
                           </div>
                           <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">

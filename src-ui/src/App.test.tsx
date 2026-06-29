@@ -99,6 +99,15 @@ const backendThreads: BoardData["threads"] = [
   }
 ];
 
+const manyBackendThreads = (count: number): BoardData["threads"] =>
+  Array.from({ length: count }, (_, index) => ({
+    ...backendThreads[1],
+    id: `019ef88b-6207-7122-9f6e-da4d6d52${String(index).padStart(4, "0")}`,
+    title: `虚拟测试记录 ${String(index + 1).padStart(3, "0")}`,
+    updated_at: new Date(Date.UTC(2026, 5, 24, 23, 59 - index, 0)).toISOString(),
+    comments: []
+  }));
+
 describe("Codex Kanban App", () => {
   let currentThreads: typeof backendThreads;
 
@@ -250,6 +259,83 @@ describe("Codex Kanban App", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("sync_codex_threads", undefined);
     expect(screen.getByText("定时同步新增会话")).toBeInTheDocument();
+  });
+
+  test("virtualizes large thread lists instead of rendering every row", async () => {
+    currentThreads = manyBackendThreads(250);
+
+    render(<App />);
+
+    expect(await screen.findByText("虚拟测试记录 001")).toBeInTheDocument();
+    expect(screen.queryByText("虚拟测试记录 250")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("thread-list-row").length).toBeLessThan(80);
+  });
+
+  test("keeps periodic sync silent when sync reports an error", async () => {
+    vi.useFakeTimers();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "load_board_data") {
+        return Promise.resolve({
+          threads: currentThreads,
+          projects: backendProjects,
+          sync_error: null
+        });
+      }
+      if (command === "sync_codex_threads") {
+        return Promise.resolve({
+          threads: currentThreads,
+          projects: backendProjects,
+          sync_error: "后台同步失败"
+        });
+      }
+      if (command === "open_codex_deeplink") {
+        throw new Error("自动同步不应打开 deep link");
+      }
+      return Promise.resolve(null);
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(screen.queryByText("后台同步失败")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("open_codex_deeplink", expect.anything());
+    expect(warnSpy).toHaveBeenCalledWith("后台同步失败");
+    warnSpy.mockRestore();
+  });
+
+  test("shows sync result only when sync is requested manually", async () => {
+    const user = userEvent.setup();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "load_board_data") {
+        return Promise.resolve({
+          threads: currentThreads,
+          projects: backendProjects,
+          sync_error: null
+        });
+      }
+      if (command === "sync_codex_threads") {
+        return Promise.resolve({
+          threads: currentThreads,
+          projects: backendProjects,
+          sync_error: "手动同步失败"
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "同步" }));
+
+    expect(await screen.findByText("手动同步失败")).toBeInTheDocument();
   });
 
   test("switches focused views and shows running/review data", async () => {
