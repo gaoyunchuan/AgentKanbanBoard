@@ -45,7 +45,8 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip";
-import { sameProjectList, sameThreadList } from "@/boardDataEquality";
+import { sameProjectList } from "@/boardDataEquality";
+import { mergeThreadRefresh } from "@/boardDataMerge";
 import { cn } from "@/lib/utils";
 import type {
   BackendThreadComment,
@@ -102,6 +103,9 @@ const defaultFilters: FilterState = {
 };
 
 const foregroundSyncIntervalMs = 5_000;
+
+const canRunForegroundSync = () =>
+  typeof document === "undefined" || document.visibilityState !== "hidden";
 
 const unknownProject: Project = {
   id: "unknown",
@@ -550,16 +554,7 @@ function useBoardData() {
   const silentSyncInFlight = useRef(false);
 
   const applyBoardData = useCallback((data: MappedBoardData) => {
-    setThreads((current) => {
-      const nextThreads = data.threads.map((thread) => {
-        const previous = current.find((item) => item.id === thread.id);
-        if (thread.comments.length === 0 && previous && previous.comments.length > 0) {
-          return { ...thread, comments: previous.comments };
-        }
-        return thread;
-      });
-      return sameThreadList(current, nextThreads) ? current : nextThreads;
-    });
+    setThreads((current) => mergeThreadRefresh(current, data.threads));
     setProjects((current) => (sameProjectList(current, data.projects) ? current : data.projects));
     return data;
   }, []);
@@ -587,6 +582,7 @@ function useBoardData() {
   useEffect(() => {
     void reloadBoardData(false);
     const timer = window.setInterval(() => {
+      if (!canRunForegroundSync()) return;
       void syncSilently();
     }, foregroundSyncIntervalMs);
 

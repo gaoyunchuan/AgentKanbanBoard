@@ -802,6 +802,12 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
            AND manual_status_updated_at = ?2",
         params![now, LEGACY_FIXED_NOW_TEXT],
     )?;
+    connection.execute("DROP INDEX IF EXISTS idx_thread_comments_thread", [])?;
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_thread_comments_thread_created_id
+         ON thread_comments(thread_id, created_at DESC, id DESC)",
+        [],
+    )?;
 
     Ok(())
 }

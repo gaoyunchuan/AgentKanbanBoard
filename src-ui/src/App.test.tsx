@@ -114,6 +114,10 @@ describe("Codex Kanban App", () => {
 
   beforeEach(() => {
     localStorage.clear();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible"
+    });
     currentThreads = backendThreads.map((thread) => ({ ...thread, comments: [] }));
     currentCommentsByThread = Object.fromEntries(
       backendThreads.map((thread) => [thread.id, [...(thread.comments ?? [])]])
@@ -284,6 +288,27 @@ describe("Codex Kanban App", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("sync_codex_threads", undefined);
     expect(screen.getByText("定时同步新增会话")).toBeInTheDocument();
+  });
+
+  test("skips periodic Codex sync while the page is hidden", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden"
+    });
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith("sync_codex_threads", undefined);
   });
 
   test("virtualizes large thread lists instead of rendering every row", async () => {
