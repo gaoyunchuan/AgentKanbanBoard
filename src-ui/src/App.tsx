@@ -122,7 +122,10 @@ const countByStatus = (threads: ThreadItem[], status: BoardStatus) =>
   threads.filter((thread) => thread.boardStatus === status).length;
 
 function App() {
-  const { threads, setThreads, projects, setProjects, reloadBoardData } = useBoardData();
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [autoSyncTouched, setAutoSyncTouched] = useState(false);
+  const { threads, setThreads, projects, setProjects, reloadBoardData } =
+    useBoardData(autoSyncEnabled);
   const [view, setView] = useState<ViewKey>("active");
   const [layout, setLayout] = useState<LayoutMode>("list");
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -317,6 +320,15 @@ function App() {
     const next = await reloadBoardData(true);
     setToast(next.syncError ?? "已从 Codex Desktop 真实数据完成只读同步");
   };
+  const toggleAutoSync = () => {
+    setAutoSyncTouched(true);
+    setAutoSyncEnabled((enabled) => !enabled);
+  };
+  const autoSyncButtonLabel = autoSyncEnabled
+    ? autoSyncTouched
+      ? "已开启同步"
+      : "停止同步"
+    : "已停止同步";
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -432,6 +444,15 @@ function App() {
                 <RotateCcw className="h-3.5 w-3.5" />
                 同步
               </Button>
+              <Button
+                variant={autoSyncEnabled ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleAutoSync}
+                aria-pressed={!autoSyncEnabled}
+              >
+                {autoSyncEnabled ? <X className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
+                {autoSyncButtonLabel}
+              </Button>
               <Button size="sm" onClick={() => openProject("agent-kanban")}>
                 <ExternalLink className="h-3.5 w-3.5" />
                 打开 Codex
@@ -448,7 +469,11 @@ function App() {
                 onOpenChange={setSummaryOpen}
                 title="同步与队列概览"
                 icon={<TimerReset className="h-3.5 w-3.5" />}
-                right={<span className="text-[11px] text-muted-foreground">前台 5s / 后台 30s</span>}
+                right={
+                  <span className="text-[11px] text-muted-foreground">
+                    {autoSyncEnabled ? "前台自动同步 5s" : "自动同步已停止"}
+                  </span>
+                }
               >
                 <div className="grid gap-2 md:grid-cols-5">
                   <MetricCard label="运行中" value={counts.running} hint="waiting approval 优先" tone="blue" />
@@ -548,7 +573,7 @@ function App() {
   );
 }
 
-function useBoardData() {
+function useBoardData(autoSyncEnabled: boolean) {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([unknownProject]);
   const silentSyncInFlight = useRef(false);
@@ -581,13 +606,17 @@ function useBoardData() {
 
   useEffect(() => {
     void reloadBoardData(false);
+  }, [reloadBoardData]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
+      if (!autoSyncEnabled) return;
       if (!canRunForegroundSync()) return;
       void syncSilently();
     }, foregroundSyncIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, [reloadBoardData, syncSilently]);
+  }, [autoSyncEnabled, syncSilently]);
 
   return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }

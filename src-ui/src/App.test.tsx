@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
@@ -309,6 +309,39 @@ describe("Codex Kanban App", () => {
     });
 
     expect(invokeMock).not.toHaveBeenCalledWith("sync_codex_threads", undefined);
+  });
+
+  test("lets the user pause and resume periodic Codex sync", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "停止同步" }));
+    expect(screen.getByRole("button", { name: "已停止同步" })).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("load_board_data", undefined);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith("sync_codex_threads", undefined);
+
+    fireEvent.click(screen.getByRole("button", { name: "已停止同步" }));
+    expect(screen.getByRole("button", { name: "已开启同步" })).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("sync_codex_threads", undefined);
   });
 
   test("virtualizes large thread lists instead of rendering every row", async () => {
