@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
-import type { BackendThread, BoardData } from "./types";
+import type { BackendThread, BackendThreadComment, BoardData } from "./types";
 
 const invokeMock = vi.fn();
 
@@ -110,10 +110,14 @@ const manyBackendThreads = (count: number): BoardData["threads"] =>
 
 describe("Codex Kanban App", () => {
   let currentThreads: typeof backendThreads;
+  let currentCommentsByThread: Record<string, BackendThreadComment[]>;
 
   beforeEach(() => {
     localStorage.clear();
-    currentThreads = backendThreads.map((thread) => ({ ...thread }));
+    currentThreads = backendThreads.map((thread) => ({ ...thread, comments: [] }));
+    currentCommentsByThread = Object.fromEntries(
+      backendThreads.map((thread) => [thread.id, [...(thread.comments ?? [])]])
+    );
     invokeMock.mockReset();
     invokeMock.mockImplementation((command: string, args?: { threadId?: string; commentId?: number; body?: string; suspendUntil?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"] }) => {
       if (command === "load_board_data") {
@@ -129,6 +133,9 @@ describe("Codex Kanban App", () => {
           projects: backendProjects,
           sync_error: null
         });
+      }
+      if (command === "load_thread_comments" && args?.threadId) {
+        return Promise.resolve(currentCommentsByThread[args.threadId] ?? []);
       }
       if (command === "mark_thread_reviewed") {
         currentThreads = currentThreads.map((thread) =>
@@ -165,36 +172,54 @@ describe("Codex Kanban App", () => {
         );
       }
       if (command === "create_thread_comment" && args?.threadId && args.body) {
+        const body = args.body;
+        const nextComment = {
+          id: 3,
+          thread_id: args.threadId,
+          author: "我",
+          body,
+          created_at: "2026-06-24T10:28:00Z",
+          updated_at: "2026-06-24T10:28:00Z",
+          edited_at: null
+        };
+        currentCommentsByThread[args.threadId] = [
+          nextComment,
+          ...(currentCommentsByThread[args.threadId] ?? [])
+        ];
         currentThreads = currentThreads.map((thread) =>
           thread.id === args.threadId
             ? {
                 ...thread,
                 board_status: args.suspendUntil ? "suspended" : thread.board_status,
-                suspended_until: args.suspendUntil ?? thread.suspended_until,
-                comments: [
-                  {
-                    id: 3,
-                    thread_id: args.threadId,
-                    author: "我",
-                    body: args.body,
-                    created_at: "2026-06-24T10:28:00Z",
-                    updated_at: "2026-06-24T10:28:00Z",
-                    edited_at: null
-                  },
-                  ...((thread as any).comments ?? [])
-                ]
+                suspended_until: args.suspendUntil ?? thread.suspended_until
               }
             : thread
         );
       }
       if (command === "update_thread_comment" && args?.commentId && args.body) {
+        const body = args.body;
+        currentCommentsByThread = Object.fromEntries(
+          Object.entries(currentCommentsByThread).map(([threadId, comments]) => [
+            threadId,
+            comments.map((comment) =>
+              comment.id === args.commentId
+                ? {
+                    ...comment,
+                    body,
+                    updated_at: "2026-06-24T10:29:00Z",
+                    edited_at: "2026-06-24T10:29:00Z"
+                  }
+                : comment
+            )
+          ])
+        );
         currentThreads = currentThreads.map((thread) => ({
           ...thread,
-          comments: ((thread as any).comments ?? []).map((comment: any) =>
+          comments: ((thread as any).comments ?? []).map((comment: BackendThreadComment) =>
             comment.id === args.commentId
               ? {
                   ...comment,
-                  body: args.body,
+                  body,
                   updated_at: "2026-06-24T10:29:00Z",
                   edited_at: "2026-06-24T10:29:00Z"
                 }
@@ -419,6 +444,25 @@ describe("Codex Kanban App", () => {
 
     expect(screen.getByDisplayValue("Matcher")).toBeInTheDocument();
     expect(invokeMock).toHaveBeenCalledWith("update_thread_fields", expect.any(Object));
+  });
+
+  test("loads comments only after a list row is expanded", async () => {
+    const user = userEvent.setup();
+    currentThreads = currentThreads.map((thread) => ({ ...thread, comments: [] }));
+
+    render(<App />);
+
+    expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
+    expect(screen.queryByText("先记录同步间隔需要调整。")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("load_thread_comments", expect.anything());
+
+    await user.click(screen.getByText("接入真实数据"));
+
+    expect(invokeMock).toHaveBeenCalledWith("load_thread_comments", {
+      threadId: "019ef927-4206-7823-a752-eb0364a6f11b"
+    });
+    expect(await screen.findByText("先记录同步间隔需要调整。")).toBeInTheDocument();
+    expect(screen.getByText("补充离线态提示。")).toBeInTheDocument();
   });
 
   test("adds and edits comments from an expanded list row", async () => {

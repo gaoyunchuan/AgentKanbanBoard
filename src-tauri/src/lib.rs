@@ -421,13 +421,40 @@ mod tests {
         assert_eq!(updated.body, "补充离线态提示，避免误触。");
         assert!(updated.edited_at.is_some());
 
-        let stored = repo.get_thread("t-comments").unwrap().unwrap();
-        assert_eq!(stored.comments.len(), 2);
-        assert_eq!(stored.comments[0].body, "补充离线态提示，避免误触。");
+        let stored_comments = repo.list_thread_comments("t-comments").unwrap();
+        assert_eq!(stored_comments.len(), 2);
+        assert_eq!(stored_comments[0].body, "补充离线态提示，避免误触。");
     }
 
     #[test]
-    fn repository_lists_multiple_threads_with_grouped_comment_order() {
+    fn repository_keeps_thread_list_comments_lazy() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("t-comments"))
+            .unwrap();
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "t-comments".to_string(),
+            author: "我".to_string(),
+            body: "展开后再加载".to_string(),
+            suspend_until: None,
+        })
+        .unwrap();
+
+        let threads = repo
+            .list_threads(FilterQuery {
+                include_archived: true,
+                ..FilterQuery::default()
+            })
+            .unwrap();
+        let comments = repo.list_thread_comments("t-comments").unwrap();
+
+        assert!(threads[0].comments.is_empty());
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].body, "展开后再加载");
+    }
+
+    #[test]
+    fn repository_lists_multiple_threads_without_eager_comments() {
         let repo =
             Repository::open_in_memory_with_clock(fixed_clock("2026-06-26T10:00:00Z")).unwrap();
         repo.upsert_thread(CodexThreadUpsert {
@@ -480,11 +507,16 @@ mod tests {
             .find(|thread| thread.id == "t-second")
             .unwrap();
 
-        assert_eq!(first.comments.len(), 2);
-        assert_eq!(first.comments[0].body, "first new");
-        assert_eq!(first.comments[1].body, "first old");
-        assert_eq!(second.comments.len(), 1);
-        assert_eq!(second.comments[0].body, "second only");
+        assert!(first.comments.is_empty());
+        assert!(second.comments.is_empty());
+
+        let first_comments = repo.list_thread_comments("t-first").unwrap();
+        let second_comments = repo.list_thread_comments("t-second").unwrap();
+        assert_eq!(first_comments.len(), 2);
+        assert_eq!(first_comments[0].body, "first new");
+        assert_eq!(first_comments[1].body, "first old");
+        assert_eq!(second_comments.len(), 1);
+        assert_eq!(second_comments[0].body, "second only");
     }
 
     #[test]
@@ -509,7 +541,7 @@ mod tests {
             Some("2026-06-27T09:30:00Z")
         );
         assert!(stored.manual_status_override);
-        assert_eq!(stored.comments.len(), 1);
+        assert_eq!(repo.list_thread_comments("t-suspend").unwrap().len(), 1);
     }
 
     #[test]

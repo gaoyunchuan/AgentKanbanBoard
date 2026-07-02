@@ -1,7 +1,8 @@
 use codex_kanban::config::AppConfig;
 use codex_kanban::deeplink::{ensure_codex_deeplink, project_deeplink, thread_deeplink};
 use codex_kanban::domain::{
-    FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadRecord,
+    FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadCommentRecord,
+    ThreadRecord,
 };
 use codex_kanban::project_matcher::ProjectRule;
 use codex_kanban::repository::Repository;
@@ -85,6 +86,14 @@ fn update_thread_comment(comment_id: i64, body: String) -> Result<BoardData, Str
         .update_thread_comment(comment_id, body)
         .map_err(|error| error.to_string())?;
     read_board_data(&repository, None)
+}
+
+#[tauri::command]
+fn load_thread_comments(thread_id: String) -> Result<Vec<ThreadCommentRecord>, String> {
+    let repository = open_repository()?;
+    repository
+        .list_thread_comments(&thread_id)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -272,6 +281,7 @@ fn main() {
             update_thread_fields,
             create_thread_comment,
             update_thread_comment,
+            load_thread_comments,
             mark_thread_reviewed,
             archive_thread,
             unarchive_thread,

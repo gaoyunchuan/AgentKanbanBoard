@@ -48,6 +48,7 @@ import {
 import { sameProjectList, sameThreadList } from "@/boardDataEquality";
 import { cn } from "@/lib/utils";
 import type {
+  BackendThreadComment,
   BoardData,
   BoardStatus,
   FilterState,
@@ -126,6 +127,8 @@ function App() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
   const [expandedBoardCardId, setExpandedBoardCardId] = useState<string | undefined>();
+  const [loadedCommentThreadIds, setLoadedCommentThreadIds] = useState<string[]>([]);
+  const [loadingCommentThreadIds, setLoadingCommentThreadIds] = useState<string[]>([]);
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -176,6 +179,51 @@ function App() {
     }
   };
 
+  const loadThreadComments = useCallback(
+    async (threadId: string, force = false) => {
+      if (
+        !force &&
+        (loadedCommentThreadIds.includes(threadId) || loadingCommentThreadIds.includes(threadId))
+      ) {
+        return;
+      }
+
+      setLoadingCommentThreadIds((current) =>
+        current.includes(threadId) ? current : [...current, threadId]
+      );
+      try {
+        const comments = await invoke<BackendThreadComment[]>("load_thread_comments", { threadId });
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === threadId ? { ...thread, comments: mapThreadComments(comments) } : thread
+          )
+        );
+        setLoadedCommentThreadIds((current) =>
+          current.includes(threadId) ? current : [...current, threadId]
+        );
+      } catch (error) {
+        setToast(`评论加载失败：${String(error)}`);
+      } finally {
+        setLoadingCommentThreadIds((current) => current.filter((id) => id !== threadId));
+      }
+    },
+    [loadedCommentThreadIds, loadingCommentThreadIds, setThreads]
+  );
+
+  const toggleListRow = (id: string) => {
+    const willExpand = !expandedRows.includes(id);
+    setExpandedRows((current) =>
+      current.includes(id) ? current.filter((rowId) => rowId !== id) : [...current, id]
+    );
+    if (willExpand) void loadThreadComments(id);
+  };
+
+  const toggleBoardCard = (id: string) => {
+    const willExpand = expandedBoardCardId !== id;
+    setExpandedBoardCardId((current) => (current === id ? undefined : id));
+    if (willExpand) void loadThreadComments(id);
+  };
+
   const markReviewed = async (thread: ThreadItem) => {
     updateThread(thread.id, {
       boardStatus: "reviewed",
@@ -191,13 +239,15 @@ function App() {
     const next = await invokeBoardData("create_thread_comment", args);
     setThreads(next.threads);
     setProjects(next.projects);
+    await loadThreadComments(threadId, true);
     setToast(suspendUntil ? "评论已添加，Thread 已挂起" : "评论已添加");
   };
 
-  const editComment = async (commentId: number, body: string) => {
+  const editComment = async (threadId: string, commentId: number, body: string) => {
     const next = await invokeBoardData("update_thread_comment", { commentId, body });
     setThreads(next.threads);
     setProjects(next.projects);
+    await loadThreadComments(threadId, true);
     setToast("评论已更新");
   };
 
@@ -461,13 +511,7 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedRows={expandedRows}
-                    onToggleExpand={(id) =>
-                      setExpandedRows((current) =>
-                        current.includes(id)
-                          ? current.filter((rowId) => rowId !== id)
-                          : [...current, id]
-                      )
-                    }
+                    onToggleExpand={toggleListRow}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
                     onUnarchive={unarchiveThread}
@@ -481,9 +525,7 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedCardId={expandedBoardCardId}
-                    onToggleExpand={(id) =>
-                      setExpandedBoardCardId((current) => (current === id ? undefined : id))
-                    }
+                    onToggleExpand={toggleBoardCard}
                     onUpdate={updateThread}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
@@ -508,7 +550,16 @@ function useBoardData() {
   const silentSyncInFlight = useRef(false);
 
   const applyBoardData = useCallback((data: MappedBoardData) => {
-    setThreads((current) => (sameThreadList(current, data.threads) ? current : data.threads));
+    setThreads((current) => {
+      const nextThreads = data.threads.map((thread) => {
+        const previous = current.find((item) => item.id === thread.id);
+        if (thread.comments.length === 0 && previous && previous.comments.length > 0) {
+          return { ...thread, comments: previous.comments };
+        }
+        return thread;
+      });
+      return sameThreadList(current, nextThreads) ? current : nextThreads;
+    });
     setProjects((current) => (sameProjectList(current, data.projects) ? current : data.projects));
     return data;
   }, []);
@@ -871,7 +922,7 @@ function ThreadList({
   onOpen: (thread: ThreadItem) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
-  onEditComment: (commentId: number, body: string) => Promise<void>;
+  onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
@@ -1069,7 +1120,7 @@ function ThreadComments({
 }: {
   thread: ThreadItem;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
-  onEditComment: (commentId: number, body: string) => Promise<void>;
+  onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
   const [suspendOnSubmit, setSuspendOnSubmit] = useState(false);
@@ -1104,7 +1155,7 @@ function ThreadComments({
     if (!body) return;
     setSaving(true);
     try {
-      await onEditComment(commentId, body);
+      await onEditComment(thread.id, commentId, body);
       setEditingId(undefined);
       setEditingBody("");
     } finally {
@@ -1362,7 +1413,7 @@ function BoardView({
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
-  onEditComment: (commentId: number, body: string) => Promise<void>;
+  onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
   const columns: BoardStatus[] = ["review_pending", "reviewed", "suspended", "archived"];
 
@@ -1698,17 +1749,21 @@ function mapBoardData(data: BoardData): MappedBoardData {
       suspendedUntil: thread.suspended_until ? formatTimestamp(thread.suspended_until) : undefined,
       archivedAt: thread.archived_at ? formatTimestamp(thread.archived_at) : undefined,
       notes: thread.notes,
-      comments: (thread.comments ?? []).map((comment) => ({
-        id: comment.id,
-        threadId: comment.thread_id,
-        author: comment.author,
-        body: comment.body,
-        createdAt: formatTimestamp(comment.created_at),
-        updatedAt: formatTimestamp(comment.updated_at),
-        editedAt: comment.edited_at ? formatTimestamp(comment.edited_at) : undefined
-      }))
+      comments: mapThreadComments(thread.comments ?? [])
     }))
   };
+}
+
+function mapThreadComments(comments: BackendThreadComment[]): ThreadComment[] {
+  return comments.map((comment) => ({
+    id: comment.id,
+    threadId: comment.thread_id,
+    author: comment.author,
+    body: comment.body,
+    createdAt: formatTimestamp(comment.created_at),
+    updatedAt: formatTimestamp(comment.updated_at),
+    editedAt: comment.edited_at ? formatTimestamp(comment.edited_at) : undefined
+  }));
 }
 
 function formatTimestamp(value: string) {
