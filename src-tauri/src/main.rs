@@ -1,13 +1,18 @@
 use codex_kanban::config::AppConfig;
 use codex_kanban::deeplink::{ensure_codex_deeplink, project_deeplink, thread_deeplink};
 use codex_kanban::domain::{
-    FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadRecord,
+    FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadCommentRecord,
+    ThreadRecord,
 };
 use codex_kanban::project_matcher::ProjectRule;
 use codex_kanban::repository::Repository;
 use codex_kanban::thread_sync::{CodexAppServerClient, ReadOnlyCodexClient, ThreadSync};
 use codex_kanban::time::current_utc_text;
 use serde::Serialize;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
 
 #[derive(Debug, Serialize)]
 struct BoardData {
@@ -16,14 +21,65 @@ struct BoardData {
     sync_error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct SyncStatus {
+    in_progress: bool,
+    last_started_at: Option<String>,
+    last_finished_at: Option<String>,
+    last_error: Option<String>,
+}
+
+const LOAD_BOARD_DATA_FORCE_SYNC: bool = false;
+const SYNC_CODEX_THREADS_FORCE_SYNC: bool = true;
+static SYNC_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static SYNC_STATUS: OnceLock<Mutex<SyncStatus>> = OnceLock::new();
+
 #[tauri::command]
 fn load_board_data() -> Result<BoardData, String> {
-    refresh_board_data(true)
+    refresh_board_data(LOAD_BOARD_DATA_FORCE_SYNC)
 }
 
 #[tauri::command]
 fn sync_codex_threads() -> Result<BoardData, String> {
-    refresh_board_data(true)
+    refresh_board_data(SYNC_CODEX_THREADS_FORCE_SYNC)
+}
+
+#[tauri::command]
+fn start_codex_sync() -> Result<SyncStatus, String> {
+    if SYNC_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Ok(current_sync_status());
+    }
+
+    let started_at = current_utc_text();
+    update_sync_status(|status| {
+        status.in_progress = true;
+        status.last_started_at = Some(started_at.clone());
+        status.last_error = None;
+    })?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = run_background_codex_sync();
+        let finished_at = current_utc_text();
+        let last_error = result.err();
+        if let Err(error) = update_sync_status(|status| {
+            status.in_progress = false;
+            status.last_finished_at = Some(finished_at);
+            status.last_error = last_error;
+        }) {
+            eprintln!("更新 Codex sync 状态失败：{error}");
+        }
+        SYNC_IN_PROGRESS.store(false, Ordering::Release);
+    });
+
+    Ok(current_sync_status())
+}
+
+#[tauri::command]
+fn load_sync_status() -> Result<SyncStatus, String> {
+    Ok(current_sync_status())
 }
 
 #[tauri::command]
@@ -88,6 +144,14 @@ fn update_thread_comment(comment_id: i64, body: String) -> Result<BoardData, Str
 }
 
 #[tauri::command]
+fn load_thread_comments(thread_id: String) -> Result<Vec<ThreadCommentRecord>, String> {
+    let repository = open_repository()?;
+    repository
+        .list_thread_comments(&thread_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn mark_thread_reviewed(thread_id: String) -> Result<BoardData, String> {
     let repository = open_repository()?;
     repository
@@ -116,44 +180,96 @@ fn unarchive_thread(thread_id: String) -> Result<BoardData, String> {
 
 fn refresh_board_data(force_sync: bool) -> Result<BoardData, String> {
     let repository = open_repository()?;
+    prepare_board_repository(&repository)?;
+
+    let mut sync_error = None;
+    let has_threads = !repository
+        .list_threads(FilterQuery {
+            include_archived: true,
+            ..FilterQuery::default()
+        })
+        .map_err(|error| error.to_string())?
+        .is_empty();
+    let should_sync = should_refresh_from_codex(force_sync, has_threads);
+
+    if should_sync {
+        sync_error = force_refresh_codex_threads(&repository)?;
+    }
+
+    read_board_data(&repository, sync_error)
+}
+
+fn prepare_board_repository(repository: &Repository) -> Result<(), String> {
     repository
         .wake_due_suspended_threads(&current_utc_text())
         .map_err(|error| error.to_string())?;
     repository
         .seed_builtin_presets()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())
+}
 
+fn force_refresh_codex_threads(repository: &Repository) -> Result<Option<String>, String> {
     let client = ReadOnlyCodexClient::new();
-    let mut sync_error = None;
-    let should_sync = force_sync
-        || repository
-            .list_threads(FilterQuery {
-                include_archived: true,
-                ..FilterQuery::default()
-            })
-            .map_err(|error| error.to_string())?
-            .is_empty();
-
-    if should_sync {
-        match client.call("thread/list") {
-            Ok(threads) => {
-                seed_projects_from_synced_threads(&repository, &threads)?;
-                let projects = project_rules(&repository)?;
-                let sync = ThreadSync::new(Box::new(ReadOnlyCodexClient::new()));
-                if let Err(error) = sync.sync_recent_into(
-                    &repository,
+    match client.call("thread/list") {
+        Ok(threads) => {
+            seed_projects_from_synced_threads(repository, &threads)?;
+            let projects = project_rules(repository)?;
+            let sync = ThreadSync::new(Box::new(ReadOnlyCodexClient::new()));
+            Ok(sync
+                .sync_recent_into(
+                    repository,
                     &projects,
                     &AppConfig::default(),
                     &current_utc_text(),
-                ) {
-                    sync_error = Some(error);
-                }
-            }
-            Err(error) => sync_error = Some(error),
+                )
+                .err())
         }
+        Err(error) => Ok(Some(error)),
     }
+}
 
-    read_board_data(&repository, sync_error)
+fn run_background_codex_sync() -> Result<(), String> {
+    let repository = open_repository()?;
+    prepare_board_repository(&repository)?;
+    if let Some(error) = force_refresh_codex_threads(&repository)? {
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn should_refresh_from_codex(force_sync: bool, has_threads: bool) -> bool {
+    force_sync || !has_threads
+}
+
+fn sync_status_store() -> &'static Mutex<SyncStatus> {
+    SYNC_STATUS.get_or_init(|| {
+        Mutex::new(SyncStatus {
+            in_progress: false,
+            last_started_at: None,
+            last_finished_at: None,
+            last_error: None,
+        })
+    })
+}
+
+fn current_sync_status() -> SyncStatus {
+    sync_status_store()
+        .lock()
+        .map(|status| status.clone())
+        .unwrap_or_else(|_| SyncStatus {
+            in_progress: SYNC_IN_PROGRESS.load(Ordering::Acquire),
+            last_started_at: None,
+            last_finished_at: None,
+            last_error: Some("sync 状态锁已损坏".to_string()),
+        })
+}
+
+fn update_sync_status(update: impl FnOnce(&mut SyncStatus)) -> Result<(), String> {
+    let mut status = sync_status_store()
+        .lock()
+        .map_err(|error| format!("sync 状态锁已损坏：{error}"))?;
+    update(&mut status);
+    Ok(())
 }
 
 fn read_board_data(
@@ -255,6 +371,22 @@ fn basename(path: &str) -> Option<&str> {
     path.trim_end_matches('/').rsplit('/').next()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{
+        should_refresh_from_codex, LOAD_BOARD_DATA_FORCE_SYNC, SYNC_CODEX_THREADS_FORCE_SYNC,
+    };
+
+    #[test]
+    fn command_sync_modes_keep_load_board_data_read_only() {
+        assert!(!LOAD_BOARD_DATA_FORCE_SYNC);
+        assert!(SYNC_CODEX_THREADS_FORCE_SYNC);
+        assert!(!should_refresh_from_codex(false, true));
+        assert!(should_refresh_from_codex(false, false));
+        assert!(should_refresh_from_codex(true, true));
+    }
+}
+
 fn project_id_for_path(path: &str) -> String {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in path.as_bytes() {
@@ -269,9 +401,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             load_board_data,
             sync_codex_threads,
+            start_codex_sync,
+            load_sync_status,
             update_thread_fields,
             create_thread_comment,
             update_thread_comment,
+            load_thread_comments,
             mark_thread_reviewed,
             archive_thread,
             unarchive_thread,

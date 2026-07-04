@@ -1,8 +1,8 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
-import type { BackendThread, BoardData } from "./types";
+import type { BackendThread, BackendThreadComment, BoardData } from "./types";
 
 const invokeMock = vi.fn();
 
@@ -110,10 +110,18 @@ const manyBackendThreads = (count: number): BoardData["threads"] =>
 
 describe("Codex Kanban App", () => {
   let currentThreads: typeof backendThreads;
+  let currentCommentsByThread: Record<string, BackendThreadComment[]>;
 
   beforeEach(() => {
     localStorage.clear();
-    currentThreads = backendThreads.map((thread) => ({ ...thread }));
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible"
+    });
+    currentThreads = backendThreads.map((thread) => ({ ...thread, comments: [] }));
+    currentCommentsByThread = Object.fromEntries(
+      backendThreads.map((thread) => [thread.id, [...(thread.comments ?? [])]])
+    );
     invokeMock.mockReset();
     invokeMock.mockImplementation((command: string, args?: { threadId?: string; commentId?: number; body?: string; suspendUntil?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"] }) => {
       if (command === "load_board_data") {
@@ -129,6 +137,17 @@ describe("Codex Kanban App", () => {
           projects: backendProjects,
           sync_error: null
         });
+      }
+      if (command === "start_codex_sync") {
+        return Promise.resolve({
+          in_progress: true,
+          last_started_at: "2026-07-03T12:00:00Z",
+          last_finished_at: null,
+          last_error: null
+        });
+      }
+      if (command === "load_thread_comments" && args?.threadId) {
+        return Promise.resolve(currentCommentsByThread[args.threadId] ?? []);
       }
       if (command === "mark_thread_reviewed") {
         currentThreads = currentThreads.map((thread) =>
@@ -165,36 +184,54 @@ describe("Codex Kanban App", () => {
         );
       }
       if (command === "create_thread_comment" && args?.threadId && args.body) {
+        const body = args.body;
+        const nextComment = {
+          id: 3,
+          thread_id: args.threadId,
+          author: "我",
+          body,
+          created_at: "2026-06-24T10:28:00Z",
+          updated_at: "2026-06-24T10:28:00Z",
+          edited_at: null
+        };
+        currentCommentsByThread[args.threadId] = [
+          nextComment,
+          ...(currentCommentsByThread[args.threadId] ?? [])
+        ];
         currentThreads = currentThreads.map((thread) =>
           thread.id === args.threadId
             ? {
                 ...thread,
                 board_status: args.suspendUntil ? "suspended" : thread.board_status,
-                suspended_until: args.suspendUntil ?? thread.suspended_until,
-                comments: [
-                  {
-                    id: 3,
-                    thread_id: args.threadId,
-                    author: "我",
-                    body: args.body,
-                    created_at: "2026-06-24T10:28:00Z",
-                    updated_at: "2026-06-24T10:28:00Z",
-                    edited_at: null
-                  },
-                  ...((thread as any).comments ?? [])
-                ]
+                suspended_until: args.suspendUntil ?? thread.suspended_until
               }
             : thread
         );
       }
       if (command === "update_thread_comment" && args?.commentId && args.body) {
+        const body = args.body;
+        currentCommentsByThread = Object.fromEntries(
+          Object.entries(currentCommentsByThread).map(([threadId, comments]) => [
+            threadId,
+            comments.map((comment) =>
+              comment.id === args.commentId
+                ? {
+                    ...comment,
+                    body,
+                    updated_at: "2026-06-24T10:29:00Z",
+                    edited_at: "2026-06-24T10:29:00Z"
+                  }
+                : comment
+            )
+          ])
+        );
         currentThreads = currentThreads.map((thread) => ({
           ...thread,
-          comments: ((thread as any).comments ?? []).map((comment: any) =>
+          comments: ((thread as any).comments ?? []).map((comment: BackendThreadComment) =>
             comment.id === args.commentId
               ? {
                   ...comment,
-                  body: args.body,
+                  body,
                   updated_at: "2026-06-24T10:29:00Z",
                   edited_at: "2026-06-24T10:29:00Z"
                 }
@@ -257,8 +294,190 @@ describe("Codex Kanban App", () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
 
-    expect(invokeMock).toHaveBeenCalledWith("sync_codex_threads", undefined);
+    expect(invokeMock).toHaveBeenCalledWith("start_codex_sync", undefined);
+    expect(invokeMock).toHaveBeenCalledWith("load_board_data", undefined);
     expect(screen.getByText("定时同步新增会话")).toBeInTheDocument();
+  });
+
+  test("skips periodic Codex sync while the page is hidden", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden"
+    });
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith("start_codex_sync", undefined);
+  });
+
+  test("lets the user pause and resume periodic Codex sync", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "停止同步" }));
+    expect(screen.getByRole("button", { name: "已停止同步" })).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("load_board_data", undefined);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith("start_codex_sync", undefined);
+
+    fireEvent.click(screen.getByRole("button", { name: "已停止同步" }));
+    expect(screen.getByRole("button", { name: "已开启同步" })).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("start_codex_sync", undefined);
+    expect(invokeMock).toHaveBeenCalledWith("load_board_data", undefined);
+  });
+
+  test("can keep periodic sync running while freezing automatic view refresh", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+
+    currentThreads = [
+      ...currentThreads,
+      {
+        ...backendThreads[1],
+        id: "019ef934-frozen-refresh",
+        title: "同步到了但不刷新视图",
+        board_status: "untriaged",
+        updated_at: "2026-07-03T10:00:00Z"
+      }
+    ];
+    fireEvent.click(screen.getByRole("button", { name: "停止刷新" }));
+    expect(screen.getByRole("button", { name: "已停止刷新" })).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("start_codex_sync", undefined);
+    expect(invokeMock).toHaveBeenCalledWith("load_board_data", undefined);
+    expect(screen.queryByText("同步到了但不刷新视图")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "已停止刷新" }));
+    expect(screen.getByRole("button", { name: "已开启刷新" })).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(screen.getByText("同步到了但不刷新视图")).toBeInTheDocument();
+  });
+
+  test("can keep periodic sync running while skipping automatic data mapping", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+
+    currentThreads = [
+      ...currentThreads,
+      {
+        ...backendThreads[1],
+        id: "019ef934-unmapped-sync",
+        title: "同步到了但不解析数据",
+        board_status: "untriaged",
+        updated_at: "2026-07-03T10:05:00Z"
+      }
+    ];
+    fireEvent.click(screen.getByRole("button", { name: "停止解析" }));
+    expect(screen.getByRole("button", { name: "已停止解析" })).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("start_codex_sync", undefined);
+    expect(invokeMock).not.toHaveBeenCalledWith("sync_codex_threads", undefined);
+    expect(invokeMock).not.toHaveBeenCalledWith("load_board_data", undefined);
+    expect(screen.queryByText("同步到了但不解析数据")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "已停止解析" }));
+    expect(screen.getByRole("button", { name: "已开启解析" })).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(screen.getByText("同步到了但不解析数据")).toBeInTheDocument();
+  });
+
+  test("can poll board data without forcing Codex sync", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+
+    currentThreads = [
+      ...currentThreads,
+      {
+        ...backendThreads[1],
+        id: "019ef934-readonly-poll",
+        title: "只读轮询新增记录",
+        board_status: "untriaged",
+        updated_at: "2026-07-03T10:10:00Z"
+      }
+    ];
+    fireEvent.click(screen.getByRole("button", { name: "只读轮询" }));
+    expect(screen.getByRole("button", { name: "已只读轮询" })).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("load_board_data", undefined);
+    expect(invokeMock).not.toHaveBeenCalledWith("sync_codex_threads", undefined);
+    expect(screen.getByText("只读轮询新增记录")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "已只读轮询" }));
+    expect(screen.getByRole("button", { name: "已强制同步" })).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("start_codex_sync", undefined);
+    expect(invokeMock).toHaveBeenCalledWith("load_board_data", undefined);
   });
 
   test("virtualizes large thread lists instead of rendering every row", async () => {
@@ -286,6 +505,14 @@ describe("Codex Kanban App", () => {
           threads: currentThreads,
           projects: backendProjects,
           sync_error: "后台同步失败"
+        });
+      }
+      if (command === "start_codex_sync") {
+        return Promise.resolve({
+          in_progress: false,
+          last_started_at: "2026-07-03T12:00:00Z",
+          last_finished_at: "2026-07-03T12:00:01Z",
+          last_error: "后台同步失败"
         });
       }
       if (command === "open_codex_deeplink") {
@@ -328,6 +555,14 @@ describe("Codex Kanban App", () => {
           sync_error: "手动同步失败"
         });
       }
+      if (command === "start_codex_sync") {
+        return Promise.resolve({
+          in_progress: true,
+          last_started_at: "2026-07-03T12:00:00Z",
+          last_finished_at: null,
+          last_error: null
+        });
+      }
       return Promise.resolve(null);
     });
     render(<App />);
@@ -335,7 +570,7 @@ describe("Codex Kanban App", () => {
     expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "同步" }));
 
-    expect(await screen.findByText("手动同步失败")).toBeInTheDocument();
+    expect(await screen.findByText("已启动后台同步")).toBeInTheDocument();
   });
 
   test("switches focused views and shows running/review data", async () => {
@@ -419,6 +654,61 @@ describe("Codex Kanban App", () => {
 
     expect(screen.getByDisplayValue("Matcher")).toBeInTheDocument();
     expect(invokeMock).toHaveBeenCalledWith("update_thread_fields", expect.any(Object));
+  });
+
+  test("loads comments only after a list row is expanded", async () => {
+    const user = userEvent.setup();
+    currentThreads = currentThreads.map((thread) => ({ ...thread, comments: [] }));
+
+    render(<App />);
+
+    expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
+    expect(screen.queryByText("先记录同步间隔需要调整。")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("load_thread_comments", expect.anything());
+
+    await user.click(screen.getByText("接入真实数据"));
+
+    expect(invokeMock).toHaveBeenCalledWith("load_thread_comments", {
+      threadId: "019ef927-4206-7823-a752-eb0364a6f11b"
+    });
+    expect(await screen.findByText("先记录同步间隔需要调整。")).toBeInTheDocument();
+    expect(screen.getByText("补充离线态提示。")).toBeInTheDocument();
+  });
+
+  test("can disable comment features without stopping periodic sync", async () => {
+    vi.useFakeTimers();
+    currentThreads = currentThreads.map((thread) => ({ ...thread, comments: [] }));
+    render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("接入真实数据")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭评论" }));
+    expect(screen.getByRole("button", { name: "已关闭评论" })).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("start_codex_sync", undefined);
+    invokeMock.mockClear();
+
+    fireEvent.click(screen.getByText("接入真实数据"));
+
+    expect(invokeMock).not.toHaveBeenCalledWith("load_thread_comments", expect.anything());
+    expect(screen.queryByPlaceholderText("添加评论...")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "已关闭评论" }));
+    expect(screen.getByRole("button", { name: "已开启评论" })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("接入真实数据"));
+    fireEvent.click(screen.getByText("接入真实数据"));
+
+    expect(invokeMock).toHaveBeenCalledWith("load_thread_comments", {
+      threadId: "019ef927-4206-7823-a752-eb0364a6f11b"
+    });
   });
 
   test("adds and edits comments from an expanded list row", async () => {

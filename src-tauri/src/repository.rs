@@ -1,6 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::domain::{
@@ -725,34 +724,7 @@ impl Repository {
             })
         })?;
 
-        let mut records = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut comments_by_thread = self.list_all_thread_comments_by_thread()?;
-        for record in &mut records {
-            record.comments = comments_by_thread.remove(&record.id).unwrap_or_default();
-        }
-        Ok(records)
-    }
-
-    fn list_all_thread_comments_by_thread(
-        &self,
-    ) -> rusqlite::Result<HashMap<String, Vec<ThreadCommentRecord>>> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, thread_id, author, body, created_at, updated_at, edited_at
-             FROM thread_comments
-             ORDER BY thread_id ASC, created_at DESC, id DESC",
-        )?;
-        let rows = statement.query_map([], thread_comment_from_row)?;
-        let mut comments_by_thread: HashMap<String, Vec<ThreadCommentRecord>> = HashMap::new();
-
-        for row in rows {
-            let comment = row?;
-            comments_by_thread
-                .entry(comment.thread_id.clone())
-                .or_default()
-                .push(comment);
-        }
-
-        Ok(comments_by_thread)
+        rows.collect()
     }
 
     fn now_text(&self) -> String {
@@ -829,6 +801,12 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
          WHERE manual_status_override = 1
            AND manual_status_updated_at = ?2",
         params![now, LEGACY_FIXED_NOW_TEXT],
+    )?;
+    connection.execute("DROP INDEX IF EXISTS idx_thread_comments_thread", [])?;
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_thread_comments_thread_created_id
+         ON thread_comments(thread_id, created_at DESC, id DESC)",
+        [],
     )?;
 
     Ok(())

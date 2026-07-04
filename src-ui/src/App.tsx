@@ -45,9 +45,11 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip";
-import { sameProjectList, sameThreadList } from "@/boardDataEquality";
+import { sameProjectList } from "@/boardDataEquality";
+import { mergeThreadRefresh } from "@/boardDataMerge";
 import { cn } from "@/lib/utils";
 import type {
+  BackendThreadComment,
   BoardData,
   BoardStatus,
   FilterState,
@@ -102,6 +104,9 @@ const defaultFilters: FilterState = {
 
 const foregroundSyncIntervalMs = 5_000;
 
+const canRunForegroundSync = () =>
+  typeof document === "undefined" || document.visibilityState !== "hidden";
+
 const unknownProject: Project = {
   id: "unknown",
   name: "Unknown",
@@ -117,7 +122,23 @@ const countByStatus = (threads: ThreadItem[], status: BoardStatus) =>
   threads.filter((thread) => thread.boardStatus === status).length;
 
 function App() {
-  const { threads, setThreads, projects, setProjects, reloadBoardData } = useBoardData();
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [autoSyncTouched, setAutoSyncTouched] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [autoRefreshTouched, setAutoRefreshTouched] = useState(false);
+  const [autoMappingEnabled, setAutoMappingEnabled] = useState(true);
+  const [autoMappingTouched, setAutoMappingTouched] = useState(false);
+  const [forceAutoSyncEnabled, setForceAutoSyncEnabled] = useState(true);
+  const [forceAutoSyncTouched, setForceAutoSyncTouched] = useState(false);
+  const [commentsFeatureEnabled, setCommentsFeatureEnabled] = useState(true);
+  const [commentsFeatureTouched, setCommentsFeatureTouched] = useState(false);
+  const { threads, setThreads, projects, setProjects, reloadBoardData } =
+    useBoardData(
+      autoSyncEnabled,
+      autoRefreshEnabled,
+      autoMappingEnabled,
+      forceAutoSyncEnabled
+    );
   const [view, setView] = useState<ViewKey>("active");
   const [layout, setLayout] = useState<LayoutMode>("list");
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -126,6 +147,8 @@ function App() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
   const [expandedBoardCardId, setExpandedBoardCardId] = useState<string | undefined>();
+  const [loadedCommentThreadIds, setLoadedCommentThreadIds] = useState<string[]>([]);
+  const [loadingCommentThreadIds, setLoadingCommentThreadIds] = useState<string[]>([]);
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -176,6 +199,52 @@ function App() {
     }
   };
 
+  const loadThreadComments = useCallback(
+    async (threadId: string, force = false) => {
+      if (!commentsFeatureEnabled) return;
+      if (
+        !force &&
+        (loadedCommentThreadIds.includes(threadId) || loadingCommentThreadIds.includes(threadId))
+      ) {
+        return;
+      }
+
+      setLoadingCommentThreadIds((current) =>
+        current.includes(threadId) ? current : [...current, threadId]
+      );
+      try {
+        const comments = await invoke<BackendThreadComment[]>("load_thread_comments", { threadId });
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === threadId ? { ...thread, comments: mapThreadComments(comments) } : thread
+          )
+        );
+        setLoadedCommentThreadIds((current) =>
+          current.includes(threadId) ? current : [...current, threadId]
+        );
+      } catch (error) {
+        setToast(`评论加载失败：${String(error)}`);
+      } finally {
+        setLoadingCommentThreadIds((current) => current.filter((id) => id !== threadId));
+      }
+    },
+    [commentsFeatureEnabled, loadedCommentThreadIds, loadingCommentThreadIds, setThreads]
+  );
+
+  const toggleListRow = (id: string) => {
+    const willExpand = !expandedRows.includes(id);
+    setExpandedRows((current) =>
+      current.includes(id) ? current.filter((rowId) => rowId !== id) : [...current, id]
+    );
+    if (willExpand && commentsFeatureEnabled) void loadThreadComments(id);
+  };
+
+  const toggleBoardCard = (id: string) => {
+    const willExpand = expandedBoardCardId !== id;
+    setExpandedBoardCardId((current) => (current === id ? undefined : id));
+    if (willExpand && commentsFeatureEnabled) void loadThreadComments(id);
+  };
+
   const markReviewed = async (thread: ThreadItem) => {
     updateThread(thread.id, {
       boardStatus: "reviewed",
@@ -187,17 +256,27 @@ function App() {
   };
 
   const addComment = async (threadId: string, body: string, suspendUntil?: string) => {
+    if (!commentsFeatureEnabled) {
+      setToast("评论功能已关闭");
+      return;
+    }
     const args = suspendUntil ? { threadId, body, suspendUntil } : { threadId, body };
     const next = await invokeBoardData("create_thread_comment", args);
     setThreads(next.threads);
     setProjects(next.projects);
+    await loadThreadComments(threadId, true);
     setToast(suspendUntil ? "评论已添加，Thread 已挂起" : "评论已添加");
   };
 
-  const editComment = async (commentId: number, body: string) => {
+  const editComment = async (threadId: string, commentId: number, body: string) => {
+    if (!commentsFeatureEnabled) {
+      setToast("评论功能已关闭");
+      return;
+    }
     const next = await invokeBoardData("update_thread_comment", { commentId, body });
     setThreads(next.threads);
     setProjects(next.projects);
+    await loadThreadComments(threadId, true);
     setToast("评论已更新");
   };
 
@@ -260,9 +339,67 @@ function App() {
   };
 
   const syncOnce = async () => {
-    const next = await reloadBoardData(true);
-    setToast(next.syncError ?? "已从 Codex Desktop 真实数据完成只读同步");
+    const status = await invokeStartCodexSync();
+    const next = await reloadBoardData(false);
+    setToast(status.lastError ?? next.syncError ?? "已启动后台同步");
   };
+  const toggleAutoSync = () => {
+    setAutoSyncTouched(true);
+    setAutoSyncEnabled((enabled) => !enabled);
+  };
+  const autoSyncButtonLabel = autoSyncEnabled
+    ? autoSyncTouched
+      ? "已开启同步"
+      : "停止同步"
+    : "已停止同步";
+  const toggleAutoRefresh = () => {
+    setAutoRefreshTouched(true);
+    setAutoRefreshEnabled((enabled) => !enabled);
+  };
+  const autoRefreshButtonLabel = autoRefreshEnabled
+    ? autoRefreshTouched
+      ? "已开启刷新"
+      : "停止刷新"
+    : "已停止刷新";
+  const toggleAutoMapping = () => {
+    setAutoMappingTouched(true);
+    setAutoMappingEnabled((enabled) => !enabled);
+  };
+  const autoMappingButtonLabel = autoMappingEnabled
+    ? autoMappingTouched
+      ? "已开启解析"
+      : "停止解析"
+    : "已停止解析";
+  const toggleForceAutoSync = () => {
+    setForceAutoSyncTouched(true);
+    setForceAutoSyncEnabled((enabled) => !enabled);
+  };
+  const forceAutoSyncButtonLabel = forceAutoSyncEnabled
+    ? forceAutoSyncTouched
+      ? "已强制同步"
+      : "只读轮询"
+    : "已只读轮询";
+  const toggleCommentsFeature = () => {
+    setCommentsFeatureTouched(true);
+    setCommentsFeatureEnabled((enabled) => {
+      const nextEnabled = !enabled;
+      if (!nextEnabled) {
+        setLoadedCommentThreadIds([]);
+        setLoadingCommentThreadIds([]);
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.comments.length > 0 ? { ...thread, comments: [] } : thread
+          )
+        );
+      }
+      return nextEnabled;
+    });
+  };
+  const commentsFeatureButtonLabel = commentsFeatureEnabled
+    ? commentsFeatureTouched
+      ? "已开启评论"
+      : "关闭评论"
+    : "已关闭评论";
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -378,6 +515,67 @@ function App() {
                 <RotateCcw className="h-3.5 w-3.5" />
                 同步
               </Button>
+              <Button
+                variant={autoSyncEnabled ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleAutoSync}
+                aria-pressed={!autoSyncEnabled}
+              >
+                {autoSyncEnabled ? <X className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
+                {autoSyncButtonLabel}
+              </Button>
+              <Button
+                variant={autoRefreshEnabled ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleAutoRefresh}
+                aria-pressed={!autoRefreshEnabled}
+              >
+                {autoRefreshEnabled ? (
+                  <X className="h-3.5 w-3.5" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                {autoRefreshButtonLabel}
+              </Button>
+              <Button
+                variant={autoMappingEnabled ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleAutoMapping}
+                aria-pressed={!autoMappingEnabled}
+              >
+                {autoMappingEnabled ? (
+                  <X className="h-3.5 w-3.5" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                {autoMappingButtonLabel}
+              </Button>
+              <Button
+                variant={forceAutoSyncEnabled ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleForceAutoSync}
+                aria-pressed={!forceAutoSyncEnabled}
+              >
+                {forceAutoSyncEnabled ? (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                ) : (
+                  <LayoutList className="h-3.5 w-3.5" />
+                )}
+                {forceAutoSyncButtonLabel}
+              </Button>
+              <Button
+                variant={commentsFeatureEnabled ? "outline" : "secondary"}
+                size="sm"
+                onClick={toggleCommentsFeature}
+                aria-pressed={!commentsFeatureEnabled}
+              >
+                {commentsFeatureEnabled ? (
+                  <X className="h-3.5 w-3.5" />
+                ) : (
+                  <MessageSquare className="h-3.5 w-3.5" />
+                )}
+                {commentsFeatureButtonLabel}
+              </Button>
               <Button size="sm" onClick={() => openProject("agent-kanban")}>
                 <ExternalLink className="h-3.5 w-3.5" />
                 打开 Codex
@@ -394,7 +592,19 @@ function App() {
                 onOpenChange={setSummaryOpen}
                 title="同步与队列概览"
                 icon={<TimerReset className="h-3.5 w-3.5" />}
-                right={<span className="text-[11px] text-muted-foreground">前台 5s / 后台 30s</span>}
+                right={
+                  <span className="text-[11px] text-muted-foreground">
+                    {autoSyncEnabled
+                      ? autoMappingEnabled
+                        ? autoRefreshEnabled
+                          ? forceAutoSyncEnabled
+                            ? "前台自动同步 5s"
+                            : "前台只读轮询 5s"
+                          : "自动同步 5s / 视图刷新已停止"
+                        : "自动同步 5s / 数据解析已停止"
+                      : "自动同步已停止"}
+                  </span>
+                }
               >
                 <div className="grid gap-2 md:grid-cols-5">
                   <MetricCard label="运行中" value={counts.running} hint="waiting approval 优先" tone="blue" />
@@ -461,13 +671,8 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedRows={expandedRows}
-                    onToggleExpand={(id) =>
-                      setExpandedRows((current) =>
-                        current.includes(id)
-                          ? current.filter((rowId) => rowId !== id)
-                          : [...current, id]
-                      )
-                    }
+                    commentsEnabled={commentsFeatureEnabled}
+                    onToggleExpand={toggleListRow}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
                     onUnarchive={unarchiveThread}
@@ -481,9 +686,8 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedCardId={expandedBoardCardId}
-                    onToggleExpand={(id) =>
-                      setExpandedBoardCardId((current) => (current === id ? undefined : id))
-                    }
+                    commentsEnabled={commentsFeatureEnabled}
+                    onToggleExpand={toggleBoardCard}
                     onUpdate={updateThread}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
@@ -502,13 +706,18 @@ function App() {
   );
 }
 
-function useBoardData() {
+function useBoardData(
+  autoSyncEnabled: boolean,
+  autoRefreshEnabled: boolean,
+  autoMappingEnabled: boolean,
+  forceAutoSyncEnabled: boolean
+) {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([unknownProject]);
   const silentSyncInFlight = useRef(false);
 
   const applyBoardData = useCallback((data: MappedBoardData) => {
-    setThreads((current) => (sameThreadList(current, data.threads) ? current : data.threads));
+    setThreads((current) => mergeThreadRefresh(current, data.threads));
     setProjects((current) => (sameProjectList(current, data.projects) ? current : data.projects));
     return data;
   }, []);
@@ -522,7 +731,25 @@ function useBoardData() {
     if (silentSyncInFlight.current) return;
     silentSyncInFlight.current = true;
     try {
-      const data = applyBoardData(await invokeBoardData("sync_codex_threads"));
+      if (forceAutoSyncEnabled) {
+        const status = await invokeStartCodexSync();
+        if (status.lastError) {
+          console.warn(status.lastError);
+        }
+      }
+      if (!autoMappingEnabled) {
+        if (!forceAutoSyncEnabled) {
+          const data = await invoke<BoardData>("load_board_data");
+          if (data.sync_error) {
+            console.warn(data.sync_error);
+          }
+        }
+        return;
+      }
+      const data = await invokeBoardData("load_board_data");
+      if (autoRefreshEnabled) {
+        applyBoardData(data);
+      }
       if (data.syncError) {
         console.warn(data.syncError);
       }
@@ -531,16 +758,21 @@ function useBoardData() {
     } finally {
       silentSyncInFlight.current = false;
     }
-  }, [applyBoardData]);
+  }, [applyBoardData, autoMappingEnabled, autoRefreshEnabled, forceAutoSyncEnabled]);
 
   useEffect(() => {
     void reloadBoardData(false);
+  }, [reloadBoardData]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
+      if (!autoSyncEnabled) return;
+      if (!canRunForegroundSync()) return;
       void syncSilently();
     }, foregroundSyncIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, [reloadBoardData, syncSilently]);
+  }, [autoSyncEnabled, syncSilently]);
 
   return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }
@@ -852,6 +1084,7 @@ function ThreadList({
   threads,
   projectNames,
   expandedRows,
+  commentsEnabled,
   onToggleExpand,
   onMarkReviewed,
   onArchive,
@@ -864,6 +1097,7 @@ function ThreadList({
   threads: ThreadItem[];
   projectNames: Map<string, string>;
   expandedRows: string[];
+  commentsEnabled: boolean;
   onToggleExpand: (id: string) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
   onArchive: (thread: ThreadItem) => void;
@@ -871,7 +1105,7 @@ function ThreadList({
   onOpen: (thread: ThreadItem) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
-  onEditComment: (commentId: number, body: string) => Promise<void>;
+  onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
@@ -953,11 +1187,15 @@ function ThreadList({
                         <span className="truncate">{thread.updatedAt}</span>
                         <span>·</span>
                         <span className="truncate">{thread.module} · {thread.sprint}</span>
-                        <span>·</span>
-                        <span className="inline-flex items-center gap-1">
-                          <MessageSquare className="h-3 w-3" />
-                          {thread.comments.length}
-                        </span>
+                        {commentsEnabled && (
+                          <>
+                            <span>·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <MessageSquare className="h-3 w-3" />
+                              {thread.comments.length}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </button>
                     <div className="min-w-0 space-y-1 text-left">
@@ -992,11 +1230,13 @@ function ThreadList({
                         <span className="px-1">·</span>
                         notes: <span>{thread.notes || "--"}</span>
                       </div>
-                      <ThreadComments
-                        thread={thread}
-                        onAddComment={onAddComment}
-                        onEditComment={onEditComment}
-                      />
+                      {commentsEnabled && (
+                        <ThreadComments
+                          thread={thread}
+                          onAddComment={onAddComment}
+                          onEditComment={onEditComment}
+                        />
+                      )}
                       <details className="rounded-md border bg-card">
                         <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 font-medium">
                           详情与字段
@@ -1069,7 +1309,7 @@ function ThreadComments({
 }: {
   thread: ThreadItem;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
-  onEditComment: (commentId: number, body: string) => Promise<void>;
+  onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
   const [suspendOnSubmit, setSuspendOnSubmit] = useState(false);
@@ -1104,7 +1344,7 @@ function ThreadComments({
     if (!body) return;
     setSaving(true);
     try {
-      await onEditComment(commentId, body);
+      await onEditComment(thread.id, commentId, body);
       setEditingId(undefined);
       setEditingBody("");
     } finally {
@@ -1343,6 +1583,7 @@ function BoardView({
   threads,
   projectNames,
   expandedCardId,
+  commentsEnabled,
   onToggleExpand,
   onUpdate,
   onMarkReviewed,
@@ -1355,6 +1596,7 @@ function BoardView({
   threads: ThreadItem[];
   projectNames: Map<string, string>;
   expandedCardId?: string;
+  commentsEnabled: boolean;
   onToggleExpand: (id: string) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
@@ -1362,7 +1604,7 @@ function BoardView({
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
-  onEditComment: (commentId: number, body: string) => Promise<void>;
+  onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
   const columns: BoardStatus[] = ["review_pending", "reviewed", "suspended", "archived"];
 
@@ -1387,7 +1629,7 @@ function BoardView({
               <div className="thin-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
                 {columnThreads.map((thread) => {
                   const expanded = expandedCardId === thread.id;
-                  const latestComment = thread.comments[0];
+                  const latestComment = commentsEnabled ? thread.comments[0] : undefined;
                   return (
                     <div
                       key={thread.id}
@@ -1412,10 +1654,12 @@ function BoardView({
                               {projectName(projectNames, thread.projectId)} · {thread.module || "module"}
                             </div>
                           </div>
-                          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            {thread.comments.length}
-                          </span>
+                          {commentsEnabled && (
+                            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              {thread.comments.length}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1 pl-5">
                           <Badge variant={statusTone[thread.boardStatus]}>
@@ -1436,11 +1680,13 @@ function BoardView({
 
                       {expanded && (
                         <div className="mt-2 space-y-2">
-                          <ThreadComments
-                            thread={thread}
-                            onAddComment={onAddComment}
-                            onEditComment={onEditComment}
-                          />
+                          {commentsEnabled && (
+                            <ThreadComments
+                              thread={thread}
+                              onAddComment={onAddComment}
+                              onEditComment={onEditComment}
+                            />
+                          )}
                           <details className="rounded-md border bg-secondary/35">
                             <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 text-[11px] font-medium">
                               详情与字段
@@ -1657,9 +1903,33 @@ type MappedBoardData = {
   syncError?: string | null;
 };
 
+type SyncStatus = {
+  inProgress: boolean;
+  lastStartedAt?: string;
+  lastFinishedAt?: string;
+  lastError?: string;
+};
+
+type BackendSyncStatus = {
+  in_progress: boolean;
+  last_started_at?: string | null;
+  last_finished_at?: string | null;
+  last_error?: string | null;
+};
+
 async function invokeBoardData(command: string, args?: Record<string, unknown>): Promise<MappedBoardData> {
   const data = await invoke<BoardData>(command, args);
   return mapBoardData(data);
+}
+
+async function invokeStartCodexSync(): Promise<SyncStatus> {
+  const status = await invoke<BackendSyncStatus>("start_codex_sync");
+  return {
+    inProgress: status.in_progress,
+    lastStartedAt: status.last_started_at ?? undefined,
+    lastFinishedAt: status.last_finished_at ?? undefined,
+    lastError: status.last_error ?? undefined
+  };
 }
 
 function mapBoardData(data: BoardData): MappedBoardData {
@@ -1698,17 +1968,21 @@ function mapBoardData(data: BoardData): MappedBoardData {
       suspendedUntil: thread.suspended_until ? formatTimestamp(thread.suspended_until) : undefined,
       archivedAt: thread.archived_at ? formatTimestamp(thread.archived_at) : undefined,
       notes: thread.notes,
-      comments: (thread.comments ?? []).map((comment) => ({
-        id: comment.id,
-        threadId: comment.thread_id,
-        author: comment.author,
-        body: comment.body,
-        createdAt: formatTimestamp(comment.created_at),
-        updatedAt: formatTimestamp(comment.updated_at),
-        editedAt: comment.edited_at ? formatTimestamp(comment.edited_at) : undefined
-      }))
+      comments: mapThreadComments(thread.comments ?? [])
     }))
   };
+}
+
+function mapThreadComments(comments: BackendThreadComment[]): ThreadComment[] {
+  return comments.map((comment) => ({
+    id: comment.id,
+    threadId: comment.thread_id,
+    author: comment.author,
+    body: comment.body,
+    createdAt: formatTimestamp(comment.created_at),
+    updatedAt: formatTimestamp(comment.updated_at),
+    editedAt: comment.edited_at ? formatTimestamp(comment.edited_at) : undefined
+  }));
 }
 
 function formatTimestamp(value: string) {

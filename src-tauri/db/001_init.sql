@@ -75,4 +75,5 @@ CREATE TABLE IF NOT EXISTS filter_presets (
 CREATE INDEX IF NOT EXISTS idx_codex_threads_project ON codex_threads(project_id);
 CREATE INDEX IF NOT EXISTS idx_codex_threads_board_status ON codex_threads(board_status);
 CREATE INDEX IF NOT EXISTS idx_codex_threads_updated_at ON codex_threads(updated_at);
-CREATE INDEX IF NOT EXISTS idx_thread_comments_thread ON thread_comments(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_thread_comments_thread_created_id
+  ON thread_comments(thread_id, created_at DESC, id DESC);
