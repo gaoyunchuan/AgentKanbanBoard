@@ -367,6 +367,65 @@ fn open_codex_deeplink(target: String) -> Result<String, String> {
     Ok(target)
 }
 
+#[tauri::command]
+fn open_project_in_vscode(path: String) -> Result<String, String> {
+    let commands = vscode_command_candidates(&path)?;
+    let mut errors = Vec::new();
+
+    for command in commands {
+        match std::process::Command::new(&command.program)
+            .args(&command.args)
+            .status()
+        {
+            Ok(status) if status.success() => return Ok(path),
+            Ok(status) => errors.push(format!(
+                "{} {:?} 退出状态：{status}",
+                command.program, command.args
+            )),
+            Err(error) => errors.push(format!(
+                "{} {:?} 执行失败：{error}",
+                command.program, command.args
+            )),
+        }
+    }
+
+    Err(format!(
+        "系统未能打开 VS Code，请确认 VS Code 已安装。尝试结果：{}",
+        errors.join("；")
+    ))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct VscodeCommand {
+    program: String,
+    args: Vec<String>,
+}
+
+fn vscode_command_candidates(path: &str) -> Result<Vec<VscodeCommand>, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("项目目录不能为空".to_string());
+    }
+
+    let mut commands = vec![VscodeCommand {
+        program: "code".to_string(),
+        args: vec![path.to_string()],
+    }];
+
+    if cfg!(target_os = "macos") {
+        commands.push(VscodeCommand {
+            program: "open".to_string(),
+            args: vec![
+                "-a".to_string(),
+                "Visual Studio Code".to_string(),
+                path.to_string(),
+            ],
+        });
+    }
+
+    Ok(commands)
+}
+
 fn basename(path: &str) -> Option<&str> {
     path.trim_end_matches('/').rsplit('/').next()
 }
@@ -374,7 +433,8 @@ fn basename(path: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        should_refresh_from_codex, LOAD_BOARD_DATA_FORCE_SYNC, SYNC_CODEX_THREADS_FORCE_SYNC,
+        should_refresh_from_codex, vscode_command_candidates, VscodeCommand,
+        LOAD_BOARD_DATA_FORCE_SYNC, SYNC_CODEX_THREADS_FORCE_SYNC,
     };
 
     #[test]
@@ -384,6 +444,33 @@ mod tests {
         assert!(!should_refresh_from_codex(false, true));
         assert!(should_refresh_from_codex(false, false));
         assert!(should_refresh_from_codex(true, true));
+    }
+
+    #[test]
+    fn vscode_command_uses_code_with_project_path_and_macos_fallback() {
+        let commands = vscode_command_candidates("/repo/app").expect("命令参数应该合法");
+
+        assert_eq!(
+            commands[0],
+            VscodeCommand {
+                program: "code".to_string(),
+                args: vec!["/repo/app".to_string()]
+            }
+        );
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                commands[1],
+                VscodeCommand {
+                    program: "open".to_string(),
+                    args: vec![
+                        "-a".to_string(),
+                        "Visual Studio Code".to_string(),
+                        "/repo/app".to_string()
+                    ]
+                }
+            );
+        }
+        assert!(vscode_command_candidates("   ").is_err());
     }
 }
 
@@ -412,7 +499,8 @@ fn main() {
             unarchive_thread,
             build_thread_deeplink,
             build_project_deeplink,
-            open_codex_deeplink
+            open_codex_deeplink,
+            open_project_in_vscode
         ])
         .run(tauri::generate_context!())
         .expect("启动 Codex Thread Kanban 失败");

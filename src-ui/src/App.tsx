@@ -7,9 +7,12 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Code2,
   Columns3,
+  Copy,
   ExternalLink,
   Filter,
+  Focus,
   FolderKanban,
   Inbox,
   KanbanSquare,
@@ -70,6 +73,8 @@ type ViewKey =
 
 type LayoutMode = "list" | "board";
 
+type SidebarMode = "expanded" | "rail" | "hidden";
+
 const statusLabels: Record<BoardStatus, string> = {
   untriaged: "未分类",
   running: "运行中",
@@ -92,14 +97,12 @@ const statusTone: Record<
 };
 
 const taskTypes: TaskType[] = ["unset", "feature", "bugfix", "review", "docs", "ops"];
+const defaultFilterStatuses: BoardStatus[] = ["review_pending", "suspended"];
 
 const defaultFilters: FilterState = {
   search: "",
   projectId: "all",
-  boardStatus: "all",
-  taskType: "all",
-  sprint: "all",
-  showArchived: false
+  boardStatuses: defaultFilterStatuses
 };
 
 const foregroundSyncIntervalMs = 5_000;
@@ -122,28 +125,13 @@ const countByStatus = (threads: ThreadItem[], status: BoardStatus) =>
   threads.filter((thread) => thread.boardStatus === status).length;
 
 function App() {
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
-  const [autoSyncTouched, setAutoSyncTouched] = useState(false);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const [autoRefreshTouched, setAutoRefreshTouched] = useState(false);
-  const [autoMappingEnabled, setAutoMappingEnabled] = useState(true);
-  const [autoMappingTouched, setAutoMappingTouched] = useState(false);
-  const [forceAutoSyncEnabled, setForceAutoSyncEnabled] = useState(true);
-  const [forceAutoSyncTouched, setForceAutoSyncTouched] = useState(false);
-  const [commentsFeatureEnabled, setCommentsFeatureEnabled] = useState(true);
-  const [commentsFeatureTouched, setCommentsFeatureTouched] = useState(false);
-  const { threads, setThreads, projects, setProjects, reloadBoardData } =
-    useBoardData(
-      autoSyncEnabled,
-      autoRefreshEnabled,
-      autoMappingEnabled,
-      forceAutoSyncEnabled
-    );
+  const { threads, setThreads, projects, setProjects, reloadBoardData } = useBoardData();
   const [view, setView] = useState<ViewKey>("active");
   const [layout, setLayout] = useState<LayoutMode>("list");
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("expanded");
   const [summaryOpen, setSummaryOpen] = useState(true);
+  const [zenMode, setZenMode] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
   const [expandedBoardCardId, setExpandedBoardCardId] = useState<string | undefined>();
@@ -156,7 +144,7 @@ function App() {
   );
 
   const visibleThreads = useMemo(() => {
-    return applyFilters(applyView(threads, view, filters.showArchived), filters, projectNames)
+    return applyFilters(applyView(threads, view), filters, projectNames, view)
       .slice()
       .sort((a, b) => rankThread(a, view) - rankThread(b, view));
   }, [filters, projectNames, threads, view]);
@@ -201,7 +189,6 @@ function App() {
 
   const loadThreadComments = useCallback(
     async (threadId: string, force = false) => {
-      if (!commentsFeatureEnabled) return;
       if (
         !force &&
         (loadedCommentThreadIds.includes(threadId) || loadingCommentThreadIds.includes(threadId))
@@ -213,10 +200,12 @@ function App() {
         current.includes(threadId) ? current : [...current, threadId]
       );
       try {
-        const comments = await invoke<BackendThreadComment[]>("load_thread_comments", { threadId });
+        const comments = await invoke<BackendThreadComment[] | null>("load_thread_comments", {
+          threadId
+        });
         setThreads((current) =>
           current.map((thread) =>
-            thread.id === threadId ? { ...thread, comments: mapThreadComments(comments) } : thread
+            thread.id === threadId ? { ...thread, comments: mapThreadComments(comments ?? []) } : thread
           )
         );
         setLoadedCommentThreadIds((current) =>
@@ -228,7 +217,7 @@ function App() {
         setLoadingCommentThreadIds((current) => current.filter((id) => id !== threadId));
       }
     },
-    [commentsFeatureEnabled, loadedCommentThreadIds, loadingCommentThreadIds, setThreads]
+    [loadedCommentThreadIds, loadingCommentThreadIds, setThreads]
   );
 
   const toggleListRow = (id: string) => {
@@ -236,13 +225,13 @@ function App() {
     setExpandedRows((current) =>
       current.includes(id) ? current.filter((rowId) => rowId !== id) : [...current, id]
     );
-    if (willExpand && commentsFeatureEnabled) void loadThreadComments(id);
+    if (willExpand) void loadThreadComments(id);
   };
 
   const toggleBoardCard = (id: string) => {
     const willExpand = expandedBoardCardId !== id;
     setExpandedBoardCardId((current) => (current === id ? undefined : id));
-    if (willExpand && commentsFeatureEnabled) void loadThreadComments(id);
+    if (willExpand) void loadThreadComments(id);
   };
 
   const markReviewed = async (thread: ThreadItem) => {
@@ -256,10 +245,6 @@ function App() {
   };
 
   const addComment = async (threadId: string, body: string, suspendUntil?: string) => {
-    if (!commentsFeatureEnabled) {
-      setToast("评论功能已关闭");
-      return;
-    }
     const args = suspendUntil ? { threadId, body, suspendUntil } : { threadId, body };
     const next = await invokeBoardData("create_thread_comment", args);
     setThreads(next.threads);
@@ -269,10 +254,6 @@ function App() {
   };
 
   const editComment = async (threadId: string, commentId: number, body: string) => {
-    if (!commentsFeatureEnabled) {
-      setToast("评论功能已关闭");
-      return;
-    }
     const next = await invokeBoardData("update_thread_comment", { commentId, body });
     setThreads(next.threads);
     setProjects(next.projects);
@@ -327,6 +308,40 @@ function App() {
     setToast(result.ok ? `已打开 Codex 项目入口：${project.name}` : result.message);
   };
 
+  const openVSCode = async (thread: ThreadItem) => {
+    const project = projects.find((item) => item.id === thread.projectId);
+    const path = project?.path.startsWith("/") ? project.path : thread.cwd;
+    if (!path.startsWith("/")) {
+      setToast("无法打开 VS Code：缺少项目目录");
+      return;
+    }
+
+    try {
+      await invoke("open_project_in_vscode", { path });
+      setToast(`已打开 VS Code：${project?.name ?? thread.title}`);
+    } catch (error) {
+      setToast(`打开 VS Code 失败：${String(error)}`);
+    }
+  };
+
+  const copySessionId = async (thread: ThreadItem) => {
+    if (!thread.codexSessionId) {
+      setToast("无法复制：缺少 session id");
+      return;
+    }
+    if (!navigator.clipboard?.writeText) {
+      setToast("复制 session id 失败：当前环境不支持剪贴板");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(thread.codexSessionId);
+      setToast("已复制 session id");
+    } catch (error) {
+      setToast(`复制 session id 失败：${String(error)}`);
+    }
+  };
+
   const applyRemoteBoardCommand = async (command: string, args: Record<string, unknown>) => {
     try {
       const next = await invokeBoardData(command, args);
@@ -343,238 +358,151 @@ function App() {
     const next = await reloadBoardData(false);
     setToast(status.lastError ?? next.syncError ?? "已启动后台同步");
   };
-  const toggleAutoSync = () => {
-    setAutoSyncTouched(true);
-    setAutoSyncEnabled((enabled) => !enabled);
-  };
-  const autoSyncButtonLabel = autoSyncEnabled
-    ? autoSyncTouched
-      ? "已开启同步"
-      : "停止同步"
-    : "已停止同步";
-  const toggleAutoRefresh = () => {
-    setAutoRefreshTouched(true);
-    setAutoRefreshEnabled((enabled) => !enabled);
-  };
-  const autoRefreshButtonLabel = autoRefreshEnabled
-    ? autoRefreshTouched
-      ? "已开启刷新"
-      : "停止刷新"
-    : "已停止刷新";
-  const toggleAutoMapping = () => {
-    setAutoMappingTouched(true);
-    setAutoMappingEnabled((enabled) => !enabled);
-  };
-  const autoMappingButtonLabel = autoMappingEnabled
-    ? autoMappingTouched
-      ? "已开启解析"
-      : "停止解析"
-    : "已停止解析";
-  const toggleForceAutoSync = () => {
-    setForceAutoSyncTouched(true);
-    setForceAutoSyncEnabled((enabled) => !enabled);
-  };
-  const forceAutoSyncButtonLabel = forceAutoSyncEnabled
-    ? forceAutoSyncTouched
-      ? "已强制同步"
-      : "只读轮询"
-    : "已只读轮询";
-  const toggleCommentsFeature = () => {
-    setCommentsFeatureTouched(true);
-    setCommentsFeatureEnabled((enabled) => {
-      const nextEnabled = !enabled;
-      if (!nextEnabled) {
-        setLoadedCommentThreadIds([]);
-        setLoadingCommentThreadIds([]);
-        setThreads((current) =>
-          current.map((thread) =>
-            thread.comments.length > 0 ? { ...thread, comments: [] } : thread
-          )
-        );
-      }
-      return nextEnabled;
+
+  const sidebarCollapsed = sidebarMode !== "expanded";
+  const showSidebar = !zenMode && sidebarMode !== "hidden";
+  const showSummary = !zenMode;
+  const sidebarToggleLabel = sidebarMode === "expanded" ? "收起导航" : "隐藏导航";
+  const cycleSidebarMode = () => {
+    setSidebarMode((mode) => {
+      if (mode === "expanded") return "rail";
+      if (mode === "rail") return "hidden";
+      return "expanded";
     });
   };
-  const commentsFeatureButtonLabel = commentsFeatureEnabled
-    ? commentsFeatureTouched
-      ? "已开启评论"
-      : "关闭评论"
-    : "已关闭评论";
 
   return (
     <TooltipProvider delayDuration={200}>
       <div className="app-shell flex h-screen min-h-[680px] overflow-hidden text-[12px]">
-        <aside
-          className={cn(
-            "flex shrink-0 flex-col border-r bg-card/90 transition-all duration-200",
-            sidebarOpen ? "w-[218px]" : "w-[54px]"
-          )}
-        >
-          <div className="flex h-12 items-center gap-2 border-b px-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen((open) => !open)}
-              aria-label="折叠导航"
-            >
-              <Menu className="h-4 w-4" />
-            </Button>
-            {sidebarOpen && (
-              <div className="min-w-0">
-                <div className="truncate text-[13px] font-semibold">Codex Kanban</div>
-                <div className="truncate text-[11px] text-muted-foreground">只读 thread 工作台</div>
+        {showSidebar && (
+          <aside
+            className={cn(
+              "flex shrink-0 flex-col border-r bg-card/90 transition-all duration-200",
+              sidebarMode === "expanded" ? "w-[218px]" : "w-[54px]"
+            )}
+          >
+            <div className="flex h-12 items-center gap-2 border-b px-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={cycleSidebarMode}
+                aria-label={sidebarToggleLabel}
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+              {sidebarMode === "expanded" && (
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold">Codex Kanban</div>
+                  <div className="truncate text-[11px] text-muted-foreground">只读 thread 工作台</div>
+                </div>
+              )}
+            </div>
+            <nav className="flex-1 space-y-1 p-2">
+              <NavItem
+                active={view === "active"}
+                collapsed={sidebarCollapsed}
+                icon={<KanbanSquare className="h-4 w-4" />}
+                label="全部活跃"
+                count={counts.active}
+                onClick={() => setView("active")}
+              />
+              <NavItem
+                active={view === "review_pending"}
+                collapsed={sidebarCollapsed}
+                icon={<ShieldAlert className="h-4 w-4" />}
+                label="待人工审核"
+                count={counts.review}
+                onClick={() => setView("review_pending")}
+              />
+              <NavItem
+                active={view === "running"}
+                collapsed={sidebarCollapsed}
+                icon={<PlayCircle className="h-4 w-4" />}
+                label="运行中"
+                count={counts.running}
+                onClick={() => setView("running")}
+              />
+              <NavItem
+                active={view === "suspended"}
+                collapsed={sidebarCollapsed}
+                icon={<TimerReset className="h-4 w-4" />}
+                label="挂起"
+                count={counts.suspended}
+                onClick={() => setView("suspended")}
+              />
+              <NavItem
+                active={view === "inbox"}
+                collapsed={sidebarCollapsed}
+                icon={<Inbox className="h-4 w-4" />}
+                label="未分类"
+                count={counts.inbox}
+                onClick={() => setView("inbox")}
+              />
+              <NavItem
+                active={view === "archived"}
+                collapsed={sidebarCollapsed}
+                icon={<Archive className="h-4 w-4" />}
+                label="归档"
+                count={counts.archived}
+                onClick={() => setView("archived")}
+              />
+              <NavItem
+                active={view === "projects"}
+                collapsed={sidebarCollapsed}
+                icon={<FolderKanban className="h-4 w-4" />}
+                label="项目"
+                count={projects.length - 1}
+                onClick={() => setView("projects")}
+              />
+            </nav>
+            {sidebarMode === "expanded" && (
+              <div className="border-t p-3 text-[11px] leading-5 text-muted-foreground">
+                <div className="font-medium text-foreground">本地数据</div>
+                <div>~/.codex-kanban/app.db</div>
+                <div>~/.codex-kanban/projects.yaml</div>
               </div>
             )}
-          </div>
-          <nav className="flex-1 space-y-1 p-2">
-            <NavItem
-              active={view === "active"}
-              collapsed={!sidebarOpen}
-              icon={<KanbanSquare className="h-4 w-4" />}
-              label="全部活跃"
-              count={counts.active}
-              onClick={() => setView("active")}
-            />
-            <NavItem
-              active={view === "review_pending"}
-              collapsed={!sidebarOpen}
-              icon={<ShieldAlert className="h-4 w-4" />}
-              label="待人工审核"
-              count={counts.review}
-              onClick={() => setView("review_pending")}
-            />
-            <NavItem
-              active={view === "running"}
-              collapsed={!sidebarOpen}
-              icon={<PlayCircle className="h-4 w-4" />}
-              label="运行中"
-              count={counts.running}
-              onClick={() => setView("running")}
-            />
-            <NavItem
-              active={view === "suspended"}
-              collapsed={!sidebarOpen}
-              icon={<TimerReset className="h-4 w-4" />}
-              label="挂起"
-              count={counts.suspended}
-              onClick={() => setView("suspended")}
-            />
-            <NavItem
-              active={view === "inbox"}
-              collapsed={!sidebarOpen}
-              icon={<Inbox className="h-4 w-4" />}
-              label="未分类"
-              count={counts.inbox}
-              onClick={() => setView("inbox")}
-            />
-            <NavItem
-              active={view === "archived"}
-              collapsed={!sidebarOpen}
-              icon={<Archive className="h-4 w-4" />}
-              label="归档"
-              count={counts.archived}
-              onClick={() => {
-                setView("archived");
-                setFilters((current) => ({ ...current, showArchived: true }));
-              }}
-            />
-            <NavItem
-              active={view === "projects"}
-              collapsed={!sidebarOpen}
-              icon={<FolderKanban className="h-4 w-4" />}
-              label="项目"
-              count={projects.length - 1}
-              onClick={() => setView("projects")}
-            />
-          </nav>
-          {sidebarOpen && (
-            <div className="border-t p-3 text-[11px] leading-5 text-muted-foreground">
-              <div className="font-medium text-foreground">本地数据</div>
-              <div>~/.codex-kanban/app.db</div>
-              <div>~/.codex-kanban/projects.yaml</div>
-            </div>
-          )}
-        </aside>
+          </aside>
+        )}
 
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 items-center justify-between border-b bg-card/85 px-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="truncate text-[15px] font-semibold">{viewTitle(view)}</h1>
-                <Badge variant="outline">OpenSpec: codex-thread-kanban-view</Badge>
-              </div>
-              <div className="truncate text-[11px] text-muted-foreground">
-                Codex Desktop 保持执行权威，此处只做同步、筛选、归档和跳转。
+            <div className="flex min-w-0 items-center gap-2">
+              {sidebarMode === "hidden" && !zenMode && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSidebarMode("expanded")}
+                  aria-label="展开导航"
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h1 className="truncate text-[15px] font-semibold">{viewTitle(view)}</h1>
+                </div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  Codex Desktop 保持执行权威，此处只做同步、筛选、归档和跳转。
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <div className="hidden max-w-[320px] truncate rounded border bg-secondary/55 px-2 py-1 text-[11px] text-muted-foreground md:block">
                 {toast}
               </div>
+              <Button
+                variant={zenMode ? "secondary" : "outline"}
+                size="sm"
+                aria-pressed={zenMode}
+                onClick={() => setZenMode((current) => !current)}
+              >
+                <Focus className="h-3.5 w-3.5" />
+                {zenMode ? "退出禅模式" : "禅模式"}
+              </Button>
               <Button variant="outline" size="sm" onClick={syncOnce}>
                 <RotateCcw className="h-3.5 w-3.5" />
                 同步
-              </Button>
-              <Button
-                variant={autoSyncEnabled ? "outline" : "secondary"}
-                size="sm"
-                onClick={toggleAutoSync}
-                aria-pressed={!autoSyncEnabled}
-              >
-                {autoSyncEnabled ? <X className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
-                {autoSyncButtonLabel}
-              </Button>
-              <Button
-                variant={autoRefreshEnabled ? "outline" : "secondary"}
-                size="sm"
-                onClick={toggleAutoRefresh}
-                aria-pressed={!autoRefreshEnabled}
-              >
-                {autoRefreshEnabled ? (
-                  <X className="h-3.5 w-3.5" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                {autoRefreshButtonLabel}
-              </Button>
-              <Button
-                variant={autoMappingEnabled ? "outline" : "secondary"}
-                size="sm"
-                onClick={toggleAutoMapping}
-                aria-pressed={!autoMappingEnabled}
-              >
-                {autoMappingEnabled ? (
-                  <X className="h-3.5 w-3.5" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                {autoMappingButtonLabel}
-              </Button>
-              <Button
-                variant={forceAutoSyncEnabled ? "outline" : "secondary"}
-                size="sm"
-                onClick={toggleForceAutoSync}
-                aria-pressed={!forceAutoSyncEnabled}
-              >
-                {forceAutoSyncEnabled ? (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                ) : (
-                  <LayoutList className="h-3.5 w-3.5" />
-                )}
-                {forceAutoSyncButtonLabel}
-              </Button>
-              <Button
-                variant={commentsFeatureEnabled ? "outline" : "secondary"}
-                size="sm"
-                onClick={toggleCommentsFeature}
-                aria-pressed={!commentsFeatureEnabled}
-              >
-                {commentsFeatureEnabled ? (
-                  <X className="h-3.5 w-3.5" />
-                ) : (
-                  <MessageSquare className="h-3.5 w-3.5" />
-                )}
-                {commentsFeatureButtonLabel}
               </Button>
               <Button size="sm" onClick={() => openProject("agent-kanban")}>
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -587,33 +515,27 @@ function App() {
             <ProjectsView projects={projects} setProjects={setProjects} onOpenProject={openProject} />
           ) : (
             <section className="flex min-h-0 flex-1 flex-col gap-2 p-3">
-              <CollapsibleBand
-                open={summaryOpen}
-                onOpenChange={setSummaryOpen}
-                title="同步与队列概览"
-                icon={<TimerReset className="h-3.5 w-3.5" />}
-                right={
-                  <span className="text-[11px] text-muted-foreground">
-                    {autoSyncEnabled
-                      ? autoMappingEnabled
-                        ? autoRefreshEnabled
-                          ? forceAutoSyncEnabled
-                            ? "前台自动同步 5s"
-                            : "前台只读轮询 5s"
-                          : "自动同步 5s / 视图刷新已停止"
-                        : "自动同步 5s / 数据解析已停止"
-                      : "自动同步已停止"}
-                  </span>
-                }
-              >
-                <div className="grid gap-2 md:grid-cols-5">
-                  <MetricCard label="运行中" value={counts.running} hint="waiting approval 优先" tone="blue" />
-                  <MetricCard label="待审核" value={counts.review} hint="按等待时长排序" tone="amber" />
-                  <MetricCard label="挂起" value={counts.suspended} hint="到点自动唤醒" tone="slate" />
-                  <MetricCard label="未分类" value={counts.inbox} hint="unknown 项目仍可见" tone="slate" />
-                  <MetricCard label="已归档" value={counts.archived} hint="默认隐藏，不删除" tone="green" />
-                </div>
-              </CollapsibleBand>
+              {showSummary && (
+                <CollapsibleBand
+                  open={summaryOpen}
+                  onOpenChange={setSummaryOpen}
+                  title="同步与队列概览"
+                  icon={<TimerReset className="h-3.5 w-3.5" />}
+                  right={
+                    <span className="text-[11px] text-muted-foreground">
+                      前台自动同步 5s
+                    </span>
+                  }
+                >
+                  <div className="grid gap-2 md:grid-cols-5">
+                    <MetricCard label="运行中" value={counts.running} hint="waiting approval 优先" tone="blue" />
+                    <MetricCard label="待审核" value={counts.review} hint="按等待时长排序" tone="amber" />
+                    <MetricCard label="挂起" value={counts.suspended} hint="到点自动唤醒" tone="slate" />
+                    <MetricCard label="未分类" value={counts.inbox} hint="unknown 项目仍可见" tone="slate" />
+                    <MetricCard label="已归档" value={counts.archived} hint="默认隐藏，不删除" tone="green" />
+                  </div>
+                </CollapsibleBand>
+              )}
 
               <div className="flex min-h-0 flex-1 flex-col rounded-md border bg-card shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
@@ -659,7 +581,6 @@ function App() {
 
                 {filtersOpen && (
                   <FilterPanel
-                    threads={threads}
                     projects={projects}
                     filters={filters}
                     onChange={setFilters}
@@ -671,12 +592,14 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedRows={expandedRows}
-                    commentsEnabled={commentsFeatureEnabled}
+                    onLoadComments={loadThreadComments}
                     onToggleExpand={toggleListRow}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
                     onUnarchive={unarchiveThread}
                     onOpen={openThread}
+                    onOpenVSCode={openVSCode}
+                    onCopySessionId={copySessionId}
                     onUpdate={updateThread}
                     onAddComment={addComment}
                     onEditComment={editComment}
@@ -686,13 +609,14 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedCardId={expandedBoardCardId}
-                    commentsEnabled={commentsFeatureEnabled}
                     onToggleExpand={toggleBoardCard}
                     onUpdate={updateThread}
                     onMarkReviewed={markReviewed}
                     onArchive={archiveThread}
                     onUnarchive={unarchiveThread}
                     onOpen={openThread}
+                    onOpenVSCode={openVSCode}
+                    onCopySessionId={copySessionId}
                     onAddComment={addComment}
                     onEditComment={editComment}
                   />
@@ -706,12 +630,7 @@ function App() {
   );
 }
 
-function useBoardData(
-  autoSyncEnabled: boolean,
-  autoRefreshEnabled: boolean,
-  autoMappingEnabled: boolean,
-  forceAutoSyncEnabled: boolean
-) {
+function useBoardData() {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([unknownProject]);
   const silentSyncInFlight = useRef(false);
@@ -731,25 +650,12 @@ function useBoardData(
     if (silentSyncInFlight.current) return;
     silentSyncInFlight.current = true;
     try {
-      if (forceAutoSyncEnabled) {
-        const status = await invokeStartCodexSync();
-        if (status.lastError) {
-          console.warn(status.lastError);
-        }
-      }
-      if (!autoMappingEnabled) {
-        if (!forceAutoSyncEnabled) {
-          const data = await invoke<BoardData>("load_board_data");
-          if (data.sync_error) {
-            console.warn(data.sync_error);
-          }
-        }
-        return;
+      const status = await invokeStartCodexSync();
+      if (status.lastError) {
+        console.warn(status.lastError);
       }
       const data = await invokeBoardData("load_board_data");
-      if (autoRefreshEnabled) {
-        applyBoardData(data);
-      }
+      applyBoardData(data);
       if (data.syncError) {
         console.warn(data.syncError);
       }
@@ -758,7 +664,7 @@ function useBoardData(
     } finally {
       silentSyncInFlight.current = false;
     }
-  }, [applyBoardData, autoMappingEnabled, autoRefreshEnabled, forceAutoSyncEnabled]);
+  }, [applyBoardData]);
 
   useEffect(() => {
     void reloadBoardData(false);
@@ -766,29 +672,32 @@ function useBoardData(
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (!autoSyncEnabled) return;
       if (!canRunForegroundSync()) return;
       void syncSilently();
     }, foregroundSyncIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, [autoSyncEnabled, syncSilently]);
+  }, [syncSilently]);
 
   return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }
 
-function applyView(threads: ThreadItem[], view: ViewKey, showArchived: boolean) {
+function applyView(threads: ThreadItem[], view: ViewKey) {
   if (view === "running") return threads.filter((thread) => thread.boardStatus === "running");
   if (view === "review_pending")
     return threads.filter((thread) => thread.boardStatus === "review_pending");
   if (view === "suspended") return threads.filter((thread) => thread.boardStatus === "suspended");
   if (view === "inbox") return threads.filter((thread) => thread.boardStatus === "untriaged");
   if (view === "archived") return threads.filter((thread) => thread.boardStatus === "archived");
-  if (view === "active" && showArchived) return threads;
-  return threads.filter((thread) => thread.boardStatus !== "archived");
+  return threads;
 }
 
-function applyFilters(threads: ThreadItem[], filters: FilterState, projectNames: Map<string, string>) {
+function applyFilters(
+  threads: ThreadItem[],
+  filters: FilterState,
+  projectNames: Map<string, string>,
+  view: ViewKey
+) {
   return threads.filter((thread) => {
     const searchText = [
       thread.title,
@@ -802,14 +711,15 @@ function applyFilters(threads: ThreadItem[], filters: FilterState, projectNames:
     const searchMatched = filters.search
       ? searchText.includes(filters.search.trim().toLowerCase())
       : true;
+    const statusMatched =
+      view !== "active" ||
+      filters.boardStatuses.length === 0 ||
+      filters.boardStatuses.includes(thread.boardStatus);
 
     return (
       searchMatched &&
       (filters.projectId === "all" || thread.projectId === filters.projectId) &&
-      (filters.boardStatus === "all" || thread.boardStatus === filters.boardStatus) &&
-      (filters.taskType === "all" || thread.taskType === filters.taskType) &&
-      (filters.sprint === "all" || thread.sprint === filters.sprint) &&
-      (filters.showArchived || thread.boardStatus !== "archived")
+      statusMatched
     );
   });
 }
@@ -983,21 +893,27 @@ function MetricCard({
 }
 
 function FilterPanel({
-  threads,
   projects,
   filters,
   onChange
 }: {
-  threads: ThreadItem[];
   projects: Project[];
   filters: FilterState;
   onChange: (filters: FilterState) => void;
 }) {
   const set = (patch: Partial<FilterState>) => onChange({ ...filters, ...patch });
-  const sprints = Array.from(new Set(threads.map((thread) => thread.sprint).filter(Boolean))).sort();
+  const toggleStatus = (status: BoardStatus) => {
+    const selected = filters.boardStatuses.includes(status);
+    set({
+      boardStatuses: selected
+        ? filters.boardStatuses.filter((item) => item !== status)
+        : [...filters.boardStatuses, status]
+    });
+  };
+  const statusOptions = Object.entries(statusLabels) as [BoardStatus, string][];
 
   return (
-    <div className="grid gap-2 border-b bg-secondary/30 px-3 py-2 md:grid-cols-5">
+    <div className="grid gap-2 border-b bg-secondary/30 px-3 py-2 md:grid-cols-[minmax(180px,240px)_1fr]">
       <FieldSelect
         label="项目"
         value={filters.projectId}
@@ -1007,45 +923,33 @@ function FilterPanel({
         ]}
         onChange={(value) => set({ projectId: value })}
       />
-      <FieldSelect
-        label="状态"
-        value={filters.boardStatus}
-        values={[
-          ["all", "全部状态"],
-          ...Object.entries(statusLabels)
-        ]}
-        onChange={(value) => set({ boardStatus: value })}
-      />
-      <FieldSelect
-        label="类型"
-        value={filters.taskType}
-        values={[
-          ["all", "全部类型"],
-          ...taskTypes.map((type) => [type, type] as const)
-        ]}
-        onChange={(value) => set({ taskType: value })}
-      />
-      <FieldSelect
-        label="Sprint"
-        value={filters.sprint}
-        values={[
-          ["all", "全部 Sprint"],
-          ...sprints.map((sprint) => [sprint, sprint] as const)
-        ]}
-        onChange={(value) => set({ sprint: value })}
-      />
-      <button
-        className={cn(
-          "mt-[18px] flex h-8 items-center justify-center gap-1 rounded-md border px-2",
-          filters.showArchived
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-input bg-card"
-        )}
-        onClick={() => set({ showArchived: !filters.showArchived })}
-      >
-        <Archive className="h-3.5 w-3.5" />
-        显示归档
-      </button>
+      <div>
+        <div className="mb-1 text-[11px] text-muted-foreground">状态</div>
+        <div className="flex min-h-8 flex-wrap items-center gap-1.5">
+          {statusOptions.map(([status, label]) => {
+            const selected = filters.boardStatuses.includes(status);
+            return (
+              <label
+                key={status}
+                className={cn(
+                  "inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-[12px] transition-colors",
+                  selected
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-input bg-card text-foreground hover:bg-accent"
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-primary"
+                  checked={selected}
+                  onChange={() => toggleStatus(status)}
+                />
+                {label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1084,12 +988,14 @@ function ThreadList({
   threads,
   projectNames,
   expandedRows,
-  commentsEnabled,
+  onLoadComments,
   onToggleExpand,
   onMarkReviewed,
   onArchive,
   onUnarchive,
   onOpen,
+  onOpenVSCode,
+  onCopySessionId,
   onUpdate,
   onAddComment,
   onEditComment
@@ -1097,12 +1003,14 @@ function ThreadList({
   threads: ThreadItem[];
   projectNames: Map<string, string>;
   expandedRows: string[];
-  commentsEnabled: boolean;
+  onLoadComments: (threadId: string) => void;
   onToggleExpand: (id: string) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
+  onOpenVSCode: (thread: ThreadItem) => void;
+  onCopySessionId: (thread: ThreadItem) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
@@ -1112,12 +1020,12 @@ function ThreadList({
     count: threads.length,
     getScrollElement: () => scrollParentRef.current,
     getItemKey: (index) => threads[index]?.id ?? index,
-    estimateSize: (index) => (expandedRows.includes(threads[index]?.id) ? 260 : 48),
+    estimateSize: (index) => (expandedRows.includes(threads[index]?.id) ? 260 : 64),
     overscan: 8,
     initialRect: { width: 800, height: 600 },
     measureElement: (element) => {
       const row = element as HTMLElement;
-      return row.getBoundingClientRect().height || (row.dataset.expanded === "true" ? 260 : 48);
+      return row.getBoundingClientRect().height || (row.dataset.expanded === "true" ? 260 : 64);
     }
   });
 
@@ -1132,9 +1040,17 @@ function ThreadList({
       : Array.from({ length: Math.min(threads.length, 20) }, (_, index) => ({
           key: threads[index].id,
           index,
-          start: index * 48
+          start: index * 64
         }));
-  const totalSize = rowVirtualizer.getTotalSize() || threads.length * 48;
+  const totalSize = rowVirtualizer.getTotalSize() || threads.length * 64;
+  const visibleThreadIds = rowsToRender
+    .map((virtualRow) => threads[virtualRow.index]?.id)
+    .filter((id): id is string => Boolean(id));
+  const visibleThreadKey = visibleThreadIds.join("|");
+
+  useEffect(() => {
+    visibleThreadIds.forEach((threadId) => onLoadComments(threadId));
+  }, [onLoadComments, visibleThreadKey]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1156,6 +1072,7 @@ function ThreadList({
             {rowsToRender.map((virtualRow) => {
               const thread = threads[virtualRow.index];
               const expanded = expandedRows.includes(thread.id);
+              const latestComment = thread.comments[0];
               return (
                 <div
                   key={thread.id}
@@ -1187,16 +1104,20 @@ function ThreadList({
                         <span className="truncate">{thread.updatedAt}</span>
                         <span>·</span>
                         <span className="truncate">{thread.module} · {thread.sprint}</span>
-                        {commentsEnabled && (
-                          <>
-                            <span>·</span>
-                            <span className="inline-flex items-center gap-1">
-                              <MessageSquare className="h-3 w-3" />
-                              {thread.comments.length}
-                            </span>
-                          </>
-                        )}
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          {thread.comments.length}
+                        </span>
                       </div>
+                      {latestComment && !expanded && (
+                        <div className="mt-0.5 truncate pl-5 text-[11px] leading-4 text-muted-foreground">
+                          <span className="font-medium text-foreground/80">
+                            {latestComment.author}
+                          </span>
+                          ：{latestComment.body}
+                        </div>
+                      )}
                     </button>
                     <div className="min-w-0 space-y-1 text-left">
                       <Badge variant={statusTone[thread.boardStatus]}>
@@ -1207,6 +1128,8 @@ function ThreadList({
                     <RowActions
                       thread={thread}
                       onOpen={onOpen}
+                      onOpenVSCode={onOpenVSCode}
+                      onCopySessionId={onCopySessionId}
                       onMarkReviewed={onMarkReviewed}
                       onArchive={onArchive}
                       onUnarchive={onUnarchive}
@@ -1230,13 +1153,11 @@ function ThreadList({
                         <span className="px-1">·</span>
                         notes: <span>{thread.notes || "--"}</span>
                       </div>
-                      {commentsEnabled && (
-                        <ThreadComments
-                          thread={thread}
-                          onAddComment={onAddComment}
-                          onEditComment={onEditComment}
-                        />
-                      )}
+                      <ThreadComments
+                        thread={thread}
+                        onAddComment={onAddComment}
+                        onEditComment={onEditComment}
+                      />
                       <details className="rounded-md border bg-card">
                         <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 font-medium">
                           详情与字段
@@ -1512,12 +1433,16 @@ function InlineInput({
 function RowActions({
   thread,
   onOpen,
+  onOpenVSCode,
+  onCopySessionId,
   onMarkReviewed,
   onArchive,
   onUnarchive
 }: {
   thread: ThreadItem;
   onOpen: (thread: ThreadItem) => void;
+  onOpenVSCode: (thread: ThreadItem) => void;
+  onCopySessionId: (thread: ThreadItem) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
@@ -1536,6 +1461,16 @@ function RowActions({
           <CheckCircle2 className="h-3.5 w-3.5" />
         </IconButton>
       )}
+      <IconButton label="打开 VS Code" onClick={() => onOpenVSCode(thread)}>
+        <Code2 className="h-3.5 w-3.5" />
+      </IconButton>
+      <IconButton
+        label={thread.codexSessionId ? "复制 session id" : "缺少 Codex session id"}
+        disabled={!thread.codexSessionId}
+        onClick={() => onCopySessionId(thread)}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </IconButton>
       {thread.boardStatus === "archived" ? (
         <IconButton label="恢复归档" onClick={() => onUnarchive(thread)}>
           <RotateCcw className="h-3.5 w-3.5" />
@@ -1583,26 +1518,28 @@ function BoardView({
   threads,
   projectNames,
   expandedCardId,
-  commentsEnabled,
   onToggleExpand,
   onUpdate,
   onMarkReviewed,
   onArchive,
   onUnarchive,
   onOpen,
+  onOpenVSCode,
+  onCopySessionId,
   onAddComment,
   onEditComment
 }: {
   threads: ThreadItem[];
   projectNames: Map<string, string>;
   expandedCardId?: string;
-  commentsEnabled: boolean;
   onToggleExpand: (id: string) => void;
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
   onArchive: (thread: ThreadItem) => void;
   onUnarchive: (thread: ThreadItem) => void;
   onOpen: (thread: ThreadItem) => void;
+  onOpenVSCode: (thread: ThreadItem) => void;
+  onCopySessionId: (thread: ThreadItem) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
 }) {
@@ -1629,7 +1566,7 @@ function BoardView({
               <div className="thin-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
                 {columnThreads.map((thread) => {
                   const expanded = expandedCardId === thread.id;
-                  const latestComment = commentsEnabled ? thread.comments[0] : undefined;
+                  const latestComment = thread.comments[0];
                   return (
                     <div
                       key={thread.id}
@@ -1654,12 +1591,10 @@ function BoardView({
                               {projectName(projectNames, thread.projectId)} · {thread.module || "module"}
                             </div>
                           </div>
-                          {commentsEnabled && (
-                            <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              {thread.comments.length}
-                            </span>
-                          )}
+                          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            {thread.comments.length}
+                          </span>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1 pl-5">
                           <Badge variant={statusTone[thread.boardStatus]}>
@@ -1680,13 +1615,11 @@ function BoardView({
 
                       {expanded && (
                         <div className="mt-2 space-y-2">
-                          {commentsEnabled && (
-                            <ThreadComments
-                              thread={thread}
-                              onAddComment={onAddComment}
-                              onEditComment={onEditComment}
-                            />
-                          )}
+                          <ThreadComments
+                            thread={thread}
+                            onAddComment={onAddComment}
+                            onEditComment={onEditComment}
+                          />
                           <details className="rounded-md border bg-secondary/35">
                             <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 text-[11px] font-medium">
                               详情与字段
@@ -1720,6 +1653,8 @@ function BoardView({
                         <RowActions
                           thread={thread}
                           onOpen={onOpen}
+                          onOpenVSCode={onOpenVSCode}
+                          onCopySessionId={onCopySessionId}
                           onMarkReviewed={onMarkReviewed}
                           onArchive={onArchive}
                           onUnarchive={onUnarchive}

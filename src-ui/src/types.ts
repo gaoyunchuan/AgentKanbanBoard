@@ -54,10 +54,7 @@ export type ThreadComment = {
 export type FilterState = {
   search: string;
   projectId: string;
-  boardStatus: string;
-  taskType: string;
-  sprint: string;
-  showArchived: boolean;
+  boardStatuses: BoardStatus[];
 };
 
 export type BackendProject = {
