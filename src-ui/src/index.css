@@ -55,6 +55,10 @@
     grid-template-columns: minmax(0, 1fr) 64px 78px;
   }
 
+  .todo-grid {
+    grid-template-columns: minmax(420px, 1fr) 132px 168px 148px 106px;
+  }
+
   .thin-scrollbar::-webkit-scrollbar {
     width: 8px;
     height: 8px;

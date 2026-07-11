@@ -47,6 +47,66 @@ pub enum TaskType {
     Ops,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoTaskStatus {
+    Todo,
+    InProgress,
+    Cancelled,
+    Completed,
+}
+
+impl TodoTaskStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Todo => "todo",
+            Self::InProgress => "in_progress",
+            Self::Cancelled => "cancelled",
+            Self::Completed => "completed",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "todo" => Some(Self::Todo),
+            "in_progress" => Some(Self::InProgress),
+            "cancelled" => Some(Self::Cancelled),
+            "completed" => Some(Self::Completed),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoTaskInput {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub position: i64,
+    pub title: String,
+    pub status: TodoTaskStatus,
+    pub start_date: Option<String>,
+    pub expected_end_date: Option<String>,
+    pub actual_end_date: Option<String>,
+    pub process_tracking: String,
+    pub result_review: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoTaskRecord {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub position: i64,
+    pub title: String,
+    pub status: TodoTaskStatus,
+    pub start_date: Option<String>,
+    pub expected_end_date: Option<String>,
+    pub actual_end_date: Option<String>,
+    pub process_tracking: String,
+    pub result_review: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 impl TaskType {
     pub fn as_str(self) -> &'static str {
         match self {

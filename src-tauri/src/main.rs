@@ -2,7 +2,7 @@ use codex_kanban::config::AppConfig;
 use codex_kanban::deeplink::{ensure_codex_deeplink, project_deeplink, thread_deeplink};
 use codex_kanban::domain::{
     FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadCommentRecord,
-    ThreadRecord,
+    ThreadRecord, TodoTaskInput, TodoTaskRecord,
 };
 use codex_kanban::project_matcher::ProjectRule;
 use codex_kanban::repository::Repository;
@@ -148,6 +148,22 @@ fn load_thread_comments(thread_id: String) -> Result<Vec<ThreadCommentRecord>, S
     let repository = open_repository()?;
     repository
         .list_thread_comments(&thread_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn load_todo_tasks() -> Result<Vec<TodoTaskRecord>, String> {
+    let repository = open_repository()?;
+    repository
+        .list_todo_tasks()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_todo_tasks(tasks: Vec<TodoTaskInput>) -> Result<Vec<TodoTaskRecord>, String> {
+    let repository = open_repository()?;
+    repository
+        .save_todo_tasks(&tasks)
         .map_err(|error| error.to_string())
 }
 
@@ -352,8 +368,8 @@ fn open_codex_deeplink(target: String) -> Result<String, String> {
     let status = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg(&target).status()
     } else if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &target])
+        std::process::Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", &target])
             .status()
     } else {
         std::process::Command::new("xdg-open").arg(&target).status()
@@ -365,6 +381,41 @@ fn open_codex_deeplink(target: String) -> Result<String, String> {
     }
 
     Ok(target)
+}
+
+#[tauri::command]
+fn open_external_link(target: String) -> Result<String, String> {
+    let target = validate_external_link(&target)?;
+    let status = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&target).status()
+    } else if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &target])
+            .status()
+    } else {
+        std::process::Command::new("xdg-open").arg(&target).status()
+    }
+    .map_err(|error| format!("打开外部链接失败：{error}"))?;
+
+    if !status.success() {
+        return Err("系统未能打开外部链接".to_string());
+    }
+
+    Ok(target)
+}
+
+fn validate_external_link(target: &str) -> Result<String, String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("链接不能为空".to_string());
+    }
+    if !target.starts_with("https://") && !target.starts_with("http://") {
+        return Err("仅支持 http 或 https 链接".to_string());
+    }
+    if target.chars().any(char::is_control) {
+        return Err("链接包含非法控制字符".to_string());
+    }
+    Ok(target.to_string())
 }
 
 #[tauri::command]
@@ -433,8 +484,8 @@ fn basename(path: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        should_refresh_from_codex, vscode_command_candidates, VscodeCommand,
-        LOAD_BOARD_DATA_FORCE_SYNC, SYNC_CODEX_THREADS_FORCE_SYNC,
+        should_refresh_from_codex, validate_external_link, vscode_command_candidates,
+        VscodeCommand, LOAD_BOARD_DATA_FORCE_SYNC, SYNC_CODEX_THREADS_FORCE_SYNC,
     };
 
     #[test]
@@ -472,6 +523,19 @@ mod tests {
         }
         assert!(vscode_command_candidates("   ").is_err());
     }
+
+    #[test]
+    fn external_link_only_accepts_http_and_https() {
+        assert_eq!(
+            validate_external_link(" https://example.com/path ").unwrap(),
+            "https://example.com/path"
+        );
+        assert!(validate_external_link("http://example.com").is_ok());
+        assert!(validate_external_link("javascript:alert(1)").is_err());
+        assert!(validate_external_link("file:///tmp/secret").is_err());
+        assert!(validate_external_link("https://example.com\nfile:///tmp/secret").is_err());
+        assert!(validate_external_link("   ").is_err());
+    }
 }
 
 fn project_id_for_path(path: &str) -> String {
@@ -494,12 +558,15 @@ fn main() {
             create_thread_comment,
             update_thread_comment,
             load_thread_comments,
+            load_todo_tasks,
+            save_todo_tasks,
             mark_thread_reviewed,
             archive_thread,
             unarchive_thread,
             build_thread_deeplink,
             build_project_deeplink,
             open_codex_deeplink,
+            open_external_link,
             open_project_in_vscode
         ])
         .run(tauri::generate_context!())

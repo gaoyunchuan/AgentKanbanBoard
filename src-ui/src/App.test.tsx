@@ -287,6 +287,18 @@ describe("Codex Kanban App", () => {
     expect(screen.queryByRole("button", { name: "关闭评论" })).not.toBeInTheDocument();
   });
 
+  test("opens the independent To Do List page from the sidebar", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    await user.click(screen.getByRole("button", { name: /To Do List/ }));
+
+    expect(screen.getByRole("heading", { name: "To Do List" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建任务" })).toBeInTheDocument();
+    expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
+  });
+
   test("uses multi-select status filters by default and removes unused filters", async () => {
     const user = userEvent.setup();
     currentThreads = [

@@ -72,8 +72,26 @@ CREATE TABLE IF NOT EXISTS filter_presets (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS todo_tasks (
+  id TEXT PRIMARY KEY,
+  parent_id TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'todo'
+    CHECK (status IN ('todo', 'in_progress', 'cancelled', 'completed')),
+  start_date TEXT,
+  expected_end_date TEXT,
+  actual_end_date TEXT,
+  process_tracking TEXT NOT NULL DEFAULT '',
+  result_review TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_codex_threads_project ON codex_threads(project_id);
 CREATE INDEX IF NOT EXISTS idx_codex_threads_board_status ON codex_threads(board_status);
 CREATE INDEX IF NOT EXISTS idx_codex_threads_updated_at ON codex_threads(updated_at);
 CREATE INDEX IF NOT EXISTS idx_thread_comments_thread_created_id
   ON thread_comments(thread_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_todo_tasks_parent_position
+  ON todo_tasks(parent_id, position, id);

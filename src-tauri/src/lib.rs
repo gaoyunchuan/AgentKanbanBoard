@@ -13,11 +13,17 @@ pub mod thread_sync;
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
     use super::board_status_mapper::{BoardStatusMapper, StatusInput};
     use super::config::AppConfig;
     use super::deeplink::{project_deeplink, thread_deeplink};
     use super::domain::{
         BoardStatus, CodexThreadUpsert, FilterQuery, ProjectInput, TaskType, ThreadCommentInput,
+        TodoTaskInput, TodoTaskStatus,
     };
     use super::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
     use super::repository::Repository;
@@ -71,6 +77,83 @@ mod tests {
 
     fn fixed_clock(value: &'static str) -> Box<dyn Fn() -> String> {
         Box::new(move || value.to_string())
+    }
+
+    #[test]
+    fn repository_saves_reorders_and_reloads_todo_tree() {
+        let repo =
+            Repository::open_in_memory_with_clock(fixed_clock("2026-07-11T08:00:00Z")).unwrap();
+        let tasks = vec![
+            TodoTaskInput {
+                id: "root".to_string(),
+                parent_id: None,
+                position: 0,
+                title: "根任务".to_string(),
+                status: TodoTaskStatus::InProgress,
+                start_date: Some("2026-07-11".to_string()),
+                expected_end_date: Some("2026-07-15".to_string()),
+                actual_end_date: None,
+                process_tracking: "[排查记录](https://example.com/trace)".to_string(),
+                result_review: String::new(),
+            },
+            TodoTaskInput {
+                id: "child".to_string(),
+                parent_id: Some("root".to_string()),
+                position: 0,
+                title: "子任务".to_string(),
+                status: TodoTaskStatus::Completed,
+                start_date: None,
+                expected_end_date: None,
+                actual_end_date: Some("2026-07-11".to_string()),
+                process_tracking: String::new(),
+                result_review: "验证完成".to_string(),
+            },
+        ];
+
+        let saved = repo.save_todo_tasks(&tasks).unwrap();
+        assert_eq!(saved.len(), 2);
+        let root = saved.iter().find(|task| task.id == "root").unwrap();
+        let child = saved.iter().find(|task| task.id == "child").unwrap();
+        assert_eq!(child.parent_id.as_deref(), Some("root"));
+        assert_eq!(root.status, TodoTaskStatus::InProgress);
+        assert_eq!(child.actual_end_date.as_deref(), Some("2026-07-11"));
+
+        let remaining = repo.save_todo_tasks(&tasks[..1]).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, "root");
+    }
+
+    #[test]
+    fn repository_todo_snapshot_preserves_created_at_and_updates_updated_at() {
+        let tick = Arc::new(AtomicUsize::new(0));
+        let clock_tick = Arc::clone(&tick);
+        let repo = Repository::open_in_memory_with_clock(Box::new(move || {
+            format!(
+                "2026-07-11T08:00:{:02}Z",
+                clock_tick.fetch_add(1, Ordering::SeqCst)
+            )
+        }))
+        .unwrap();
+        let mut tasks = vec![TodoTaskInput {
+            id: "root".to_string(),
+            parent_id: None,
+            position: 0,
+            title: "首次创建".to_string(),
+            status: TodoTaskStatus::Todo,
+            start_date: None,
+            expected_end_date: None,
+            actual_end_date: None,
+            process_tracking: String::new(),
+            result_review: String::new(),
+        }];
+
+        let first = repo.save_todo_tasks(&tasks).unwrap().remove(0);
+        tasks[0].title = "更新标题".to_string();
+        let second = repo.save_todo_tasks(&tasks).unwrap().remove(0);
+
+        assert_eq!(second.created_at, first.created_at);
+        assert_ne!(second.updated_at, first.updated_at);
+        assert_eq!(second.title, "更新标题");
     }
 
     #[test]

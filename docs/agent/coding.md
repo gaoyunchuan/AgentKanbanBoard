@@ -12,6 +12,11 @@
 - Thread 行操作列包含打开 Codex、打开 VS Code、复制 session id、审核/归档等图标按钮；打开 VS Code 通过 Tauri command 先执行 `code <项目目录>`，macOS 上失败时 fallback 到 `open -a "Visual Studio Code" <项目目录>`；前端优先使用项目路径，没有项目路径时使用 thread cwd。
 - 左侧导航支持展开、图标栏、完全隐藏三态；窄窗口下可通过完全隐藏释放列表操作列宽度，隐藏后应在主标题栏保留展开导航入口。
 - 禅模式按钮位于同步按钮前；开启时临时隐藏左侧导航和“同步与队列概览”，退出后恢复原有显示状态。
+- To Do List 使用独立 `todo_tasks` 表，不复用 `codex_threads`；前端保存完整任务快照，树结构由 `parent_id + position` 表达，任务状态与父子状态必须保持独立。
+- To Do 扩展信息保存 Markdown 兼容文本；命名链接仅把 `http://` 或 `https://` 渲染为可点击链接，不使用 `dangerouslySetInnerHTML`，外部打开 command 也必须保持协议白名单。
+- To Do 快照保存必须 upsert 当前任务并删除快照外任务；更新已有任务时保留 `created_at`，只更新 `updated_at`，不得通过全表删除重插改写创建时间。
+- To Do 扩展信息按非空行逐条编辑；普通文本与完整行 Markdown 命名链接均支持双击原位编辑，链接单击与双击必须避免误跳转。逐条替换必须保留其他原始行和空行；URL 需同时满足 HTTP(S)、有效主机、无空白且可被 Markdown 链接解析。
+- 普通 Vite 浏览器预览没有 Tauri bridge，不应启动 BoardData 加载和周期同步；桌面壳与测试环境继续保留 Tauri 调用。
 
 ## Update Notes
 
@@ -22,3 +27,5 @@
 - 2026-07-08: 操作列新增打开 VS Code 和复制 session id。
 - 2026-07-08: 左侧导航新增完全隐藏状态，窄视图可释放横向空间。
 - 2026-07-08: 工具栏新增禅模式，用于临时隐藏菜单和同步概览。
+- 2026-07-11: 新增独立 To Do List 的持久化、树结构、Markdown 命名链接与浏览器预览边界。
+- 2026-07-11: To Do 快照改为保留 `created_at` 的 upsert，并补充扩展信息逐条编辑约束。

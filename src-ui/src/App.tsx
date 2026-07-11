@@ -17,6 +17,7 @@ import {
   Inbox,
   KanbanSquare,
   LayoutList,
+  ListTodo,
   Menu,
   MessageSquare,
   Pencil,
@@ -31,6 +32,7 @@ import {
   TimerReset,
   X
 } from "lucide-react";
+import { TodoListView } from "@/todo/TodoListView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +53,7 @@ import {
 import { sameProjectList } from "@/boardDataEquality";
 import { mergeThreadRefresh } from "@/boardDataMerge";
 import { cn } from "@/lib/utils";
+import { shouldInvokeTauri } from "@/runtime";
 import type {
   BackendThreadComment,
   BoardData,
@@ -69,7 +72,8 @@ type ViewKey =
   | "suspended"
   | "active"
   | "archived"
-  | "projects";
+  | "projects"
+  | "todos";
 
 type LayoutMode = "list" | "board";
 
@@ -138,6 +142,7 @@ function App() {
   const [loadedCommentThreadIds, setLoadedCommentThreadIds] = useState<string[]>([]);
   const [loadingCommentThreadIds, setLoadingCommentThreadIds] = useState<string[]>([]);
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
+  const [todoCount, setTodoCount] = useState(0);
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects]
@@ -454,6 +459,14 @@ function App() {
                 count={projects.length - 1}
                 onClick={() => setView("projects")}
               />
+              <NavItem
+                active={view === "todos"}
+                collapsed={sidebarCollapsed}
+                icon={<ListTodo className="h-4 w-4" />}
+                label="To Do List"
+                count={todoCount}
+                onClick={() => setView("todos")}
+              />
             </nav>
             {sidebarMode === "expanded" && (
               <div className="border-t p-3 text-[11px] leading-5 text-muted-foreground">
@@ -483,11 +496,13 @@ function App() {
                   <h1 className="truncate text-[15px] font-semibold">{viewTitle(view)}</h1>
                 </div>
                 <div className="truncate text-[11px] text-muted-foreground">
-                  Codex Desktop 保持执行权威，此处只做同步、筛选、归档和跳转。
+                  {view === "todos"
+                    ? "用树形任务拆解工作，日期双击编辑，⌘+Enter 新建，Tab 调整层级。"
+                    : "Codex Desktop 保持执行权威，此处只做同步、筛选、归档和跳转。"}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            {view !== "todos" && <div className="flex items-center gap-2">
               <div className="hidden max-w-[320px] truncate rounded border bg-secondary/55 px-2 py-1 text-[11px] text-muted-foreground md:block">
                 {toast}
               </div>
@@ -508,11 +523,13 @@ function App() {
                 <ExternalLink className="h-3.5 w-3.5" />
                 打开 Codex
               </Button>
-            </div>
+            </div>}
           </header>
 
           {view === "projects" ? (
             <ProjectsView projects={projects} setProjects={setProjects} onOpenProject={openProject} />
+          ) : view === "todos" ? (
+            <TodoListView onCountChange={setTodoCount} />
           ) : (
             <section className="flex min-h-0 flex-1 flex-col gap-2 p-3">
               {showSummary && (
@@ -634,6 +651,10 @@ function useBoardData() {
   const [threads, setThreads] = useState<ThreadItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([unknownProject]);
   const silentSyncInFlight = useRef(false);
+  const canInvokeTauri = shouldInvokeTauri(
+    typeof window === "undefined" || "__TAURI_INTERNALS__" in window,
+    import.meta.env.MODE
+  );
 
   const applyBoardData = useCallback((data: MappedBoardData) => {
     setThreads((current) => mergeThreadRefresh(current, data.threads));
@@ -667,17 +688,19 @@ function useBoardData() {
   }, [applyBoardData]);
 
   useEffect(() => {
+    if (!canInvokeTauri) return;
     void reloadBoardData(false);
-  }, [reloadBoardData]);
+  }, [canInvokeTauri, reloadBoardData]);
 
   useEffect(() => {
+    if (!canInvokeTauri) return;
     const timer = window.setInterval(() => {
       if (!canRunForegroundSync()) return;
       void syncSilently();
     }, foregroundSyncIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, [syncSilently]);
+  }, [canInvokeTauri, syncSilently]);
 
   return { threads, setThreads, projects, setProjects, reloadBoardData } as const;
 }
@@ -764,7 +787,8 @@ function viewTitle(view: ViewKey) {
     suspended: "挂起 Threads",
     active: "全部活跃 Threads",
     archived: "归档 Threads",
-    projects: "项目注册表"
+    projects: "项目注册表",
+    todos: "To Do List"
   };
   return titles[view];
 }

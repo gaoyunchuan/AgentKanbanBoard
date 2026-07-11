@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::domain::{
     BoardStatus, CodexThreadUpsert, FilterPreset, FilterQuery, ProjectInput, ProjectRecord,
     TaskType, ThreadCommentInput, ThreadCommentRecord, ThreadEventInput, ThreadRecord,
+    TodoTaskInput, TodoTaskRecord, TodoTaskStatus,
 };
 use crate::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
 use crate::time::current_utc_text;
@@ -104,6 +105,85 @@ impl Repository {
         })?;
 
         rows.collect()
+    }
+
+    pub fn list_todo_tasks(&self) -> rusqlite::Result<Vec<TodoTaskRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, parent_id, position, title, status, start_date, expected_end_date,
+                    actual_end_date, process_tracking, result_review, created_at, updated_at
+             FROM todo_tasks
+             ORDER BY position ASC, created_at ASC, id ASC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let status: String = row.get(4)?;
+            Ok(TodoTaskRecord {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                position: row.get(2)?,
+                title: row.get(3)?,
+                status: TodoTaskStatus::parse(&status).unwrap_or(TodoTaskStatus::Todo),
+                start_date: row.get(5)?,
+                expected_end_date: row.get(6)?,
+                actual_end_date: row.get(7)?,
+                process_tracking: row.get(8)?,
+                result_review: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn save_todo_tasks(
+        &self,
+        tasks: &[TodoTaskInput],
+    ) -> rusqlite::Result<Vec<TodoTaskRecord>> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let existing_ids = {
+            let mut statement = transaction.prepare("SELECT id FROM todo_tasks")?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for id in existing_ids {
+            if !tasks.iter().any(|task| task.id == id) {
+                transaction.execute("DELETE FROM todo_tasks WHERE id = ?1", params![id])?;
+            }
+        }
+        let now = self.now_text();
+        for task in tasks {
+            transaction.execute(
+                "INSERT INTO todo_tasks (
+                   id, parent_id, position, title, status, start_date, expected_end_date,
+                   actual_end_date, process_tracking, result_review, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+                 ON CONFLICT(id) DO UPDATE SET
+                   parent_id = excluded.parent_id,
+                   position = excluded.position,
+                   title = excluded.title,
+                   status = excluded.status,
+                   start_date = excluded.start_date,
+                   expected_end_date = excluded.expected_end_date,
+                   actual_end_date = excluded.actual_end_date,
+                   process_tracking = excluded.process_tracking,
+                   result_review = excluded.result_review,
+                   updated_at = excluded.updated_at",
+                params![
+                    task.id,
+                    task.parent_id,
+                    task.position,
+                    task.title,
+                    task.status.as_str(),
+                    task.start_date,
+                    task.expected_end_date,
+                    task.actual_end_date,
+                    task.process_tracking,
+                    task.result_review,
+                    now
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        self.list_todo_tasks()
     }
 
     pub fn upsert_thread(&self, input: CodexThreadUpsert) -> rusqlite::Result<()> {
