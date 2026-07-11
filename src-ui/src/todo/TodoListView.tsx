@@ -97,7 +97,9 @@ export function TodoListView({
   const [focusId, setFocusId] = useState<string>();
   const [draggedId, setDraggedId] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ taskId: string; placement: TaskDropPlacement }>();
-  const [message, setMessage] = useState("⌘+Enter 新建 · Tab 缩进 · Shift+Tab 提升层级");
+  const [message, setMessage] = useState(
+    "⌘⇧Enter 向上新建 · ⌘Enter 向后新建 · Tab 缩进 · Shift+Tab 提升层级"
+  );
   const titleRefs = useRef(new Map<string, HTMLInputElement>());
   const saveQueue = useRef(Promise.resolve());
 
@@ -215,9 +217,11 @@ export function TodoListView({
     applyTasks([...tasks, emptyTask(id, parentId, position)], { focusId: id });
   };
 
-  const addSiblingTask = (taskId: string) => {
+  const addSiblingTask = (taskId: string, placement: "before" | "after" = "after") => {
     const id = createId();
-    applyTasks(insertSiblingTask(tasks, taskId, emptyTask(id, undefined, 0)), { focusId: id });
+    applyTasks(insertSiblingTask(tasks, taskId, emptyTask(id, undefined, 0), placement), {
+      focusId: id
+    });
   };
 
   const toggleCompleted = (task: TodoTask) => {
@@ -412,7 +416,7 @@ export function TodoListView({
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && event.metaKey) {
                           event.preventDefault();
-                          addSiblingTask(task.id);
+                          addSiblingTask(task.id, event.shiftKey ? "before" : "after");
                         } else if (event.key === "Tab") {
                           event.preventDefault();
                           applyTasks(event.shiftKey ? outdentTask(tasks, task.id) : indentTask(tasks, task.id), { focusId: task.id });

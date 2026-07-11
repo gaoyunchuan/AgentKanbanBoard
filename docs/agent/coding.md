@@ -17,6 +17,7 @@
 - To Do 扩展信息保存 Markdown 兼容文本；命名链接仅把 `http://` 或 `https://` 渲染为可点击链接，不使用 `dangerouslySetInnerHTML`，外部打开 command 也必须保持协议白名单。
 - To Do 快照保存必须 upsert 当前任务并删除快照外任务；更新已有任务时保留 `created_at`，只更新 `updated_at`，不得通过全表删除重插改写创建时间。
 - To Do 扩展信息按非空行逐条编辑；普通文本与完整行 Markdown 命名链接均支持双击原位编辑，链接单击与双击必须避免误跳转。逐条替换必须保留其他原始行和空行；URL 需同时满足 HTTP(S)、有效主机、无空白且可被 Markdown 链接解析。
+- To Do 任务标题使用 `Cmd+Enter` 在当前任务后创建同级任务，使用 `Cmd+Shift+Enter` 在当前任务前创建同级任务；两种方式创建后都必须自动聚焦新任务并沿用现有快照持久化流程。
 - 普通 Vite 浏览器预览没有 Tauri bridge，不应启动 BoardData 加载和周期同步；桌面壳与测试环境继续保留 Tauri 调用。
 
 ## Update Notes
@@ -31,3 +32,4 @@
 - 2026-07-11: 新增独立 To Do List 的持久化、树结构、Markdown 命名链接与浏览器预览边界。
 - 2026-07-11: To Do 快照改为保留 `created_at` 的 upsert，并补充扩展信息逐条编辑约束。
 - 2026-07-11: 新增 `Cmd+1`/`Cmd+2` 全局视图切换，并要求 To Do List 与看板跨视图保持禅模式。
+- 2026-07-12: 新增 `Cmd+Shift+Enter` 在当前任务前创建同级任务，并保留 `Cmd+Enter` 向后创建语义。

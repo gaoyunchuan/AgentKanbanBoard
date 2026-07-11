@@ -99,10 +99,12 @@ describe("TodoListView", () => {
     expect(screen.getByLabelText("父任务的预期结束日期")).toHaveTextContent("2026-07-19");
   });
 
-  test("Enter 不创建任务，Cmd+Enter 创建同级任务，Tab 继续调整层级", async () => {
+  test("Enter 不创建任务，Cmd+Enter 向后创建，Cmd+Shift+Enter 向前创建", async () => {
     const user = userEvent.setup();
     render(<TodoListView initialTasks={[]} persistTasks={vi.fn()} />);
-    expect(screen.getByText("⌘+Enter 新建 · Tab 缩进 · Shift+Tab 提升层级")).toBeInTheDocument();
+    expect(
+      screen.getByText("⌘⇧Enter 向上新建 · ⌘Enter 向后新建 · Tab 缩进 · Shift+Tab 提升层级")
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "新建任务" }));
     const firstTitle = await screen.findByLabelText("任务标题");
@@ -111,11 +113,24 @@ describe("TodoListView", () => {
     expect(screen.getAllByLabelText("任务标题")).toHaveLength(1);
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
-    const titles = screen.getAllByLabelText("任务标题");
+    let titles = screen.getAllByLabelText("任务标题");
+    expect(titles).toHaveLength(2);
+    expect(titles[1]).toHaveFocus();
+    await user.type(titles[1], "后方任务");
+
+    await user.keyboard("{Meta>}{Shift>}{Enter}{/Shift}{/Meta}");
+    titles = screen.getAllByLabelText("任务标题");
+    expect(titles).toHaveLength(3);
+    expect(titles[1]).toHaveFocus();
+    expect(titles.map((title) => (title as HTMLInputElement).value)).toEqual([
+      "父任务",
+      "",
+      "后方任务"
+    ]);
     expect(titles[1].closest("[data-task-row]")).toHaveAttribute("data-depth", "0");
+
     await user.type(titles[1], "新子任务");
     await user.keyboard("{Tab}");
-
     expect(screen.getByDisplayValue("新子任务").closest("[data-task-row]")).toHaveAttribute(
       "data-depth",
       "1"

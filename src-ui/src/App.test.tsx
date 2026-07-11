@@ -296,6 +296,9 @@ describe("Codex Kanban App", () => {
 
     expect(screen.getByRole("heading", { name: "To Do List" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新建任务" })).toBeInTheDocument();
+    expect(
+      screen.getByText("用树形任务拆解工作，日期双击编辑，⌘⇧Enter 向上新建，⌘Enter 向后新建，Tab 调整层级。")
+    ).toBeInTheDocument();
     expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
   });
 

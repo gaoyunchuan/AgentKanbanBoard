@@ -65,11 +65,46 @@ describe("todo tree operations", () => {
     expect(changed.find((item) => item.id === "sibling")?.position).toBe(2);
   });
 
-  test("Enter 在当前任务后插入同级任务", () => {
+  test("可在当前任务之前或之后插入同级任务", () => {
     const tasks = [task("a", undefined, 0), task("b", undefined, 1)];
-    const changed = insertSiblingTask(tasks, "a", task("new", undefined, 0, ""));
+    const insertedAfter = insertSiblingTask(tasks, "a", task("after", undefined, 0, ""));
 
-    expect(flattenTodoTree(changed).map(({ task }) => task.id)).toEqual(["a", "new", "b"]);
+    expect(flattenTodoTree(insertedAfter).map(({ task }) => task.id)).toEqual([
+      "a",
+      "after",
+      "b"
+    ]);
+
+    const insertedBefore = insertSiblingTask(
+      tasks,
+      "b",
+      task("before", undefined, 0, ""),
+      "before"
+    );
+    expect(flattenTodoTree(insertedBefore).map(({ task }) => task.id)).toEqual([
+      "a",
+      "before",
+      "b"
+    ]);
+  });
+
+  test("向前插入时继承当前任务的父级", () => {
+    const tasks = [
+      task("root", undefined, 0),
+      task("first", "root", 0),
+      task("second", "root", 1)
+    ];
+    const changed = insertSiblingTask(
+      tasks,
+      "second",
+      task("new", undefined, 0, ""),
+      "before"
+    );
+
+    expect(changed.find((item) => item.id === "new")).toMatchObject({
+      parentId: "root",
+      position: 1
+    });
   });
 
   test("可将任务移动到目标任务之前或之后", () => {

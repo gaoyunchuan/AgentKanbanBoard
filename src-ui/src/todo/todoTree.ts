@@ -88,11 +88,12 @@ export function outdentTask(tasks: TodoTask[], taskId: string): TodoTask[] {
 export function insertSiblingTask(
   tasks: TodoTask[],
   taskId: string,
-  newTask: TodoTask
+  newTask: TodoTask,
+  placement: "before" | "after" = "after"
 ): TodoTask[] {
   const current = tasks.find((task) => task.id === taskId);
   if (!current) return normalizeTodoPositions([...tasks, newTask]);
-  const position = current.position + 1;
+  const position = current.position + (placement === "after" ? 1 : 0);
   const shifted = tasks.map((task) =>
     task.parentId === current.parentId && task.position >= position
       ? { ...task, position: task.position + 1 }

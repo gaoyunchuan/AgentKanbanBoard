@@ -514,7 +514,7 @@ function App() {
                 </div>
                 <div className="truncate text-[11px] text-muted-foreground">
                   {view === "todos"
-                    ? "用树形任务拆解工作，日期双击编辑，⌘+Enter 新建，Tab 调整层级。"
+                    ? "用树形任务拆解工作，日期双击编辑，⌘⇧Enter 向上新建，⌘Enter 向后新建，Tab 调整层级。"
                     : "Codex Desktop 保持执行权威，此处只做同步、筛选、归档和跳转。"}
                 </div>
               </div>
