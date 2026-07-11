@@ -12,6 +12,7 @@
 - Thread 行操作列包含打开 Codex、打开 VS Code、复制 session id、审核/归档等图标按钮；打开 VS Code 通过 Tauri command 先执行 `code <项目目录>`，macOS 上失败时 fallback 到 `open -a "Visual Studio Code" <项目目录>`；前端优先使用项目路径，没有项目路径时使用 thread cwd。
 - 左侧导航支持展开、图标栏、完全隐藏三态；窄窗口下可通过完全隐藏释放列表操作列宽度，隐藏后应在主标题栏保留展开导航入口。
 - 禅模式按钮位于同步按钮前；开启时临时隐藏左侧导航和“同步与队列概览”，退出后恢复原有显示状态。
+- 应用内全局视图快捷键使用 `Cmd+1` 打开“全部活跃”、`Cmd+2` 打开 To Do List；监听只更新 `view`，必须保留禅模式和导航状态，且 To Do List 顶栏也必须提供禅模式按钮。
 - To Do List 使用独立 `todo_tasks` 表，不复用 `codex_threads`；前端保存完整任务快照，树结构由 `parent_id + position` 表达，任务状态与父子状态必须保持独立。
 - To Do 扩展信息保存 Markdown 兼容文本；命名链接仅把 `http://` 或 `https://` 渲染为可点击链接，不使用 `dangerouslySetInnerHTML`，外部打开 command 也必须保持协议白名单。
 - To Do 快照保存必须 upsert 当前任务并删除快照外任务；更新已有任务时保留 `created_at`，只更新 `updated_at`，不得通过全表删除重插改写创建时间。
@@ -29,3 +30,4 @@
 - 2026-07-08: 工具栏新增禅模式，用于临时隐藏菜单和同步概览。
 - 2026-07-11: 新增独立 To Do List 的持久化、树结构、Markdown 命名链接与浏览器预览边界。
 - 2026-07-11: To Do 快照改为保留 `created_at` 的 upsert，并补充扩展信息逐条编辑约束。
+- 2026-07-11: 新增 `Cmd+1`/`Cmd+2` 全局视图切换，并要求 To Do List 与看板跨视图保持禅模式。

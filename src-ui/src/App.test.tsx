@@ -299,6 +299,75 @@ describe("Codex Kanban App", () => {
     expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
   });
 
+  test("switches between active and To Do List with Cmd+1 and Cmd+2", async () => {
+    render(<App />);
+
+    const searchInput = await screen.findByPlaceholderText("搜索 thread、项目、模块");
+    searchInput.focus();
+    const switchToTodos = new KeyboardEvent("keydown", {
+      key: "2",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    fireEvent(searchInput, switchToTodos);
+
+    expect(switchToTodos.defaultPrevented).toBe(true);
+    expect(await screen.findByRole("button", { name: "新建任务" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "1", metaKey: true });
+    expect(await screen.findByRole("heading", { name: "全部活跃 Threads" })).toBeInTheDocument();
+  });
+
+  test("ignores non-exact view shortcuts", async () => {
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "2", metaKey: true, shiftKey: true });
+
+    expect(screen.queryByRole("button", { name: "新建任务" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "全部活跃 Threads" })).toBeInTheDocument();
+  });
+
+  test("keeps zen mode while shortcuts switch views", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    await user.click(screen.getByRole("button", { name: "禅模式" }));
+
+    fireEvent.keyDown(window, { key: "2", metaKey: true });
+    expect(await screen.findByRole("button", { name: "新建任务" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出禅模式" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "1", metaKey: true });
+    expect(await screen.findByRole("heading", { name: "全部活跃 Threads" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "退出禅模式" }));
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
+    expect(screen.getByText("同步与队列概览")).toBeInTheDocument();
+  });
+
+  test("offers zen mode directly in To Do List without board actions", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    fireEvent.keyDown(window, { key: "2", metaKey: true });
+
+    const zenButton = await screen.findByRole("button", { name: "禅模式" });
+    expect(screen.queryByRole("button", { name: "同步" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开 Codex" })).not.toBeInTheDocument();
+
+    await user.click(zenButton);
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出禅模式" })).toBeInTheDocument();
+  });
+
   test("uses multi-select status filters by default and removes unused filters", async () => {
     const user = userEvent.setup();
     currentThreads = [

@@ -143,6 +143,23 @@ function App() {
   const [loadingCommentThreadIds, setLoadingCommentThreadIds] = useState<string[]>([]);
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
   const [todoCount, setTodoCount] = useState(0);
+
+  useEffect(() => {
+    const handleViewShortcut = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+
+      const nextView: ViewKey | undefined =
+        event.key === "1" ? "active" : event.key === "2" ? "todos" : undefined;
+      if (!nextView) return;
+
+      event.preventDefault();
+      setView(nextView);
+    };
+
+    window.addEventListener("keydown", handleViewShortcut);
+    return () => window.removeEventListener("keydown", handleViewShortcut);
+  }, []);
+
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
     [projects]
@@ -502,10 +519,12 @@ function App() {
                 </div>
               </div>
             </div>
-            {view !== "todos" && <div className="flex items-center gap-2">
-              <div className="hidden max-w-[320px] truncate rounded border bg-secondary/55 px-2 py-1 text-[11px] text-muted-foreground md:block">
-                {toast}
-              </div>
+            <div className="flex items-center gap-2">
+              {view !== "todos" && (
+                <div className="hidden max-w-[320px] truncate rounded border bg-secondary/55 px-2 py-1 text-[11px] text-muted-foreground md:block">
+                  {toast}
+                </div>
+              )}
               <Button
                 variant={zenMode ? "secondary" : "outline"}
                 size="sm"
@@ -515,15 +534,19 @@ function App() {
                 <Focus className="h-3.5 w-3.5" />
                 {zenMode ? "退出禅模式" : "禅模式"}
               </Button>
-              <Button variant="outline" size="sm" onClick={syncOnce}>
-                <RotateCcw className="h-3.5 w-3.5" />
-                同步
-              </Button>
-              <Button size="sm" onClick={() => openProject("agent-kanban")}>
-                <ExternalLink className="h-3.5 w-3.5" />
-                打开 Codex
-              </Button>
-            </div>}
+              {view !== "todos" && (
+                <>
+                  <Button variant="outline" size="sm" onClick={syncOnce}>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    同步
+                  </Button>
+                  <Button size="sm" onClick={() => openProject("agent-kanban")}>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    打开 Codex
+                  </Button>
+                </>
+              )}
+            </div>
           </header>
 
           {view === "projects" ? (
