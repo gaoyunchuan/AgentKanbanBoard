@@ -131,6 +131,46 @@ const unknownProject: Project = {
   active: true
 };
 
+const demoBrowserThreads = (): ThreadItem[] => [
+  {
+    id: "demo-review-thread",
+    title: "浏览器预览：待审核 Thread",
+    preview: "用于验证展开态关联 Task、迁移、解除和撤销。",
+    projectId: "unknown",
+    cwd: "/demo/agent-kanban",
+    branch: "main",
+    boardStatus: "review_pending",
+    codexStatus: "idle",
+    subStatus: "waiting review",
+    taskType: "review",
+    module: "Association",
+    sprint: "S26",
+    updatedAt: "2026-07-13 16:00",
+    createdAt: "2026-07-13 15:30",
+    notes: "浏览器 demo 数据",
+    comments: []
+  },
+  {
+    id: "demo-suspended-thread",
+    title: "浏览器预览：挂起 Thread",
+    preview: "用于验证 Task 端候选状态和多 Thread 关联。",
+    projectId: "unknown",
+    cwd: "/demo/agent-kanban",
+    branch: "main",
+    boardStatus: "suspended",
+    codexStatus: "idle",
+    subStatus: "waiting follow-up",
+    taskType: "feature",
+    module: "Association",
+    sprint: "S26",
+    updatedAt: "2026-07-13 15:50",
+    createdAt: "2026-07-13 15:20",
+    suspendedUntil: "2026-07-14 09:00",
+    notes: "浏览器 demo 数据",
+    comments: []
+  }
+];
+
 const projectName = (projectNames: Map<string, string>, projectId: string) =>
   projectNames.get(projectId) ?? "Unknown";
 
@@ -275,6 +315,13 @@ function App() {
         return;
       }
 
+      if (!associationPersistenceEnabled) {
+        setLoadedCommentThreadIds((current) =>
+          current.includes(threadId) ? current : [...current, threadId]
+        );
+        return;
+      }
+
       setLoadingCommentThreadIds((current) =>
         current.includes(threadId) ? current : [...current, threadId]
       );
@@ -296,7 +343,12 @@ function App() {
         setLoadingCommentThreadIds((current) => current.filter((id) => id !== threadId));
       }
     },
-    [loadedCommentThreadIds, loadingCommentThreadIds, setThreads]
+    [
+      associationPersistenceEnabled,
+      loadedCommentThreadIds,
+      loadingCommentThreadIds,
+      setThreads
+    ]
   );
 
   const toggleListRow = (id: string) => {
@@ -775,13 +827,15 @@ function App() {
 }
 
 function useBoardData() {
-  const [threads, setThreads] = useState<ThreadItem[]>([]);
-  const [projects, setProjects] = useState<Project[]>([unknownProject]);
-  const silentSyncInFlight = useRef(false);
   const canInvokeTauri = shouldInvokeTauri(
     typeof window === "undefined" || "__TAURI_INTERNALS__" in window,
     import.meta.env.MODE
   );
+  const [threads, setThreads] = useState<ThreadItem[]>(() =>
+    canInvokeTauri ? [] : demoBrowserThreads()
+  );
+  const [projects, setProjects] = useState<Project[]>([unknownProject]);
+  const silentSyncInFlight = useRef(false);
 
   const applyBoardData = useCallback((data: MappedBoardData) => {
     setThreads((current) => mergeThreadRefresh(current, data.threads));
