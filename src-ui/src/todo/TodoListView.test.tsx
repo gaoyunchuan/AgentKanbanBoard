@@ -89,6 +89,12 @@ describe("TodoListView", () => {
     expect(screen.getByRole("menu")).toHaveClass("bg-card");
   });
 
+  test("拖拽手柄默认可见", () => {
+    render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "拖动 父任务" })).not.toHaveClass("opacity-0");
+  });
+
   test("点击状态菜单外部时关闭菜单", () => {
     render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
 
@@ -360,13 +366,14 @@ describe("TodoListView", () => {
     expect(screen.getAllByLabelText("任务标题")[0]).toHaveValue("任务 01");
   });
 
-  test("拖到任务行上沿或下沿会调整同级顺序", () => {
+  test("拖到任务行上半区或下半区会调整同级顺序并保存", async () => {
     const roots: TodoTask[] = [
       { ...initialTasks[0], id: "a", title: "任务 A", parentId: undefined, position: 0 },
       { ...initialTasks[0], id: "b", title: "任务 B", parentId: undefined, position: 1 },
       { ...initialTasks[0], id: "c", title: "任务 C", parentId: undefined, position: 2 }
     ];
-    render(<TodoListView initialTasks={roots} persistTasks={vi.fn()} />);
+    const persistTasks = vi.fn();
+    render(<TodoListView initialTasks={roots} persistTasks={persistTasks} />);
 
     const rowA = screen.getByDisplayValue("任务 A").closest("[data-task-row]") as HTMLElement;
     vi.spyOn(rowA, "getBoundingClientRect").mockReturnValue({
@@ -381,9 +388,9 @@ describe("TodoListView", () => {
       toJSON: () => ({})
     });
     fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 C" }));
-    dragOverAt(rowA, 104);
+    dragOverAt(rowA, 116);
     expect(rowA).toHaveAttribute("data-drop-placement", "before");
-    fireEvent.drop(rowA);
+    fireEvent.drop(rowA, { clientY: 116 });
     expect(screen.getAllByLabelText("任务标题").map((input) => (input as HTMLInputElement).value)).toEqual([
       "任务 C",
       "任务 A",
@@ -403,25 +410,30 @@ describe("TodoListView", () => {
       toJSON: () => ({})
     });
     fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 C" }));
-    dragOverAt(rowB, 138);
+    dragOverAt(rowB, 124);
     expect(rowB).toHaveAttribute("data-drop-placement", "after");
-    fireEvent.drop(rowB);
+    fireEvent.drop(rowB, { clientY: 124 });
     expect(screen.getAllByLabelText("任务标题").map((input) => (input as HTMLInputElement).value)).toEqual([
       "任务 A",
       "任务 B",
       "任务 C"
     ]);
+    expect(screen.getByDisplayValue("任务 C").closest("[data-task-row]")).toHaveAttribute(
+      "data-depth",
+      "0"
+    );
+    await waitFor(() => expect(persistTasks).toHaveBeenLastCalledWith(roots));
   });
 
-  test("拖到任务行中部会成为子任务，拖动结束会清除提示", () => {
+  test("拖到任务行中线后方只调整顺序，拖动结束会清除提示", () => {
     const roots: TodoTask[] = [
       { ...initialTasks[0], id: "a", title: "任务 A", parentId: undefined, position: 0 },
       { ...initialTasks[0], id: "b", title: "任务 B", parentId: undefined, position: 1 }
     ];
     render(<TodoListView initialTasks={roots} persistTasks={vi.fn()} />);
 
-    const rowA = screen.getByDisplayValue("任务 A").closest("[data-task-row]") as HTMLElement;
-    vi.spyOn(rowA, "getBoundingClientRect").mockReturnValue({
+    const rowB = screen.getByDisplayValue("任务 B").closest("[data-task-row]") as HTMLElement;
+    vi.spyOn(rowB, "getBoundingClientRect").mockReturnValue({
       top: 100,
       bottom: 140,
       height: 40,
@@ -432,19 +444,23 @@ describe("TodoListView", () => {
       y: 100,
       toJSON: () => ({})
     });
-    fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 B" }));
-    dragOverAt(rowA, 120);
-    expect(rowA).toHaveAttribute("data-drop-placement", "inside");
-    fireEvent.dragEnd(screen.getByRole("button", { name: "拖动 任务 B" }));
-    expect(rowA).not.toHaveAttribute("data-drop-placement");
+    fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 A" }));
+    dragOverAt(rowB, 120);
+    expect(rowB).toHaveAttribute("data-drop-placement", "after");
+    fireEvent.dragEnd(screen.getByRole("button", { name: "拖动 任务 A" }));
+    expect(rowB).not.toHaveAttribute("data-drop-placement");
 
-    fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 B" }));
-    dragOverAt(rowA, 120);
-    fireEvent.drop(rowA);
+    fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 A" }));
+    dragOverAt(rowB, 120);
+    fireEvent.drop(rowB, { clientY: 120 });
 
-    expect(screen.getByDisplayValue("任务 B").closest("[data-task-row]")).toHaveAttribute(
+    expect(screen.getByDisplayValue("任务 A").closest("[data-task-row]")).toHaveAttribute(
       "data-depth",
-      "1"
+      "0"
     );
+    expect(screen.getAllByLabelText("任务标题").map((input) => (input as HTMLInputElement).value)).toEqual([
+      "任务 B",
+      "任务 A"
+    ]);
   });
 });

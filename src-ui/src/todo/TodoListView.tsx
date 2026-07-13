@@ -40,6 +40,7 @@ import type { BackendTodoTask, TodoStatus, TodoTask } from "./types";
 
 type DateField = "startDate" | "expectedEndDate" | "actualEndDate";
 type ExtensionField = "processTracking" | "resultReview";
+type TodoTaskDropPlacement = Exclude<TaskDropPlacement, "inside">;
 const exactNamedHttpLinkPattern = /^\[([^\]]+)]\((https?:\/\/[^\s)]+)\)$/;
 
 function isValidExtensionUrl(value: string) {
@@ -87,6 +88,13 @@ const dateLabels: Record<DateField, string> = {
 };
 const todoPageSize = 50;
 
+function taskDropPlacement(
+  clientY: number,
+  rect: Pick<DOMRect, "top" | "height">
+): TodoTaskDropPlacement {
+  return clientY - rect.top < rect.height / 2 ? "before" : "after";
+}
+
 const emptyTask = (id: string, parentId: string | undefined, position: number): TodoTask => ({
   id,
   parentId,
@@ -126,7 +134,10 @@ export function TodoListView({
   const [editingDate, setEditingDate] = useState<{ taskId: string; field: DateField }>();
   const [focusId, setFocusId] = useState<string>();
   const [draggedId, setDraggedId] = useState<string>();
-  const [dropTarget, setDropTarget] = useState<{ taskId: string; placement: TaskDropPlacement }>();
+  const [dropTarget, setDropTarget] = useState<{
+    taskId: string;
+    placement: TodoTaskDropPlacement;
+  }>();
   const [message, setMessage] = useState(
     "⌘⇧Enter 向上新建 · ⌘Enter 向后新建 · Tab 缩进 · Shift+Tab 提升层级"
   );
@@ -397,7 +408,6 @@ export function TodoListView({
                     "todo-grid group relative grid min-h-9 items-center border-b px-3 transition-colors",
                     expandedId === task.id ? "bg-accent/55" : "hover:bg-accent/35",
                     draggedId && draggedId !== task.id && "hover:bg-primary/5",
-                    dropTarget?.taskId === task.id && dropTarget.placement === "inside" && "bg-primary/10 ring-1 ring-inset ring-primary/35",
                     dropTarget?.taskId === task.id && dropTarget.placement === "before" && "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-primary",
                     dropTarget?.taskId === task.id && dropTarget.placement === "after" && "after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-0.5 after:bg-primary"
                   )}
@@ -405,9 +415,10 @@ export function TodoListView({
                     event.preventDefault();
                     if (!draggedId || draggedId === task.id) return;
                     const rect = event.currentTarget.getBoundingClientRect();
-                    const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
-                    const placement: TaskDropPlacement = ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
-                    setDropTarget({ taskId: task.id, placement });
+                    setDropTarget({
+                      taskId: task.id,
+                      placement: taskDropPlacement(event.clientY, rect)
+                    });
                   }}
                   onDragLeave={(event) => {
                     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(undefined);
@@ -415,7 +426,13 @@ export function TodoListView({
                   onDrop={(event) => {
                     event.preventDefault();
                     if (!draggedId || draggedId === task.id) return;
-                    const placement = dropTarget?.taskId === task.id ? dropTarget.placement : "inside";
+                    const placement =
+                      dropTarget?.taskId === task.id
+                        ? dropTarget.placement
+                        : taskDropPlacement(
+                            event.clientY,
+                            event.currentTarget.getBoundingClientRect()
+                          );
                     applyTasks(moveTaskRelative(tasks, draggedId, task.id, placement), { focusId: draggedId });
                     setDraggedId(undefined);
                     setDropTarget(undefined);
@@ -431,7 +448,7 @@ export function TodoListView({
                     <button
                       draggable
                       aria-label={`拖动 ${task.title || "未命名任务"}`}
-                      className="mr-0.5 cursor-grab p-0.5 text-border opacity-0 transition-opacity hover:text-muted-foreground group-hover:opacity-100"
+                      className="mr-0.5 cursor-grab p-0.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground"
                       onDragStart={() => setDraggedId(task.id)}
                       onDragEnd={() => {
                         setDraggedId(undefined);
