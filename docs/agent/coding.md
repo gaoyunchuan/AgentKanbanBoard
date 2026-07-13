@@ -19,6 +19,11 @@
 - To Do 扩展信息按非空行逐条编辑；普通文本与完整行 Markdown 命名链接均支持双击原位编辑，链接单击与双击必须避免误跳转。逐条替换必须保留其他原始行和空行；URL 需同时满足 HTTP(S)、有效主机、无空白且可被 Markdown 链接解析。
 - To Do 任务标题使用 `Cmd+Enter` 在当前任务后创建同级任务，使用 `Cmd+Shift+Enter` 在当前任务前创建同级任务；两种方式创建后都必须自动聚焦新任务并沿用现有快照持久化流程。
 - 普通 Vite 浏览器预览没有 Tauri bridge，不应启动 BoardData 加载和周期同步；桌面壳与测试环境继续保留 Tauri 调用。
+- Thread 与 To Do Task 的关联使用独立 `thread_task_links` 表；`thread_id` 唯一，因此一个 Thread 最多关联一个 Task，一个 Task 可以关联多个 Thread，Task 删除时依靠外键级联清理关系。
+- 关联关系必须保持懒加载，不得进入 `BoardData` 或 5 秒轮询主链路；Thread/Task 状态变化只影响新增候选，不自动解除既有关联。
+- Thread 端候选仅包含未完成、进行中的 Task，并支持子 Task 粒度；Task 端候选仅包含待审核、挂起的 Thread，但所有状态的发起对象都允许操作。
+- Task 端选择已关联其他 Task 的 Thread 时直接迁移到当前 Task；前端按 Thread 串行提交、不同 Thread 可并行，失败后回滚并重新加载，成功反馈提供 5 秒撤销。
+- 普通 Vite 浏览器预览需要提供可交互的 Thread/Task demo 数据，但不得调用 Tauri command，便于在窄窗口完成双向关联视觉验收。
 
 ## Update Notes
 
@@ -33,3 +38,4 @@
 - 2026-07-11: To Do 快照改为保留 `created_at` 的 upsert，并补充扩展信息逐条编辑约束。
 - 2026-07-11: 新增 `Cmd+1`/`Cmd+2` 全局视图切换，并要求 To Do List 与看板跨视图保持禅模式。
 - 2026-07-12: 新增 `Cmd+Shift+Enter` 在当前任务前创建同级任务，并保留 `Cmd+Enter` 向后创建语义。
+- 2026-07-13: 新增 Thread 与 To Do Task 的双向懒加载关联、直接迁移、失败回滚和 5 秒撤销约束。

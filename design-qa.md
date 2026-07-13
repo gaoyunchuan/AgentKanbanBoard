@@ -68,3 +68,60 @@
 - [x] 1440 × 1024 视觉对照与 1024 × 768 可用性检查
 
 final result: passed
+
+---
+
+# Thread / Task Association Design QA
+
+- 源视觉真值：`/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/codex-clipboard-13d11074-fa23-4499-8b49-49e25e2ce71c.png`；交互规则基线为 `.superpowers/brainstorm/25181-1783910290/content/final-interaction-states.html`
+- 实现截图：`/Users/gaoyunchuan/.codex/visualizations/2026/07/13/019f5954-2433-7ad0-8f18-8ff13b350c5d/thread-task-final-650.png`
+- Task 定位截图：`/Users/gaoyunchuan/.codex/visualizations/2026/07/13/019f5954-2433-7ad0-8f18-8ff13b350c5d/todo-linked-thread-focused.png`
+- 视口：650 × 1200
+- 状态：左侧导航完全隐藏；待审核 Thread 展开并关联到子 Task；第二条挂起 Thread 保持折叠；Task 端另行验证已完成 Task 发起关联和 Thread 直接迁移。
+- 全屏对照证据：源截图与实现截图在同一次图像比较输入中并排检查，确认顶部操作、筛选、紧凑 Thread 行、状态标签、边框和低注意力信息密度延续现有产品视觉。
+- 重点区域对照：未单独使用裁切图作为结论依据，因为源截图只有折叠态、没有关联区；实现全屏截图已在原始 650px 尺寸清晰展示完整 560 × 118.5px 关联区，同时用 DOM 几何检查确认其位于展开内容末尾且没有越界。
+
+## Findings
+
+当前没有遗留的 P0、P1 或 P2 问题。
+
+- 折叠态完全不出现关联入口，符合低频功能不抢注意力的要求。
+- 展开态关联区沿用现有边框、圆角、字体、颜色和 Lucide 图标；已关联对象使用轻量浅色行，下拉选择器位于其后。
+- 关联区实测宽 560px、高 118.5px；650px 视口下页面 `scrollWidth = clientWidth = 650`，无页面级横向溢出。
+- Thread 端下拉包含未完成 Task，并可直接选择子 Task；Task 端按待审核、挂起分组，已关联其他 Task 的候选显示当前归属。
+- 双向名称均可点击定位；从 Thread 打开 Task 后自动切换 To Do List、展开目标并聚焦任务标题。
+- 图像与图标：本功能不需要新增位图资产；交互图标复用项目现有 Lucide 图标，没有占位图片、Emoji 或手绘 SVG。
+- 可访问性：关联区使用具名 region，选择器、打开、解除、撤销和关闭提示均有稳定的可访问名称。
+
+## 浏览器交互证据
+
+- 所有状态的 Thread 均可展开关联，Thread 下拉只展示未完成、进行中 Task，且能选择子 Task“异构实现带外探测 from 方文奇”。
+- 所有状态的 Task 均可发起关联；浏览器用已完成 Task“顺便修复子东南亚 crash 不生效问题”完成实测。
+- Task 下拉只展示待审核、挂起 Thread；已关联其他 Task 的 Thread 仍可选择，并显示“当前关联”上下文。
+- 选择已有关联的挂起 Thread 后，旧 Task 不再显示该 Thread，新 Task 立即显示，验证为直接迁移而非复制。
+- 解除关联后立即出现“撤销”，在 5 秒窗口内点击后关系恢复。
+- 折叠态不显示“选择未完成 Task”；Thread 与 Task 页面在 650px 下均无全局横向溢出。
+- 普通浏览器 demo 全流程没有调用 Tauri；最终浏览器控制台错误：0。
+
+## Comparison History
+
+1. 首次浏览器预览没有 Thread 数据，无法执行真实关联路径。
+   - 修复：为无 Tauri 的普通 Vite 预览增加待审核、挂起两条 Thread demo 数据，并让评论懒加载在浏览器模式静默完成。
+   - 证据：新增 `App.browser.test.tsx`，关联到子 Task 后断言未调用任何 Tauri command。
+2. 应用内浏览器第一次后台截图得到空白帧。
+   - 处理：唤醒可见渲染后重新截图，并与源截图在同一次图像输入中比较；空白帧未用作验收证据。
+3. 全屏对照检查关联区的宽度、边框、间距、文本截断和层级，没有发现需要修复的 P0/P1/P2 问题。
+4. 交互复验覆盖 Thread→Task、Task→Thread、已有关联迁移、跨视图定位和 5 秒撤销，控制台错误保持为 0。
+
+## Implementation Checklist
+
+- [x] 一个 Thread 最多关联一个 Task，一个 Task 可关联多个 Thread
+- [x] 子 Task 粒度与父级路径
+- [x] Thread 端未完成候选与 Task 端待审核/挂起候选
+- [x] 所有状态的发起对象均可操作
+- [x] 已有关联直接迁移
+- [x] 展开后可见、折叠态安静
+- [x] 双向定位、解除、5 秒撤销和错误恢复
+- [x] 650px 窄屏、零横向溢出、零控制台错误
+
+final result: passed
