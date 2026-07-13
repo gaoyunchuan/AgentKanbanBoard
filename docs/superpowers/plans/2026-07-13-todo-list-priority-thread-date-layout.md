@@ -37,7 +37,7 @@
 - Produces: `flattenTodoTreeByCompletion(tasks: TodoTask[], collapsedIds?: Set<string>): FlatTodoTask[]`
 - Consumes: existing `normalizeTodoPositions` and `flattenTodoTree`
 
-- [ ] **Step 1: Write failing pure-function tests**
+- [x] **Step 1: Write failing pure-function tests**
 
 Add tests that construct three root trees in persisted order `complete`, `partial`, `incomplete`, then expect derived order `incomplete`, `partial + child`, `complete`. Include a cancelled-only tree and assert it belongs to `all_complete`:
 
@@ -51,13 +51,13 @@ expect(flattenTodoTreeByCompletion(tasks).map(({ task }) => task.id)).toEqual([
 expect(todoTreeCompletion(cancelledTree, "cancelled-root")).toBe("all_complete");
 ```
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [x] **Step 2: Run the focused test and confirm RED**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoTree.test.ts`
 
 Expected: FAIL because the two exported functions do not exist.
 
-- [ ] **Step 3: Implement minimal completion grouping**
+- [x] **Step 3: Implement minimal completion grouping**
 
 In `todoTree.ts`, collect each root and its descendants, classify statuses, stable-sort roots by the rank below, then flatten each tree without changing child order:
 
@@ -79,21 +79,21 @@ const isDone = (task: TodoTask) =>
 
 Keep malformed/orphan tasks stable at the end, matching the current defensive behavior.
 
-- [ ] **Step 4: Use derived order in the view and add a failing cross-group drag test**
+- [x] **Step 4: Use derived order in the view and add a failing cross-group drag test**
 
 Replace display-only calls that calculate visible rows and focus pages with `flattenTodoTreeByCompletion`. Update `todoTargetPage` in `associationModel.ts` to use the same derived order so cross-view navigation opens the correct page. Keep mutation helpers on persisted `position` order. Add a view test that drags an incomplete root onto a completed root and expects no `persistTasks` call and unchanged display order. Add an association-model test where a completed task is persisted first but moves to the second page after grouping.
 
-- [ ] **Step 5: Implement cross-group drag guard**
+- [x] **Step 5: Implement cross-group drag guard**
 
 Before setting a drop target and before applying a drop, compare the dragged and target root completion groups. Reject only root-to-root drops whose groups differ; keep existing child same-level behavior unchanged.
 
-- [ ] **Step 6: Run focused tests and confirm GREEN**
+- [x] **Step 6: Run focused tests and confirm GREEN**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoTree.test.ts src/todo/TodoListView.test.tsx src/associations/associationModel.test.ts`
 
 Expected: PASS; same-group drag tests remain green and new cross-group test passes.
 
-- [ ] **Step 7: Commit the task**
+- [x] **Step 7: Commit the task**
 
 ```bash
 git add src-ui/src/todo/todoTree.ts src-ui/src/todo/todoTree.test.ts \
@@ -115,7 +115,7 @@ git commit -m "feat: sort todo trees by completion"
 - Produces: `nextLocalDate(value: string): string`
 - Consumes: `BackendTodoTask.created_at`
 
-- [ ] **Step 1: Write failing date/model tests**
+- [x] **Step 1: Write failing date/model tests**
 
 Cover backend mapping, expansion metadata, all four creation paths, and removal of the start-date column:
 
@@ -128,13 +128,13 @@ expect(createdTask.expectedEndDate).toBe("2027-01-01");
 
 Use `today={() => "2026-12-31"}` so the test is deterministic. Assert that root, child, before-sibling, and after-sibling tasks all receive `2027-01-01`.
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [x] **Step 2: Run the focused test and confirm RED**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
 
 Expected: FAIL because `createdAt` is not mapped or rendered and new tasks have no default end date.
 
-- [ ] **Step 3: Extend the frontend model and date helpers**
+- [x] **Step 3: Extend the frontend model and date helpers**
 
 Add `createdAt?: string` to `TodoTask`. Map `created_at` in `mapBackendTodoTask`. Build all new tasks through one factory that receives `today()`:
 
@@ -153,7 +153,7 @@ const newTask = (
 
 Implement calendar addition through local date components, not millisecond addition, to avoid DST errors.
 
-- [ ] **Step 4: Render local created date and remove start-date UI**
+- [x] **Step 4: Render local created date and remove start-date UI**
 
 Remove `startDate` from `DateField` and from the list header/row while keeping `TodoTask.startDate` and `mapTodoTaskInput.start_date`. Add the metadata strip at the start of `ExtensionPanel`:
 
@@ -165,7 +165,7 @@ Remove `startDate` from `DateField` and from the list header/row while keeping `
 
 Existing tasks without `createdAt` render `添加日期：—`.
 
-- [ ] **Step 5: Compact the grid**
+- [x] **Step 5: Compact the grid**
 
 Change `.todo-grid` to five columns in this exact order:
 
@@ -177,13 +177,13 @@ Change `.todo-grid` to five columns in this exact order:
 
 Ensure row children use `min-w-0`; keep full date strings and existing double-click editors.
 
-- [ ] **Step 6: Run focused tests and confirm GREEN**
+- [x] **Step 6: Run focused tests and confirm GREEN**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
 
 Expected: PASS, including existing date editing and new default/metadata tests.
 
-- [ ] **Step 7: Commit the task**
+- [x] **Step 7: Commit the task**
 
 ```bash
 git add src-ui/src/todo/types.ts src-ui/src/todo/TodoListView.tsx \
@@ -206,7 +206,7 @@ git commit -m "feat: streamline todo dates"
 - Adds Todo props: `linksLoading?: boolean`, `linksLoadError?: string`, `onLoadThreadLinks?: (force?: boolean) => Promise<void>`
 - Consumes: existing `linksByThread`, `threads`, `onOpenThread`
 
-- [ ] **Step 1: Write failing hook error/retry test**
+- [x] **Step 1: Write failing hook error/retry test**
 
 Configure `load_thread_task_links` to reject once and resolve on retry. Assert loading clears, `loadError` is set, and `loadLinks(true)` clears it and populates links:
 
@@ -217,11 +217,11 @@ await result.current.loadLinks(true);
 expect(result.current.loadError).toBeUndefined();
 ```
 
-- [ ] **Step 2: Implement hook load error state**
+- [x] **Step 2: Implement hook load error state**
 
 Set `loadError` to `undefined` before loading, set it to `关联加载失败` in `catch`, rethrow so callers can decide whether to show a toast, and return it from the hook. Keep `loadedRef` false after failure so retry works.
 
-- [ ] **Step 3: Write failing Thread-column view tests**
+- [x] **Step 3: Write failing Thread-column view tests**
 
 Render a task with two linked threads and assert both compact buttons are visible and clickable without expanding. Add loading, empty, and failure/retry cases:
 
@@ -232,13 +232,13 @@ await user.click(screen.getByRole("button", { name: "重试关联加载" }));
 expect(onLoadThreadLinks).toHaveBeenCalledWith(true);
 ```
 
-- [ ] **Step 4: Implement `TaskThreadTags` and mount loading**
+- [x] **Step 4: Implement `TaskThreadTags` and mount loading**
 
 Add a focused internal component that filters `threads` through `linksByThread.get(thread.id)?.taskId === task.id`, renders all titles as wrapping compact buttons, and delegates clicks to `onOpenThread`. In a mount effect call `onLoadThreadLinks?.()` once and catch the rejected promise because the prop state renders the error.
 
 Do not remove `TaskThreadAssociationPanel` from the expanded section.
 
-- [ ] **Step 5: Wire App state and test the lifecycle boundary**
+- [x] **Step 5: Wire App state and test the lifecycle boundary**
 
 Pass these bindings from `App`:
 
@@ -250,13 +250,13 @@ onLoadThreadLinks={associations.loadLinks}
 
 Keep `onExpandTask` as a defensive `loadLinks` call with an explicit rejection catch. Update the App test to assert opening To Do calls `load_thread_task_links` but the five-second `load_board_data` refresh does not cause additional association loads.
 
-- [ ] **Step 6: Run association and view tests and confirm GREEN**
+- [x] **Step 6: Run association and view tests and confirm GREEN**
 
 Run: `cd src-ui && npm test -- --run src/associations/useThreadTaskLinks.test.tsx src/todo/TodoListView.test.tsx src/App.test.tsx`
 
 Expected: PASS; compact tags, retry, and lazy-boundary assertions are green.
 
-- [ ] **Step 7: Commit the task**
+- [x] **Step 7: Commit the task**
 
 ```bash
 git add src-ui/src/associations/useThreadTaskLinks.ts \
@@ -275,11 +275,11 @@ git commit -m "feat: show todo thread links in list"
 - Consumes: completed Tasks 1–3
 - Produces: durable project constraints and reproducible verification evidence
 
-- [ ] **Step 1: Update maintained project knowledge**
+- [x] **Step 1: Update maintained project knowledge**
 
 Record the new completion-group order, Thread second-column loading boundary, hidden start date, `created_at` detail display, and default-next-day rule in `docs/agent/coding.md`. Add corresponding sorting, creation-path, Thread label, 650px layout, and date regression coverage to `docs/agent/testing.md`.
 
-- [ ] **Step 2: Run frontend verification**
+- [x] **Step 2: Run frontend verification**
 
 Run:
 
@@ -291,7 +291,7 @@ npm run build
 
 Expected: all Vitest suites pass and Vite production build exits 0.
 
-- [ ] **Step 3: Run Rust and repository verification**
+- [x] **Step 3: Run Rust and repository verification**
 
 Run:
 
@@ -303,7 +303,7 @@ cd .. && git diff --check
 
 Expected: all Rust tests pass, formatting is clean, and no whitespace errors are reported.
 
-- [ ] **Step 4: Run browser visual checks**
+- [x] **Step 4: Run browser visual checks**
 
 Start the browser preview and verify 1440×1024 and 1024×768 viewports plus an approximately 650px To Do content area. Check:
 
@@ -316,7 +316,7 @@ Start the browser preview and verify 1440×1024 and 1024×768 viewports plus an 
 
 Save screenshots under `docs/images/` only if they add durable review value; otherwise report exact viewport evidence in the final handoff.
 
-- [ ] **Step 5: Commit knowledge updates and any verification fixes**
+- [x] **Step 5: Commit knowledge updates and any verification fixes**
 
 ```bash
 git add docs/agent/coding.md docs/agent/testing.md src-ui src-tauri
