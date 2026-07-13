@@ -28,7 +28,7 @@
 - Consumes: `moveTaskRelative(tasks, taskId, targetId, placement)` 与 `applyTasks(next)`。
 - Produces: 只可能为 `"before" | "after"` 的 UI 落点，以及默认可见的拖拽手柄。
 
-- [ ] **Step 1: 写拖拽手柄常显的失败测试**
+- [x] **Step 1: 写拖拽手柄常显的失败测试**
 
 ```tsx
 test("拖拽手柄默认可见", () => {
@@ -38,7 +38,7 @@ test("拖拽手柄默认可见", () => {
 });
 ```
 
-- [ ] **Step 2: 写上、下半区排序且不改变层级的失败测试**
+- [x] **Step 2: 写上、下半区排序且不改变层级的失败测试**
 
 使用高度 40px、顶部 100px 的目标行：`clientY = 116` 必须得到 `before`，`clientY = 124` 必须得到 `after`。拖放后断言标题顺序、`data-depth="0"` 和 `persistTasks` 收到的新快照。
 
@@ -53,13 +53,13 @@ fireEvent.drop(rowA, { clientY: 116 });
 expect(screen.getByDisplayValue("任务 C").closest("[data-task-row]")).toHaveAttribute("data-depth", "0");
 ```
 
-- [ ] **Step 3: 运行组件测试，确认因旧交互失败**
+- [x] **Step 3: 运行组件测试，确认因旧交互失败**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
 
 Expected: FAIL；手柄仍含 `opacity-0`，`clientY = 116/124` 仍得到 `inside` 或子任务层级。
 
-- [ ] **Step 4: 实现最小拖放语义修改**
+- [x] **Step 4: 实现最小拖放语义修改**
 
 在 `TodoListView.tsx` 中把落点计算收敛为目标行中线两侧，并在 `drop` 时重新计算兜底，禁止产生 `inside`：
 
@@ -71,13 +71,13 @@ function taskDropPlacement(clientY: number, rect: Pick<DOMRect, "top" | "height"
 
 移除 `inside` 高亮分支，并把手柄样式从悬停显示改为默认使用 `text-muted-foreground/50`。
 
-- [ ] **Step 5: 运行组件和树测试，确认通过**
+- [x] **Step 5: 运行组件和树测试，确认通过**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx src/todo/todoTree.test.ts`
 
 Expected: PASS；两个测试文件全部通过。
 
-- [ ] **Step 6: 提交交互修复**
+- [x] **Step 6: 提交交互修复**
 
 ```bash
 git add src-ui/src/todo/TodoListView.tsx src-ui/src/todo/TodoListView.test.tsx
@@ -94,23 +94,23 @@ git commit -m "fix: restore todo drag reordering"
 - Consumes: Task 1 的拖放交互。
 - Produces: 自动化测试、构建、格式和真实浏览器拖放证据。
 
-- [ ] **Step 1: 运行完整前端测试**
+- [x] **Step 1: 运行完整前端测试**
 
 Run: `cd src-ui && npm test -- --run`
 
 Expected: 所有测试文件通过，失败数为 0。
 
-- [ ] **Step 2: 运行生产构建**
+- [x] **Step 2: 运行生产构建**
 
 Run: `cd src-ui && npm run build`
 
 Expected: TypeScript 与 Vite 构建退出码为 0。
 
-- [ ] **Step 3: 运行真实浏览器拖放探针**
+- [x] **Step 3: 运行真实浏览器拖放探针**
 
 用浏览器 demo 数据把一个根任务拖到另一个根任务的上半区和下半区，断言 DOM 标题顺序发生对应变化、任务深度仍为 0、拖拽手柄计算样式非透明且控制台无应用错误。
 
-- [ ] **Step 4: 检查补丁格式和工作区边界**
+- [x] **Step 4: 检查补丁格式和工作区边界**
 
 Run: `git diff --check && git status --short`
 
