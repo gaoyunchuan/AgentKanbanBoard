@@ -1048,9 +1048,11 @@ mod tests {
 
     #[test]
     fn readonly_client_reads_threads_from_codex_state_sqlite() {
-        let temp_path =
-            std::env::temp_dir().join(format!("codex-kanban-state-{}.sqlite", std::process::id()));
-        let _ = std::fs::remove_file(&temp_path);
+        let temp_dir =
+            std::env::temp_dir().join(format!("codex-kanban-state-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let temp_path = temp_dir.join("state_5.sqlite");
         let connection = rusqlite::Connection::open(&temp_path).unwrap();
         connection
             .execute_batch(
@@ -1100,6 +1102,26 @@ mod tests {
                     title, sandbox_policy, approval_mode, git_branch, git_origin_url, preview,
                     recency_at_ms
                 ) VALUES (
+                    'main-without-name',
+                    '/Users/me/.codex/sessions/unnamed.jsonl',
+                    1782296400,
+                    1782296500,
+                    'vscode',
+                    'openai',
+                    '/Users/me/project',
+                    'SQLite 中不应回退的标题',
+                    'workspace-write',
+                    'never',
+                    'main',
+                    'git@example.com:me/project.git',
+                    '没有 Codex 名称的主 Thread',
+                    1782296500015
+                );
+                INSERT INTO threads (
+                    id, rollout_path, created_at, updated_at, source, model_provider, cwd,
+                    title, sandbox_policy, approval_mode, git_branch, git_origin_url, preview,
+                    recency_at_ms
+                ) VALUES (
                     '019f5b07-91d1-7010-b973-2c07c4dd6da6',
                     '/Users/me/.codex/sessions/subagent.jsonl',
                     1782296501,
@@ -1118,21 +1140,38 @@ mod tests {
             )
             .unwrap();
         drop(connection);
+        std::fs::write(
+            temp_dir.join("session_index.jsonl"),
+            concat!(
+                "{\"id\":\"019ef927-4206-7823-a752-eb0364a6f11b\",\"thread_name\":\"旧名称\"}\n",
+                "不是有效 JSON\n",
+                "{\"id\":\"019ef927-4206-7823-a752-eb0364a6f11b\",\"thread_name\":\"portal上线checklist\"}\n"
+            ),
+        )
+        .unwrap();
 
         let client = ReadOnlyCodexClient::with_state_db_path(temp_path.clone());
         let threads = client.call("thread/list").unwrap();
 
-        assert_eq!(threads.len(), 1);
-        assert_eq!(threads[0].id, "019ef927-4206-7823-a752-eb0364a6f11b");
-        assert_eq!(threads[0].title, "接入真实数据");
-        assert_eq!(threads[0].cwd, "/Users/me/project");
-        assert_eq!(threads[0].branch, "main");
+        assert_eq!(threads.len(), 2);
+        let unnamed = threads
+            .iter()
+            .find(|thread| thread.id == "main-without-name")
+            .unwrap();
+        assert!(unnamed.title.is_empty());
+        let named = threads
+            .iter()
+            .find(|thread| thread.id == "019ef927-4206-7823-a752-eb0364a6f11b")
+            .unwrap();
+        assert_eq!(named.title, "portal上线checklist");
+        assert_eq!(named.cwd, "/Users/me/project");
+        assert_eq!(named.branch, "main");
         assert_eq!(
-            threads[0].origin_url.as_deref(),
+            named.origin_url.as_deref(),
             Some("git@example.com:me/project.git")
         );
 
-        let _ = std::fs::remove_file(temp_path);
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     #[test]

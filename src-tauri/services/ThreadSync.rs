@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::{Path, PathBuf},
+};
 
 use crate::board_status_mapper::{BoardStatusMapper, StatusInput};
 use crate::config::AppConfig;
@@ -29,17 +34,27 @@ pub trait CodexAppServerClient {
 
 pub struct ReadOnlyCodexClient {
     state_db_path: PathBuf,
+    session_index_path: PathBuf,
 }
 
 impl ReadOnlyCodexClient {
     pub fn new() -> Self {
+        let codex_home = default_codex_home_path();
         Self {
-            state_db_path: default_codex_state_db_path(),
+            state_db_path: codex_home.join("state_5.sqlite"),
+            session_index_path: codex_home.join("session_index.jsonl"),
         }
     }
 
     pub fn with_state_db_path(state_db_path: PathBuf) -> Self {
-        Self { state_db_path }
+        let session_index_path = state_db_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("session_index.jsonl");
+        Self {
+            state_db_path,
+            session_index_path,
+        }
     }
 }
 
@@ -57,6 +72,7 @@ impl CodexAppServerClient for ReadOnlyCodexClient {
             return Err(format!("禁止调用 Codex 写方法或未知方法：{method}"));
         }
 
+        let thread_names = read_thread_names(&self.session_index_path);
         let connection = rusqlite::Connection::open_with_flags(
             &self.state_db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -70,7 +86,6 @@ impl CodexAppServerClient for ReadOnlyCodexClient {
         let mut statement = connection
             .prepare(
                 "SELECT id,
-                        title,
                         substr(preview, 1, 240),
                         cwd,
                         source,
@@ -88,19 +103,20 @@ impl CodexAppServerClient for ReadOnlyCodexClient {
             .map_err(|error| format!("读取 Codex threads 表失败：{error}"))?;
         let rows = statement
             .query_map([], |row| {
+                let id = row.get(0)?;
                 Ok(SyncedThread {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    preview: row.get(2)?,
-                    cwd: row.get(3)?,
-                    source_kind: row.get(4)?,
-                    codex_status: row.get(5)?,
-                    raw_status: row.get(6)?,
-                    branch: row.get(7)?,
-                    origin_url: row.get(8)?,
-                    archived: row.get::<_, i64>(9)? != 0,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    title: thread_names.get(&id).cloned().unwrap_or_default(),
+                    id,
+                    preview: row.get(1)?,
+                    cwd: row.get(2)?,
+                    source_kind: row.get(3)?,
+                    codex_status: row.get(4)?,
+                    raw_status: row.get(5)?,
+                    branch: row.get(6)?,
+                    origin_url: row.get(7)?,
+                    archived: row.get::<_, i64>(8)? != 0,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
                 })
             })
             .map_err(|error| format!("解析 Codex threads 失败：{error}"))?;
@@ -300,6 +316,33 @@ fn exclude_subagent_threads(threads: Vec<SyncedThread>) -> Vec<SyncedThread> {
         .collect()
 }
 
+#[derive(Deserialize)]
+struct CodexSessionIndexEntry {
+    id: String,
+    thread_name: Option<String>,
+}
+
+fn read_thread_names(path: &Path) -> HashMap<String, String> {
+    let Ok(file) = File::open(path) else {
+        return HashMap::new();
+    };
+    let mut names = HashMap::new();
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(entry) = serde_json::from_str::<CodexSessionIndexEntry>(&line) else {
+            continue;
+        };
+        match entry.thread_name {
+            Some(name) if !name.trim().is_empty() => {
+                names.insert(entry.id, name);
+            }
+            _ => {
+                names.remove(&entry.id);
+            }
+        }
+    }
+    names
+}
+
 pub fn refresh_interval_seconds(visibility: SyncVisibility, config: &AppConfig) -> u64 {
     match visibility {
         SyncVisibility::Foreground => config.foreground_sync_interval_seconds,
@@ -358,7 +401,7 @@ fn parse_utc_seconds(value: &str) -> Option<i64> {
     Some((((year * 12 + month) * 31 + day) * 24 + hour) * 3600 + minute * 60 + second)
 }
 
-fn default_codex_state_db_path() -> PathBuf {
+fn default_codex_home_path() -> PathBuf {
     std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .or_else(|| {
@@ -369,5 +412,4 @@ fn default_codex_state_db_path() -> PathBuf {
             })
         })
         .unwrap_or_else(|| PathBuf::from(".codex"))
-        .join("state_5.sqlite")
 }
