@@ -5,12 +5,13 @@ use std::path::Path;
 use crate::domain::{
     BoardStatus, CodexThreadUpsert, FilterPreset, FilterQuery, ProjectInput, ProjectRecord,
     TaskType, ThreadCommentInput, ThreadCommentRecord, ThreadEventInput, ThreadRecord,
-    TodoTaskInput, TodoTaskRecord, TodoTaskStatus,
+    ThreadTaskLinkOrigin, ThreadTaskLinkRecord, TodoTaskInput, TodoTaskRecord, TodoTaskStatus,
 };
 use crate::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
 use crate::time::current_utc_text;
 
 const INIT_SQL: &str = include_str!("../db/001_init.sql");
+const THREAD_TASK_LINKS_SQL: &str = include_str!("../db/002_thread_task_links.sql");
 const LEGACY_FIXED_NOW_TEXT: &str = "2026-06-24T00:00:00Z";
 
 pub struct Repository {
@@ -37,6 +38,7 @@ impl Repository {
         clock: Box<dyn Fn() -> String>,
     ) -> rusqlite::Result<Self> {
         let connection = Connection::open(path)?;
+        connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.execute_batch(INIT_SQL)?;
         migrate_schema(&connection, &clock())?;
         Ok(Self { connection, clock })
@@ -48,6 +50,7 @@ impl Repository {
 
     pub fn open_in_memory_with_clock(clock: Box<dyn Fn() -> String>) -> rusqlite::Result<Self> {
         let connection = Connection::open_in_memory()?;
+        connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.execute_batch(INIT_SQL)?;
         migrate_schema(&connection, &clock())?;
         Ok(Self { connection, clock })
@@ -184,6 +187,110 @@ impl Repository {
         }
         transaction.commit()?;
         self.list_todo_tasks()
+    }
+
+    pub fn list_thread_task_links(&self) -> Result<Vec<ThreadTaskLinkRecord>, String> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT thread_id, task_id, created_at, updated_at
+                 FROM thread_task_links
+                 ORDER BY thread_id ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(ThreadTaskLinkRecord {
+                    thread_id: row.get(0)?,
+                    task_id: row.get(1)?,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                })
+            })
+            .map_err(|error| error.to_string())?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn set_thread_task_link(
+        &self,
+        thread_id: &str,
+        task_id: Option<&str>,
+        origin: ThreadTaskLinkOrigin,
+    ) -> Result<Option<ThreadTaskLinkRecord>, String> {
+        let transaction = rusqlite::Transaction::new_unchecked(
+            &self.connection,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .map_err(|error| error.to_string())?;
+
+        let thread_status = transaction
+            .query_row(
+                "SELECT board_status FROM codex_threads WHERE id = ?1",
+                params![thread_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Thread 不存在".to_string())?;
+
+        let Some(task_id) = task_id else {
+            transaction
+                .execute(
+                    "DELETE FROM thread_task_links WHERE thread_id = ?1",
+                    params![thread_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction.commit().map_err(|error| error.to_string())?;
+            return Ok(None);
+        };
+
+        let task_status = transaction
+            .query_row(
+                "SELECT status FROM todo_tasks WHERE id = ?1",
+                params![task_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Task 不存在".to_string())?;
+
+        if origin == ThreadTaskLinkOrigin::Thread
+            && !matches!(task_status.as_str(), "todo" | "in_progress")
+        {
+            return Err("只能关联未完成或进行中的 Task".to_string());
+        }
+        if origin == ThreadTaskLinkOrigin::Task
+            && !matches!(thread_status.as_str(), "review_pending" | "suspended")
+        {
+            return Err("只能关联待审核或挂起的 Thread".to_string());
+        }
+
+        let now = self.now_text();
+        transaction
+            .execute(
+                "INSERT INTO thread_task_links (thread_id, task_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?3)
+                 ON CONFLICT(thread_id) DO UPDATE SET
+                   task_id = excluded.task_id,
+                   updated_at = excluded.updated_at",
+                params![thread_id, task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        let created_at = transaction
+            .query_row(
+                "SELECT created_at FROM thread_task_links WHERE thread_id = ?1",
+                params![thread_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(Some(ThreadTaskLinkRecord {
+            thread_id: thread_id.to_string(),
+            task_id: task_id.to_string(),
+            created_at,
+            updated_at: now,
+        }))
     }
 
     pub fn upsert_thread(&self, input: CodexThreadUpsert) -> rusqlite::Result<()> {
@@ -888,6 +995,7 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
          ON thread_comments(thread_id, created_at DESC, id DESC)",
         [],
     )?;
+    connection.execute_batch(THREAD_TASK_LINKS_SQL)?;
 
     Ok(())
 }

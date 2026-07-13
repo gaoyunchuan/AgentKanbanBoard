@@ -56,6 +56,22 @@ pub enum TodoTaskStatus {
     Completed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadTaskLinkOrigin {
+    Thread,
+    Task,
+    Restore,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ThreadTaskLinkRecord {
+    pub thread_id: String,
+    pub task_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 impl TodoTaskStatus {
     pub fn as_str(self) -> &'static str {
         match self {

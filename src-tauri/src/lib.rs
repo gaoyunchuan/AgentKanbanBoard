@@ -23,7 +23,7 @@ mod tests {
     use super::deeplink::{project_deeplink, thread_deeplink};
     use super::domain::{
         BoardStatus, CodexThreadUpsert, FilterQuery, ProjectInput, TaskType, ThreadCommentInput,
-        TodoTaskInput, TodoTaskStatus,
+        ThreadTaskLinkOrigin, TodoTaskInput, TodoTaskStatus,
     };
     use super::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
     use super::repository::Repository;
@@ -77,6 +77,92 @@ mod tests {
 
     fn fixed_clock(value: &'static str) -> Box<dyn Fn() -> String> {
         Box::new(move || value.to_string())
+    }
+
+    fn todo_input(id: &str, status: TodoTaskStatus) -> TodoTaskInput {
+        TodoTaskInput {
+            id: id.to_string(),
+            parent_id: None,
+            position: 0,
+            title: id.to_string(),
+            status,
+            start_date: None,
+            expected_end_date: None,
+            actual_end_date: None,
+            process_tracking: String::new(),
+            result_review: String::new(),
+        }
+    }
+
+    #[test]
+    fn repository_thread_task_links_enforce_cardinality_and_candidate_statuses() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("review-thread"))
+            .unwrap();
+        repo.mark_reviewed("review-thread").unwrap();
+        repo.save_todo_tasks(&[
+            todo_input("todo", TodoTaskStatus::Todo),
+            todo_input("done", TodoTaskStatus::Completed),
+        ])
+        .unwrap();
+
+        let linked = repo
+            .set_thread_task_link("review-thread", Some("todo"), ThreadTaskLinkOrigin::Thread)
+            .unwrap()
+            .unwrap();
+        assert_eq!(linked.task_id, "todo");
+        assert!(repo
+            .set_thread_task_link("review-thread", Some("done"), ThreadTaskLinkOrigin::Thread,)
+            .unwrap_err()
+            .contains("未完成"));
+
+        let moved = repo
+            .set_thread_task_link("review-thread", Some("done"), ThreadTaskLinkOrigin::Restore)
+            .unwrap()
+            .unwrap();
+        assert_eq!(moved.task_id, "done");
+        assert_eq!(repo.list_thread_task_links().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn repository_task_origin_requires_review_pending_or_suspended_thread() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("running-thread"))
+            .unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("suspended-thread"))
+            .unwrap();
+        repo.save_todo_tasks(&[todo_input("task", TodoTaskStatus::Todo)])
+            .unwrap();
+
+        assert!(repo
+            .set_thread_task_link("running-thread", Some("task"), ThreadTaskLinkOrigin::Task,)
+            .unwrap_err()
+            .contains("待审核或挂起"));
+        repo.add_thread_comment(ThreadCommentInput {
+            thread_id: "suspended-thread".to_string(),
+            author: "我".to_string(),
+            body: "等待后续处理".to_string(),
+            suspend_until: Some("2026-07-14T08:00:00Z".to_string()),
+        })
+        .unwrap();
+        assert!(repo
+            .set_thread_task_link("suspended-thread", Some("task"), ThreadTaskLinkOrigin::Task,)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn repository_todo_snapshot_delete_cascades_thread_links() {
+        let repo = Repository::open_in_memory().unwrap();
+        repo.upsert_thread(CodexThreadUpsert::minimal("thread"))
+            .unwrap();
+        repo.save_todo_tasks(&[todo_input("task", TodoTaskStatus::Todo)])
+            .unwrap();
+        repo.set_thread_task_link("thread", Some("task"), ThreadTaskLinkOrigin::Restore)
+            .unwrap();
+
+        repo.save_todo_tasks(&[]).unwrap();
+        assert!(repo.list_thread_task_links().unwrap().is_empty());
     }
 
     #[test]
