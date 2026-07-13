@@ -1,5 +1,5 @@
 import type { ThreadItem } from "@/types";
-import { flattenTodoTree } from "@/todo/todoTree";
+import { flattenTodoTree, flattenTodoTreeByCompletion } from "@/todo/todoTree";
 import type { TodoTask } from "@/todo/types";
 import type { AssociationOption, ThreadTaskLink } from "./types";
 
@@ -150,6 +150,6 @@ export function todoTargetPage(
   taskId: string,
   pageSize: number
 ): number | undefined {
-  const index = flattenTodoTree(tasks).findIndex(({ task }) => task.id === taskId);
+  const index = flattenTodoTreeByCompletion(tasks).findIndex(({ task }) => task.id === taskId);
   return index < 0 ? undefined : Math.floor(index / pageSize) + 1;
 }

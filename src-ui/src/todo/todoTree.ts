@@ -53,8 +53,91 @@ export function flattenTodoTree(tasks: TodoTask[], collapsedIds: Set<string> = n
   return result;
 }
 
+export type TodoTreeCompletion =
+  | "all_incomplete"
+  | "partially_incomplete"
+  | "all_complete";
+
+const completionRank: Record<TodoTreeCompletion, number> = {
+  all_incomplete: 0,
+  partially_incomplete: 1,
+  all_complete: 2
+};
+
+const isDone = (task: TodoTask) =>
+  task.status === "completed" || task.status === "cancelled";
+
+function rootTaskId(tasks: TodoTask[], taskId: string) {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  let current = tasksById.get(taskId);
+  const visited = new Set<string>();
+  while (current?.parentId && !visited.has(current.id)) {
+    visited.add(current.id);
+    const parent = tasksById.get(current.parentId);
+    if (!parent) break;
+    current = parent;
+  }
+  return current?.id ?? taskId;
+}
+
+export function todoTreeCompletion(tasks: TodoTask[], taskId: string): TodoTreeCompletion {
+  const rootId = rootTaskId(tasks, taskId);
+  const childrenByParent = new Map<string, TodoTask[]>();
+  for (const task of tasks) {
+    if (!task.parentId) continue;
+    childrenByParent.set(task.parentId, [
+      ...(childrenByParent.get(task.parentId) ?? []),
+      task
+    ]);
+  }
+
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const pending = [rootId];
+  const visited = new Set<string>();
+  let hasDone = false;
+  let hasIncomplete = false;
+  while (pending.length > 0) {
+    const currentId = pending.pop();
+    if (!currentId || visited.has(currentId)) continue;
+    visited.add(currentId);
+    const task = tasksById.get(currentId);
+    if (!task) continue;
+    if (isDone(task)) hasDone = true;
+    else hasIncomplete = true;
+    pending.push(...(childrenByParent.get(currentId) ?? []).map((child) => child.id));
+  }
+
+  if (hasDone && !hasIncomplete) return "all_complete";
+  if (hasDone && hasIncomplete) return "partially_incomplete";
+  return "all_incomplete";
+}
+
+export function flattenTodoTreeByCompletion(
+  tasks: TodoTask[],
+  collapsedIds: Set<string> = new Set()
+): FlatTodoTask[] {
+  const flat = flattenTodoTree(tasks, collapsedIds);
+  const blocks: FlatTodoTask[][] = [];
+  for (const item of flat) {
+    if (item.depth === 0 || blocks.length === 0) blocks.push([item]);
+    else blocks[blocks.length - 1].push(item);
+  }
+  return blocks
+    .map((items, index) => ({ items, index }))
+    .sort((left, right) => {
+      const leftRoot = left.items[0]?.task.id ?? "";
+      const rightRoot = right.items[0]?.task.id ?? "";
+      return (
+        completionRank[todoTreeCompletion(tasks, leftRoot)] -
+          completionRank[todoTreeCompletion(tasks, rightRoot)] ||
+        left.index - right.index
+      );
+    })
+    .flatMap(({ items }) => items);
+}
+
 export function indentTask(tasks: TodoTask[], taskId: string): TodoTask[] {
-  const flat = flattenTodoTree(tasks);
+  const flat = flattenTodoTreeByCompletion(tasks);
   const index = flat.findIndex(({ task }) => task.id === taskId);
   if (index <= 0) return tasks;
   const previous = flat[index - 1].task;

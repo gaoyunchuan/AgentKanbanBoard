@@ -27,13 +27,14 @@ import { todoTargetPage } from "@/associations/associationModel";
 import { TaskThreadAssociationPanel } from "@/associations/TaskThreadAssociationPanel";
 import { MarkdownText } from "./markdownLinks";
 import {
-  flattenTodoTree,
+  flattenTodoTreeByCompletion,
   indentTask,
   insertSiblingTask,
   moveTaskRelative,
   normalizeTodoPositions,
   outdentTask,
-  removeTaskTree
+  removeTaskTree,
+  todoTreeCompletion
 } from "./todoTree";
 import type { TaskDropPlacement } from "./todoTree";
 import type { BackendTodoTask, TodoStatus, TodoTask } from "./types";
@@ -189,7 +190,7 @@ export function TodoListView({
     setFocusId(undefined);
   }, [focusId, tasks]);
 
-  const flatTasks = useMemo(() => flattenTodoTree(tasks), [tasks]);
+  const flatTasks = useMemo(() => flattenTodoTreeByCompletion(tasks), [tasks]);
   const visibleIds = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const matched = new Set(
@@ -274,7 +275,9 @@ export function TodoListView({
     setTasks(normalized);
     onTasksChange?.(normalized);
     if (options?.focusId) {
-      const focusIndex = flattenTodoTree(normalized).findIndex(({ task }) => task.id === options.focusId);
+      const focusIndex = flattenTodoTreeByCompletion(normalized).findIndex(
+        ({ task }) => task.id === options.focusId
+      );
       if (focusIndex >= 0) setPage(Math.floor(focusIndex / todoPageSize) + 1);
       setFocusId(options.focusId);
     }
@@ -414,6 +417,16 @@ export function TodoListView({
                   onDragOver={(event) => {
                     event.preventDefault();
                     if (!draggedId || draggedId === task.id) return;
+                    const draggedTask = tasks.find((item) => item.id === draggedId);
+                    if (
+                      draggedTask &&
+                      !draggedTask.parentId &&
+                      !task.parentId &&
+                      todoTreeCompletion(tasks, draggedId) !== todoTreeCompletion(tasks, task.id)
+                    ) {
+                      setDropTarget(undefined);
+                      return;
+                    }
                     const rect = event.currentTarget.getBoundingClientRect();
                     setDropTarget({
                       taskId: task.id,
@@ -426,6 +439,17 @@ export function TodoListView({
                   onDrop={(event) => {
                     event.preventDefault();
                     if (!draggedId || draggedId === task.id) return;
+                    const draggedTask = tasks.find((item) => item.id === draggedId);
+                    if (
+                      draggedTask &&
+                      !draggedTask.parentId &&
+                      !task.parentId &&
+                      todoTreeCompletion(tasks, draggedId) !== todoTreeCompletion(tasks, task.id)
+                    ) {
+                      setDraggedId(undefined);
+                      setDropTarget(undefined);
+                      return;
+                    }
                     const placement =
                       dropTarget?.taskId === task.id
                         ? dropTarget.placement
@@ -515,7 +539,7 @@ export function TodoListView({
                           applyTasks(event.shiftKey ? outdentTask(tasks, task.id) : indentTask(tasks, task.id), { focusId: task.id });
                         } else if (event.key === "Backspace" && !task.title && tasks.length > 1) {
                           event.preventDefault();
-                          const flat = flattenTodoTree(tasks);
+                          const flat = flattenTodoTreeByCompletion(tasks);
                           const index = flat.findIndex(({ task: item }) => item.id === task.id);
                           const nextFocus = flat[Math.max(0, index - 1)]?.task.id;
                           applyTasks(removeTaskTree(tasks, task.id), { focusId: nextFocus });

@@ -366,6 +366,52 @@ describe("TodoListView", () => {
     expect(screen.getAllByLabelText("任务标题")[0]).toHaveValue("任务 01");
   });
 
+  test("顶层任务树按全部未完成、部分未完成、全部已完成展示", () => {
+    const groupedTasks: TodoTask[] = [
+      { ...initialTasks[0], id: "done", title: "全部已完成", parentId: undefined, position: 0, status: "completed" },
+      { ...initialTasks[0], id: "open", title: "全部未完成", parentId: undefined, position: 1, status: "todo" },
+      { ...initialTasks[0], id: "partial", title: "部分未完成", parentId: undefined, position: 2, status: "todo" },
+      { ...initialTasks[1], id: "partial-child", title: "已完成子任务", parentId: "partial", position: 0, status: "cancelled" }
+    ];
+
+    render(<TodoListView initialTasks={groupedTasks} persistTasks={vi.fn()} />);
+
+    expect(
+      screen.getAllByLabelText("任务标题").map((input) => (input as HTMLInputElement).value)
+    ).toEqual(["全部未完成", "部分未完成", "已完成子任务", "全部已完成"]);
+  });
+
+  test("跨完成度分组拖拽不改变持久化顺序", async () => {
+    const roots: TodoTask[] = [
+      { ...initialTasks[0], id: "done", title: "已完成任务", parentId: undefined, position: 0, status: "completed" },
+      { ...initialTasks[0], id: "open", title: "未完成任务", parentId: undefined, position: 1, status: "todo" }
+    ];
+    const persistTasks = vi.fn();
+    render(<TodoListView initialTasks={roots} persistTasks={persistTasks} />);
+
+    const doneRow = screen.getByDisplayValue("已完成任务").closest("[data-task-row]") as HTMLElement;
+    vi.spyOn(doneRow, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+      bottom: 140,
+      height: 40,
+      left: 0,
+      right: 600,
+      width: 600,
+      x: 0,
+      y: 100,
+      toJSON: () => ({})
+    });
+    fireEvent.dragStart(screen.getByRole("button", { name: "拖动 未完成任务" }));
+    dragOverAt(doneRow, 116);
+    fireEvent.drop(doneRow, { clientY: 116 });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(persistTasks).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByLabelText("任务标题").map((input) => (input as HTMLInputElement).value)
+    ).toEqual(["未完成任务", "已完成任务"]);
+  });
+
   test("拖到任务行上半区或下半区会调整同级顺序并保存", async () => {
     const roots: TodoTask[] = [
       { ...initialTasks[0], id: "a", title: "任务 A", parentId: undefined, position: 0 },

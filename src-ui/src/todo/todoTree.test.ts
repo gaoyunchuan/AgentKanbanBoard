@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import type { TodoTask } from "./types";
 import {
   flattenTodoTree,
+  flattenTodoTreeByCompletion,
   indentTask,
   insertSiblingTask,
   moveTaskRelative,
-  outdentTask
+  outdentTask,
+  todoTreeCompletion
 } from "./todoTree";
 
 const task = (
@@ -34,9 +36,38 @@ describe("todo tree operations", () => {
     ]);
   });
 
+  test("按顶层任务树的完成度分组且保持树结构和组内顺序", () => {
+    const tasks: TodoTask[] = [
+      { ...task("complete", undefined, 0), status: "completed" },
+      task("partial", undefined, 1),
+      { ...task("partial-child", "partial", 0), status: "completed" },
+      task("incomplete", undefined, 2),
+      task("incomplete-child", "incomplete", 0),
+      { ...task("complete-second", undefined, 3), status: "cancelled" }
+    ];
+
+    expect(flattenTodoTreeByCompletion(tasks).map(({ task }) => task.id)).toEqual([
+      "incomplete",
+      "incomplete-child",
+      "partial",
+      "partial-child",
+      "complete",
+      "complete-second"
+    ]);
+  });
+
+  test("取消状态按完成态计算", () => {
+    const tasks: TodoTask[] = [
+      { ...task("cancelled-root", undefined, 0), status: "cancelled" },
+      { ...task("cancelled-child", "cancelled-root", 0), status: "completed" }
+    ];
+
+    expect(todoTreeCompletion(tasks, "cancelled-root")).toBe("all_complete");
+  });
+
   test("Tab 将任务缩进为前一个可见任务的子任务且不改变状态", () => {
     const tasks = [
-      { ...task("a", undefined, 0), status: "completed" as const },
+      task("a", undefined, 0),
       { ...task("b", undefined, 1), status: "in_progress" as const }
     ];
 
@@ -46,7 +77,18 @@ describe("todo tree operations", () => {
       position: 0,
       status: "in_progress"
     });
-    expect(changed.find((item) => item.id === "a")?.status).toBe("completed");
+    expect(changed.find((item) => item.id === "a")?.status).toBe("todo");
+  });
+
+  test("Tab 使用完成度分组后的前一个可见任务", () => {
+    const tasks = [
+      { ...task("done", undefined, 0), status: "completed" as const },
+      task("open", undefined, 1)
+    ];
+
+    expect(indentTask(tasks, "done").find((item) => item.id === "done")?.parentId).toBe(
+      "open"
+    );
   });
 
   test("Shift+Tab 将任务提升到父任务之后", () => {

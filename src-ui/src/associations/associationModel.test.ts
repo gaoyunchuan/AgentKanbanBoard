@@ -109,3 +109,14 @@ test("Todo 定位按树顺序计算分页", () => {
   );
   expect(todoTargetPage(tasks, "task-51", 50)).toBe(2);
 });
+
+test("Todo 定位分页使用完成度分组后的展示顺序", () => {
+  const tasks = [
+    task("done", undefined, "completed", 0),
+    ...Array.from({ length: 50 }, (_, index) =>
+      task(`open-${index + 1}`, undefined, "todo", index + 1)
+    )
+  ];
+
+  expect(todoTargetPage(tasks, "done", 50)).toBe(2);
+});
