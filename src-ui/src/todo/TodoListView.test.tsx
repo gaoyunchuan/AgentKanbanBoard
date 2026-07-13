@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { BoardStatus, ThreadItem } from "@/types";
 import type { ThreadTaskLink } from "@/associations/types";
-import type { TodoTask } from "./types";
-import { TodoListView } from "./TodoListView";
+import type { BackendTodoTask, TodoTask } from "./types";
+import { mapBackendTodoTask, TodoListView } from "./TodoListView";
 
 const initialTasks: TodoTask[] = [
   {
@@ -131,6 +131,64 @@ describe("TodoListView", () => {
     fireEvent.keyDown(editor, { key: "Enter" });
 
     expect(screen.getByLabelText("父任务的预期结束日期")).toHaveTextContent("2026-07-19");
+  });
+
+  test("后端创建时间映射到任务并在展开详情显示本地日期", async () => {
+    const backendTask: BackendTodoTask = {
+      id: "backend",
+      parent_id: null,
+      position: 0,
+      title: "后端任务",
+      status: "todo",
+      start_date: "2026-07-11",
+      expected_end_date: null,
+      actual_end_date: null,
+      process_tracking: "",
+      result_review: "",
+      created_at: "2026-07-13T12:00:00",
+      updated_at: "2026-07-13T12:00:00"
+    };
+    const mapped = mapBackendTodoTask(backendTask);
+    expect(mapped.createdAt).toBe("2026-07-13T12:00:00");
+
+    const user = userEvent.setup();
+    render(<TodoListView initialTasks={[mapped]} persistTasks={vi.fn()} />);
+    expect(screen.getByText("关联 Thread")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "展开 后端任务" }));
+
+    expect(screen.getByText("添加日期：2026-07-13")).toBeInTheDocument();
+    expect(screen.queryByText("起始日期")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("后端任务的起始日期")).not.toBeInTheDocument();
+  });
+
+  test("四种新建入口都把预期结束日期设为本地明天", async () => {
+    const user = userEvent.setup();
+    const persistTasks = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TodoListView
+        initialTasks={initialTasks}
+        persistTasks={persistTasks}
+        today={() => "2026-12-31"}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "新建任务" }));
+    await user.click(screen.getByRole("button", { name: "为 父任务 添加子任务" }));
+    const parentTitle = screen.getByDisplayValue("父任务");
+    parentTitle.focus();
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    screen.getByDisplayValue("父任务").focus();
+    await user.keyboard("{Meta>}{Shift>}{Enter}{/Shift}{/Meta}");
+
+    await waitFor(() => {
+      const latestCall = persistTasks.mock.calls[persistTasks.mock.calls.length - 1]?.[0] as TodoTask[];
+      expect(latestCall).toHaveLength(6);
+    });
+    const latest = persistTasks.mock.calls[persistTasks.mock.calls.length - 1]?.[0] as TodoTask[];
+    const created = latest.filter((task) => !initialTasks.some((item) => item.id === task.id));
+    expect(created).toHaveLength(4);
+    expect(created.every((task) => task.expectedEndDate === "2027-01-01")).toBe(true);
+    expect(created.every((task) => task.createdAt?.startsWith("2026-12-31"))).toBe(true);
   });
 
   test("Enter 不创建任务，Cmd+Enter 向后创建，Cmd+Shift+Enter 向前创建", async () => {

@@ -39,7 +39,7 @@ import {
 import type { TaskDropPlacement } from "./todoTree";
 import type { BackendTodoTask, TodoStatus, TodoTask } from "./types";
 
-type DateField = "startDate" | "expectedEndDate" | "actualEndDate";
+type DateField = "expectedEndDate" | "actualEndDate";
 type ExtensionField = "processTracking" | "resultReview";
 type TodoTaskDropPlacement = Exclude<TaskDropPlacement, "inside">;
 const exactNamedHttpLinkPattern = /^\[([^\]]+)]\((https?:\/\/[^\s)]+)\)$/;
@@ -83,7 +83,6 @@ const statusLabels: Record<TodoStatus, string> = {
 };
 
 const dateLabels: Record<DateField, string> = {
-  startDate: "起始日期",
   expectedEndDate: "预期结束日期",
   actualEndDate: "实际结束日期"
 };
@@ -104,6 +103,17 @@ const emptyTask = (id: string, parentId: string | undefined, position: number): 
   status: "todo",
   processTracking: "",
   resultReview: ""
+});
+
+const newTask = (
+  id: string,
+  parentId: string | undefined,
+  position: number,
+  today: string
+): TodoTask => ({
+  ...emptyTask(id, parentId, position),
+  expectedEndDate: nextLocalDate(today),
+  createdAt: `${today}T00:00:00`
 });
 
 export function TodoListView({
@@ -294,18 +304,18 @@ export function TodoListView({
   const addRootTask = () => {
     const id = createId();
     const position = tasks.filter((task) => !task.parentId).length;
-    applyTasks([...tasks, emptyTask(id, undefined, position)], { focusId: id });
+    applyTasks([...tasks, newTask(id, undefined, position, today())], { focusId: id });
   };
 
   const addChildTask = (parentId: string) => {
     const id = createId();
     const position = tasks.filter((task) => task.parentId === parentId).length;
-    applyTasks([...tasks, emptyTask(id, parentId, position)], { focusId: id });
+    applyTasks([...tasks, newTask(id, parentId, position, today())], { focusId: id });
   };
 
   const addSiblingTask = (taskId: string, placement: "before" | "after" = "after") => {
     const id = createId();
-    applyTasks(insertSiblingTask(tasks, taskId, emptyTask(id, undefined, 0), placement), {
+    applyTasks(insertSiblingTask(tasks, taskId, newTask(id, undefined, 0, today()), placement), {
       focusId: id
     });
   };
@@ -385,7 +395,7 @@ export function TodoListView({
 
         <div className="todo-grid grid border-b bg-secondary/25 px-3 py-1.5 text-[10px] font-medium text-muted-foreground">
           <div className="flex items-center gap-2 pl-1"><ListTodo className="h-3.5 w-3.5" />任务</div>
-          <div>起始日期</div>
+          <div>关联 Thread</div>
           <div className="flex items-center gap-1">预期结束日期<span className="font-normal text-muted-foreground/70">· 双击编辑</span></div>
           <div>实际结束日期</div>
           <div aria-hidden="true" />
@@ -547,7 +557,7 @@ export function TodoListView({
                       }}
                     />
                   </div>
-                  <DateCell task={task} field="startDate" editing={editingDate} onEdit={setEditingDate} onChange={(value) => updateTask(task.id, { startDate: value || undefined })} />
+                  <div aria-hidden="true" />
                   <DateCell task={task} field="expectedEndDate" editing={editingDate} onEdit={setEditingDate} onChange={(value) => updateTask(task.id, { expectedEndDate: value || undefined })} />
                   <DateCell task={task} field="actualEndDate" editing={editingDate} onEdit={setEditingDate} onChange={(value) => updateTask(task.id, { actualEndDate: value || undefined })} />
                   <div className="flex justify-end gap-0.5">
@@ -715,6 +725,9 @@ function ExtensionPanel({ task, onChange, onOpenLink, children }: {
 }) {
   return (
     <div className="ml-24 grid grid-cols-1 border-b border-l bg-secondary/20 lg:grid-cols-2">
+      <div className="col-span-full border-b px-2.5 py-2 text-[10px] text-muted-foreground">
+        添加日期：{formatLocalCreatedDate(task.createdAt)}
+      </div>
       <ExtensionSection task={task} field="processTracking" title="过程跟踪" value={task.processTracking} onChange={(value) => onChange({ processTracking: value })} onOpenLink={onOpenLink} />
       <ExtensionSection task={task} field="resultReview" title="结果复盘" value={task.resultReview} onChange={(value) => onChange({ resultReview: value })} onOpenLink={onOpenLink} />
       {children && <div className="col-span-full border-t p-2">{children}</div>}
@@ -867,6 +880,7 @@ export function mapBackendTodoTask(task: BackendTodoTask): TodoTask {
     startDate: task.start_date ?? undefined,
     expectedEndDate: task.expected_end_date ?? undefined,
     actualEndDate: task.actual_end_date ?? undefined,
+    createdAt: task.created_at,
     processTracking: task.process_tracking,
     resultReview: task.result_review
   };
@@ -894,6 +908,22 @@ function createId() {
 function localToday() {
   const date = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function nextLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + 1);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatLocalCreatedDate(value?: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10) || "—";
+  const pad = (part: number) => String(part).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
