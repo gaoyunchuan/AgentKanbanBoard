@@ -1,98 +1,117 @@
-# To Do 任务拖放排序 Implementation Plan
+# 恢复 To Do 任务拖放排序 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让任务拖放根据行内落点执行向前排序、成为子任务或向后排序，并提供明确视觉反馈。
+**Goal:** 让拖拽手柄始终可见，并让目标行上、下半区稳定执行同级向前、向后排序，不再通过拖放改变任务层级。
 
-**Architecture:** 在 `todoTree.ts` 中增加无 UI 依赖的相对移动纯函数；`TodoListView.tsx` 仅负责把鼠标纵向位置映射为三种落点，并调用纯函数。拖动提示保存在组件瞬时状态，不进入持久化模型。
+**Architecture:** 保留 `todoTree.ts` 的相对移动纯函数和现有快照持久化链路，只收窄 `TodoListView.tsx` 的 UI 拖放语义。组件根据指针相对目标行中线的位置生成 `before` 或 `after`，拖放结束仍由 `applyTasks` 归一化并保存完整快照。
 
-**Tech Stack:** React 18、TypeScript、Vitest、Testing Library、Tailwind CSS
+**Tech Stack:** React 18、TypeScript、Vitest、Testing Library、Playwright
 
 ## Global Constraints
 
-- 直接使用当前分支，不创建 worktree。
-- 不修改数据库结构和任务领域字段。
-- 任务状态、日期、过程跟踪、结果复盘在移动后必须保持不变。
-- 禁止形成父子循环。
+- 直接在当前 `main` 开发，不创建分支或 worktree。
+- 只修改拖放交互及其测试，不修改数据库结构和任务领域字段。
+- 创建子任务继续使用 `Tab` 或“子任务”按钮。
+- 拖动任务时保留任务全部后代、状态、日期和扩展字段。
+- 不操作桌面壳中的用户现有任务数据。
 
 ---
 
-### Task 1: 树结构相对移动
+### Task 1: 拖放排序交互
 
 **Files:**
-- Modify: `src-ui/src/todo/todoTree.ts`
-- Test: `src-ui/src/todo/todoTree.test.ts`
+- Modify: `src-ui/src/todo/TodoListView.tsx:120-130,390-455`
+- Test: `src-ui/src/todo/TodoListView.test.tsx:378-455`
 
 **Interfaces:**
-- Produces: `moveTaskRelative(tasks, taskId, targetId, placement: "before" | "inside" | "after"): TodoTask[]`
+- Consumes: `moveTaskRelative(tasks, taskId, targetId, placement)` 与 `applyTasks(next)`。
+- Produces: 只可能为 `"before" | "after"` 的 UI 落点，以及默认可见的拖拽手柄。
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 写拖拽手柄常显的失败测试**
 
-覆盖根任务向前排序、同级向后排序、跨层级插入到目标同级、`inside` 成为子任务以及移动到自身后代时保持原数据。
+```tsx
+test("拖拽手柄默认可见", () => {
+  render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
 
-- [ ] **Step 2: 运行测试确认失败**
+  expect(screen.getByRole("button", { name: "拖动 主任务" })).not.toHaveClass("opacity-0");
+});
+```
 
-Run: `cd src-ui && npm test -- --run src/todo/todoTree.test.ts`
+- [ ] **Step 2: 写上、下半区排序且不改变层级的失败测试**
 
-Expected: FAIL，提示 `moveTaskRelative` 尚未导出。
+使用高度 40px、顶部 100px 的目标行：`clientY = 116` 必须得到 `before`，`clientY = 124` 必须得到 `after`。拖放后断言标题顺序、`data-depth="0"` 和 `persistTasks` 收到的新快照。
 
-- [ ] **Step 3: 实现最小纯函数**
+```tsx
+const persistTasks = vi.fn();
+render(<TodoListView initialTasks={roots} persistTasks={persistTasks} />);
 
-先拒绝自身和后代目标；`inside` 复用子任务语义；`before/after` 取目标的 `parentId` 与相邻位置，移动前先从原同级集合移除，再为新同级集合重建连续 `position`。
+fireEvent.dragStart(screen.getByRole("button", { name: "拖动 任务 C" }));
+dragOverAt(rowA, 116);
+expect(rowA).toHaveAttribute("data-drop-placement", "before");
+fireEvent.drop(rowA, { clientY: 116 });
+expect(screen.getByDisplayValue("任务 C").closest("[data-task-row]")).toHaveAttribute("data-depth", "0");
+```
 
-- [ ] **Step 4: 运行测试确认通过**
-
-Run: `cd src-ui && npm test -- --run src/todo/todoTree.test.ts`
-
-Expected: PASS。
-
-### Task 2: 三段拖放命中与反馈
-
-**Files:**
-- Modify: `src-ui/src/todo/TodoListView.tsx`
-- Test: `src-ui/src/todo/TodoListView.test.tsx`
-
-**Interfaces:**
-- Consumes: `moveTaskRelative(...)`
-- Produces: 行上沿 `before`、中部 `inside`、下沿 `after` 的拖放行为与对应视觉提示。
-
-- [ ] **Step 1: 写失败测试**
-
-通过构造 `dragOver` 的 `clientY` 与目标行 `getBoundingClientRect()`，分别验证上、中、下落点；断言排序结果或 `data-depth`，并验证拖动结束后提示清除。
-
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 3: 运行组件测试，确认因旧交互失败**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
 
-Expected: FAIL，现有实现始终移动为子任务。
+Expected: FAIL；手柄仍含 `opacity-0`，`clientY = 116/124` 仍得到 `inside` 或子任务层级。
 
-- [ ] **Step 3: 实现拖放状态与最小样式**
+- [ ] **Step 4: 实现最小拖放语义修改**
 
-增加 `{ taskId, placement }` 瞬时状态；按目标行高度的 25% / 50% / 25% 计算落点；顶部和底部用蓝色横线，中部使用浅蓝背景；`drop` 后调用 `moveTaskRelative` 并清空状态。
+在 `TodoListView.tsx` 中把落点计算收敛为目标行中线两侧，并在 `drop` 时重新计算兜底，禁止产生 `inside`：
 
-- [ ] **Step 4: 运行测试确认通过**
+```tsx
+function taskDropPlacement(clientY: number, rect: Pick<DOMRect, "top" | "height">): TaskDropPlacement {
+  return clientY - rect.top < rect.height / 2 ? "before" : "after";
+}
+```
 
-Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
+移除 `inside` 高亮分支，并把手柄样式从悬停显示改为默认使用 `text-muted-foreground/50`。
 
-Expected: PASS。
+- [ ] **Step 5: 运行组件和树测试，确认通过**
 
-### Task 3: 完整验证
+Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx src/todo/todoTree.test.ts`
+
+Expected: PASS；两个测试文件全部通过。
+
+- [ ] **Step 6: 提交交互修复**
+
+```bash
+git add src-ui/src/todo/TodoListView.tsx src-ui/src/todo/TodoListView.test.tsx
+git commit -m "fix: restore todo drag reordering"
+```
+
+### Task 2: 完整验证
 
 **Files:**
-- Verify only
+- Verify: `src-ui/src/todo/TodoListView.tsx`
+- Verify: `src-ui/src/todo/TodoListView.test.tsx`
 
-- [ ] **Step 1: 运行完整前端验证**
+**Interfaces:**
+- Consumes: Task 1 的拖放交互。
+- Produces: 自动化测试、构建、格式和真实浏览器拖放证据。
 
-Run: `cd src-ui && npm test && npm run build`
+- [ ] **Step 1: 运行完整前端测试**
 
-Expected: 所有测试通过且 Vite 构建成功。
+Run: `cd src-ui && npm test -- --run`
 
-- [ ] **Step 2: 浏览器验收**
+Expected: 所有测试文件通过，失败数为 0。
 
-在本地页面验证向上排序、向下排序、成为子任务三条路径，并确认拖放提示与最终层级一致。
+- [ ] **Step 2: 运行生产构建**
 
-- [ ] **Step 3: 检查补丁格式**
+Run: `cd src-ui && npm run build`
 
-Run: `git diff --check`
+Expected: TypeScript 与 Vite 构建退出码为 0。
 
-Expected: 无输出，退出码为 0。
+- [ ] **Step 3: 运行真实浏览器拖放探针**
+
+用浏览器 demo 数据把一个根任务拖到另一个根任务的上半区和下半区，断言 DOM 标题顺序发生对应变化、任务深度仍为 0、拖拽手柄计算样式非透明且控制台无应用错误。
+
+- [ ] **Step 4: 检查补丁格式和工作区边界**
+
+Run: `git diff --check && git status --short`
+
+Expected: `git diff --check` 无输出；只保留用户原有的 `AGENTS.md`、`.superpowers/` 变更和本任务预期文件状态。
