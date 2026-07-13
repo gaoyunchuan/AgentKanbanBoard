@@ -1,6 +1,8 @@
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { BoardStatus, ThreadItem } from "@/types";
+import type { ThreadTaskLink } from "@/associations/types";
 import type { TodoTask } from "./types";
 import { TodoListView } from "./TodoListView";
 
@@ -24,6 +26,32 @@ const initialTasks: TodoTask[] = [
     resultReview: ""
   }
 ];
+
+const associationThread = (id: string, boardStatus: BoardStatus): ThreadItem => ({
+  id,
+  title: id,
+  preview: "",
+  projectId: "project",
+  cwd: "/repo",
+  branch: "main",
+  boardStatus,
+  codexStatus: "idle",
+  subStatus: "",
+  taskType: "unset",
+  module: "",
+  sprint: "",
+  updatedAt: "2026-07-13",
+  createdAt: "2026-07-13",
+  notes: "",
+  comments: []
+});
+
+const associationLink = (threadId: string, taskId: string): ThreadTaskLink => ({
+  threadId,
+  taskId,
+  createdAt: "2026-07-13T08:00:00Z",
+  updatedAt: "2026-07-13T08:00:00Z"
+});
 
 function dragOverAt(element: HTMLElement, clientY: number) {
   const event = createEvent.dragOver(element);
@@ -162,6 +190,90 @@ describe("TodoListView", () => {
     await user.type(within(processSection).getByLabelText("URL"), "http://example.com/dashboard");
     await user.click(within(processSection).getByRole("button", { name: "保存链接" }));
     expect(within(processSection).getByRole("link", { name: "监控面板" })).toBeInTheDocument();
+  });
+
+  test("任意状态 Task 展开后可关联多个待审核和挂起 Thread", async () => {
+    const user = userEvent.setup();
+    const onAssignThread = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TodoListView
+        initialTasks={[{ ...initialTasks[0], status: "completed" }]}
+        persistTasks={vi.fn()}
+        threads={[
+          associationThread("pending", "review_pending"),
+          associationThread("suspended", "suspended"),
+          associationThread("running", "running")
+        ]}
+        projectNames={new Map([["project", "AgentKanbanBoard"]])}
+        linksByThread={new Map()}
+        onAssignThread={onAssignThread}
+        onUnlinkThread={vi.fn()}
+        onOpenThread={vi.fn()}
+        onExpandTask={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "展开 父任务" }));
+    await user.click(screen.getByRole("combobox", { name: "关联 Thread" }));
+    expect(screen.getByRole("option", { name: /pending/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /suspended/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /running/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /pending/ }));
+    expect(onAssignThread).toHaveBeenCalledWith("pending", "root");
+  });
+
+  test("已关联其他 Task 的 Thread 显示原归属并直接迁移", async () => {
+    const user = userEvent.setup();
+    const onAssignThread = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TodoListView
+        initialTasks={initialTasks}
+        persistTasks={vi.fn()}
+        threads={[associationThread("pending", "review_pending")]}
+        projectNames={new Map([["project", "AgentKanbanBoard"]])}
+        linksByThread={new Map([["pending", associationLink("pending", "other-task")]])}
+        onAssignThread={onAssignThread}
+        onUnlinkThread={vi.fn()}
+        onOpenThread={vi.fn()}
+        onExpandTask={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "展开 父任务" }));
+    await user.click(screen.getByRole("combobox", { name: "关联 Thread" }));
+    expect(screen.getByText(/当前关联：other-task/)).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /pending/ }));
+    expect(onAssignThread).toHaveBeenCalledWith("pending", "root");
+  });
+
+  test("导航目标会清空筛选、切页、展开、滚动并聚焦深层子 Task", async () => {
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const tasks = Array.from({ length: 51 }, (_, index) => ({
+      ...initialTasks[0],
+      id: `task-${index + 1}`,
+      title: `任务 ${index + 1}`,
+      position: index,
+      parentId: undefined,
+      status: index === 50 ? ("completed" as const) : ("todo" as const)
+    }));
+    const persistTasks = vi.fn();
+    const { rerender } = render(
+      <TodoListView initialTasks={tasks} persistTasks={persistTasks} />
+    );
+    await userEvent.setup().type(screen.getByRole("textbox", { name: "搜索任务" }), "不存在");
+    rerender(
+      <TodoListView
+        initialTasks={tasks}
+        persistTasks={persistTasks}
+        navigationTarget={{ taskId: "task-51", requestId: 1 }}
+      />
+    );
+
+    expect(await screen.findByDisplayValue("任务 51")).toHaveFocus();
+    expect(screen.getByText("第 2 / 2 页 · 共 51 条")).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
   test("双击扩展内容可逐条编辑文本和命名链接", async () => {

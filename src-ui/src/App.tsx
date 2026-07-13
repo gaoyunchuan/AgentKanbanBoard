@@ -626,7 +626,30 @@ function App() {
           {view === "projects" ? (
             <ProjectsView projects={projects} setProjects={setProjects} onOpenProject={openProject} />
           ) : view === "todos" ? (
-            <TodoListView onCountChange={setTodoCount} />
+            <TodoListView
+              onCountChange={setTodoCount}
+              threads={threads}
+              projectNames={projectNames}
+              linksByThread={associations.linksByThread}
+              savingThreadIds={associations.savingThreadIds}
+              navigationTarget={todoNavigationTarget}
+              onTasksChange={(tasks) => {
+                setTodoTasksCache(tasks);
+                setTodoTasksLoaded(true);
+              }}
+              onTasksPersisted={(tasks) => {
+                setTodoTasksCache(tasks);
+                setTodoTasksLoaded(true);
+                associations.reconcileTaskIds(new Set(tasks.map((task) => task.id)));
+              }}
+              onExpandTask={() => void associations.loadLinks()}
+              onAssignThread={(threadId, taskId) =>
+                associations.assign(threadId, taskId, "task")
+              }
+              onUnlinkThread={associations.unlink}
+              onOpenThread={openThread}
+              onNavigationError={setToast}
+            />
           ) : (
             <section className="flex min-h-0 flex-1 flex-col gap-2 p-3">
               {showSummary && (

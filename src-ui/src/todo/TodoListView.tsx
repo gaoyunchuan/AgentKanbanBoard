@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -20,6 +21,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import type { ThreadItem } from "@/types";
+import type { ThreadTaskLink } from "@/associations/types";
+import { todoTargetPage } from "@/associations/associationModel";
+import { TaskThreadAssociationPanel } from "@/associations/TaskThreadAssociationPanel";
 import { MarkdownText } from "./markdownLinks";
 import {
   flattenTodoTree,
@@ -54,6 +59,18 @@ type Props = {
   openLink?: (url: string) => Promise<void> | void;
   today?: () => string;
   onCountChange?: (count: number) => void;
+  threads?: ThreadItem[];
+  projectNames?: Map<string, string>;
+  linksByThread?: Map<string, ThreadTaskLink>;
+  savingThreadIds?: Set<string>;
+  navigationTarget?: { taskId: string; requestId: number };
+  onTasksChange?: (tasks: TodoTask[]) => void;
+  onTasksPersisted?: (tasks: TodoTask[]) => void;
+  onExpandTask?: (taskId: string) => void;
+  onAssignThread?: (threadId: string, taskId: string) => Promise<void>;
+  onUnlinkThread?: (threadId: string) => Promise<void>;
+  onOpenThread?: (thread: ThreadItem) => void;
+  onNavigationError?: (message: string) => void;
 };
 
 const statusLabels: Record<TodoStatus, string> = {
@@ -85,9 +102,22 @@ export function TodoListView({
   persistTasks,
   openLink,
   today = localToday,
-  onCountChange
+  onCountChange,
+  threads = [],
+  projectNames = new Map(),
+  linksByThread = new Map(),
+  savingThreadIds = new Set(),
+  navigationTarget,
+  onTasksChange,
+  onTasksPersisted,
+  onExpandTask,
+  onAssignThread,
+  onUnlinkThread,
+  onOpenThread,
+  onNavigationError
 }: Props) {
   const [tasks, setTasks] = useState<TodoTask[]>(initialTasks ?? []);
+  const [tasksReady, setTasksReady] = useState(initialTasks !== undefined);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | TodoStatus>("all");
   const [page, setPage] = useState(1);
@@ -102,6 +132,9 @@ export function TodoListView({
   );
   const titleRefs = useRef(new Map<string, HTMLInputElement>());
   const saveQueue = useRef(Promise.resolve());
+  const handledNavigationRequest = useRef<number>();
+  const pendingNavigationId = useRef<string>();
+  const navigatingFilters = useRef(false);
 
   useEffect(() => {
     if (initialTasks) return;
@@ -109,11 +142,18 @@ export function TodoListView({
     if (!isTauriRuntime()) {
       const demo = demoTasks();
       setTasks(demo);
+      setTasksReady(true);
+      onTasksChange?.(demo);
       return;
     }
     void invoke<BackendTodoTask[]>("load_todo_tasks")
       .then((records) => {
-        if (!cancelled) setTasks(records.map(mapBackendTodoTask));
+        if (!cancelled) {
+          const loaded = records.map(mapBackendTodoTask);
+          setTasks(loaded);
+          setTasksReady(true);
+          onTasksChange?.(loaded);
+        }
       })
       .catch((error) => {
         if (!cancelled) setMessage(`任务加载失败：${String(error)}`);
@@ -131,6 +171,10 @@ export function TodoListView({
     if (!input) return;
     input.focus();
     input.select();
+    if (pendingNavigationId.current === focusId) {
+      input.scrollIntoView?.({ block: "center" });
+      pendingNavigationId.current = undefined;
+    }
     setFocusId(undefined);
   }, [focusId, tasks]);
 
@@ -167,8 +211,34 @@ export function TodoListView({
     currentPage * todoPageSize
   );
 
-  useEffect(() => setPage(1), [query, statusFilter]);
+  useEffect(() => {
+    if (navigatingFilters.current) {
+      navigatingFilters.current = false;
+      return;
+    }
+    setPage(1);
+  }, [query, statusFilter]);
   useEffect(() => setPage((current) => Math.min(current, pageCount)), [pageCount]);
+
+  useEffect(() => {
+    if (!navigationTarget || !tasksReady) return;
+    if (handledNavigationRequest.current === navigationTarget.requestId) return;
+    const target = tasks.find((task) => task.id === navigationTarget.taskId);
+    if (!target) {
+      handledNavigationRequest.current = navigationTarget.requestId;
+      onNavigationError?.("关联的 Task 已不存在");
+      return;
+    }
+
+    handledNavigationRequest.current = navigationTarget.requestId;
+    navigatingFilters.current = query !== "" || statusFilter !== "all";
+    setQuery("");
+    setStatusFilter("all");
+    setPage(todoTargetPage(tasks, target.id, todoPageSize) ?? 1);
+    setExpandedId(target.id);
+    pendingNavigationId.current = target.id;
+    setFocusId(target.id);
+  }, [navigationTarget, onNavigationError, query, statusFilter, tasks, tasksReady]);
 
   const saveSnapshot = (next: TodoTask[]) => {
     saveQueue.current = saveQueue.current
@@ -179,6 +249,7 @@ export function TodoListView({
         } else if (isTauriRuntime()) {
           await invoke("save_todo_tasks", { tasks: next.map(mapTodoTaskInput) });
         }
+        onTasksPersisted?.(next);
         setMessage("已保存");
       })
       .catch((error) => {
@@ -190,6 +261,7 @@ export function TodoListView({
   const applyTasks = (next: TodoTask[], options?: { focusId?: string; persist?: boolean }) => {
     const normalized = normalizeTodoPositions(next);
     setTasks(normalized);
+    onTasksChange?.(normalized);
     if (options?.focusId) {
       const focusIndex = flattenTodoTree(normalized).findIndex(({ task }) => task.id === options.focusId);
       if (focusIndex >= 0) setPage(Math.floor(focusIndex / todoPageSize) + 1);
@@ -371,7 +443,11 @@ export function TodoListView({
                     <button
                       aria-label={`${expandedId === task.id ? "收起" : "展开"} ${task.title || "未命名任务"}`}
                       className="mr-1 rounded p-0.5 text-muted-foreground hover:bg-secondary"
-                      onClick={() => setExpandedId((current) => (current === task.id ? undefined : task.id))}
+                      onClick={() => {
+                        const willExpand = expandedId !== task.id;
+                        setExpandedId((current) => (current === task.id ? undefined : task.id));
+                        if (willExpand) onExpandTask?.(task.id);
+                      }}
                     >
                       {expandedId === task.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     </button>
@@ -443,7 +519,24 @@ export function TodoListView({
                   </div>
                 </div>
                 {expandedId === task.id && (
-                  <ExtensionPanel task={task} onChange={(patch) => updateTask(task.id, patch)} onOpenLink={openExternalLink} />
+                  <ExtensionPanel
+                    task={task}
+                    onChange={(patch) => updateTask(task.id, patch)}
+                    onOpenLink={openExternalLink}
+                  >
+                    {onAssignThread && onUnlinkThread && onOpenThread && (
+                      <TaskThreadAssociationPanel
+                        task={task}
+                        threads={threads}
+                        projectNames={projectNames}
+                        linksByThread={linksByThread}
+                        savingThreadIds={savingThreadIds}
+                        onAssign={onAssignThread}
+                        onUnlink={onUnlinkThread}
+                        onOpenThread={onOpenThread}
+                      />
+                    )}
+                  </ExtensionPanel>
                 )}
               </div>
             ))
@@ -573,15 +666,17 @@ function StatusMenu({ task, onSelect, onDelete, onClose }: {
   );
 }
 
-function ExtensionPanel({ task, onChange, onOpenLink }: {
+function ExtensionPanel({ task, onChange, onOpenLink, children }: {
   task: TodoTask;
   onChange: (patch: Partial<TodoTask>) => void;
   onOpenLink: (url: string) => void;
+  children?: ReactNode;
 }) {
   return (
     <div className="ml-24 grid grid-cols-1 border-b border-l bg-secondary/20 lg:grid-cols-2">
       <ExtensionSection task={task} field="processTracking" title="过程跟踪" value={task.processTracking} onChange={(value) => onChange({ processTracking: value })} onOpenLink={onOpenLink} />
       <ExtensionSection task={task} field="resultReview" title="结果复盘" value={task.resultReview} onChange={(value) => onChange({ resultReview: value })} onOpenLink={onOpenLink} />
+      {children && <div className="col-span-full border-t p-2">{children}</div>}
     </div>
   );
 }
