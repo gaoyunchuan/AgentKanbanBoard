@@ -3,9 +3,10 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::domain::{
-    BoardStatus, CodexThreadUpsert, FilterPreset, FilterQuery, ProjectInput, ProjectRecord,
-    TaskType, ThreadCommentInput, ThreadCommentRecord, ThreadEventInput, ThreadRecord,
-    ThreadTaskLinkOrigin, ThreadTaskLinkRecord, TodoTaskInput, TodoTaskRecord, TodoTaskStatus,
+    is_subagent_source, BoardStatus, CodexThreadUpsert, FilterPreset, FilterQuery, ProjectInput,
+    ProjectRecord, TaskType, ThreadCommentInput, ThreadCommentRecord, ThreadEventInput,
+    ThreadRecord, ThreadTaskLinkOrigin, ThreadTaskLinkRecord, TodoTaskInput, TodoTaskRecord,
+    TodoTaskStatus,
 };
 use crate::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
 use crate::time::current_utc_text;
@@ -576,7 +577,8 @@ impl Repository {
     pub fn list_threads(&self, query: FilterQuery) -> rusqlite::Result<Vec<ThreadRecord>> {
         let mut records = self.load_all_threads()?;
         records.retain(|thread| {
-            (query.include_archived || thread.board_status != BoardStatus::Archived)
+            !is_subagent_source(&thread.source_kind)
+                && (query.include_archived || thread.board_status != BoardStatus::Archived)
                 && query
                     .project_id
                     .as_ref()

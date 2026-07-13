@@ -95,6 +95,32 @@ mod tests {
     }
 
     #[test]
+    fn repository_hides_historical_subagents_but_keeps_untitled_main_threads() {
+        let repo = Repository::open_in_memory().unwrap();
+        let mut main_thread = CodexThreadUpsert::minimal("main");
+        main_thread.title = String::new();
+        main_thread.source_kind = "cli".to_string();
+        repo.upsert_thread(main_thread).unwrap();
+
+        let mut subagent = CodexThreadUpsert::minimal("subagent");
+        subagent.title = "有标题的 subagent".to_string();
+        subagent.source_kind =
+            r#"{"subagent":{"thread_spawn":{"parent_thread_id":"main"}}}"#.to_string();
+        repo.upsert_thread(subagent).unwrap();
+
+        let threads = repo
+            .list_threads(FilterQuery {
+                include_archived: true,
+                ..FilterQuery::default()
+            })
+            .unwrap();
+
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].id, "main");
+        assert!(threads[0].title.is_empty());
+    }
+
+    #[test]
     fn repository_thread_task_links_enforce_cardinality_and_candidate_statuses() {
         let repo = Repository::open_in_memory().unwrap();
         repo.upsert_thread(CodexThreadUpsert::minimal("review-thread"))
