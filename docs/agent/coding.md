@@ -3,6 +3,7 @@
 ## Current Knowledge
 
 - Thread 列表必须根据 Codex 的结构化来源排除 subagent，禁止使用空标题作为判定条件；同步边界负责阻止新增 subagent，仓储列表负责隐藏历史已导入数据，历史记录本身不删除。
+- Thread 看板名称只使用 Codex `session_index.jsonl` 中的 `thread_name`，不回退到 `state_5.sqlite.threads.title`；缺失名称保持为空，名称不得参与 subagent 判定。
 - Thread Kanban 的 UI 轮询路径必须保持轻量：`load_board_data` 只能读取现有 board data，不应触发 Codex Desktop thread 同步、解析或本地扫描。
 - 需要主动同步 Codex thread 时，前端应调用后台化的 `start_codex_sync`，再通过 `load_board_data(false)` 刷新 UI；不要在 5 秒自动刷新链路里调用阻塞式 `sync_codex_threads`。
 - `sync_codex_threads` 保留为显式强制同步命令；修改时不要把它重新接回前端周期刷新主路径。
@@ -29,6 +30,7 @@
 
 ## Update Notes
 
+- 2026-07-13: Thread 看板名称改为只同步 Codex 名称索引，不再使用 SQLite 首条消息标题作为回退。
 - 2026-07-13: 新增基于结构化来源的 subagent thread 双层过滤约束，兼顾未来同步与历史数据。
 - 2026-07-04: 记录 Thread Kanban 同步/刷新链路约束，避免再次把重同步放回 UI 周期轮询路径。
 - 2026-07-06: 调试用的同步/刷新/解析/只读轮询/评论开关从前端常驻工具栏移除。
