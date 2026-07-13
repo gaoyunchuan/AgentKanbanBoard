@@ -1,0 +1,103 @@
+<style>
+  .flow-grid { display:grid; grid-template-columns:repeat(2,minmax(300px,1fr)); gap:20px; align-items:start; }
+  .phone { width:100%; max-width:390px; min-height:560px; margin:auto; border:1px solid #d8dee9; border-radius:14px; overflow:hidden; background:#fff; color:#273142; font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .top { padding:13px 14px 9px; border-bottom:1px solid #e7eaf0; }
+  .title { font-size:15px; font-weight:700; }
+  .sub { color:#8a93a2; margin-top:3px; }
+  .toolbar { margin:9px 10px; padding:8px 10px; border:1px solid #dfe3ea; border-radius:6px; color:#8a93a2; }
+  .item { border-top:1px solid #e7eaf0; }
+  .item-main { padding:10px 11px; }
+  .line { display:flex; align-items:center; gap:7px; }
+  .name { flex:1; min-width:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .status { padding:2px 5px; border-radius:4px; background:#fff4df; color:#b87216; font-size:10px; }
+  .suspend { background:#f3f4f6; color:#637083; }
+  .meta { margin:5px 0 0 17px; color:#8a93a2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .detail { padding:11px 14px 13px 28px; border-top:1px solid #edf0f5; background:#fafbfc; }
+  .section-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; color:#687386; font-size:10px; font-weight:700; letter-spacing:.04em; }
+  .field { display:flex; align-items:center; gap:6px; padding:8px 9px; border:1px solid #cfd8e6; border-radius:6px; background:#fff; }
+  .field-name { flex:1; min-width:0; color:#3568d4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .muted { color:#8a93a2; }
+  .picker { margin-top:6px; border:1px solid #cfd8e6; border-radius:7px; background:#fff; box-shadow:0 6px 18px rgba(30,41,59,.1); overflow:hidden; }
+  .picker-search { margin:7px; padding:7px 8px; border:1px solid #dfe3ea; border-radius:5px; color:#8a93a2; }
+  .pick-row { padding:7px 10px; display:flex; gap:6px; align-items:center; }
+  .pick-row:hover,.pick-selected { background:#edf3ff; }
+  .indent { padding-left:26px; }
+  .path { display:block; font-size:10px; color:#8a93a2; margin-top:2px; }
+  .note { margin-top:8px; color:#8a93a2; font-size:10px; }
+  .task-detail { padding:10px 14px 12px 28px; background:#fafbfc; border-top:1px solid #edf0f5; }
+  .info { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .info-box { padding:8px; background:#fff; border:1px solid #e2e6ed; border-radius:6px; color:#687386; min-height:44px; }
+  .thread-block { border-top:1px solid #e2e6ed; padding-top:9px; }
+  .thread-row { display:flex; align-items:center; gap:6px; padding:7px 0; border-bottom:1px solid #edf0f5; }
+  .thread-title { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .action { color:#8a93a2; }
+  .add { margin-top:8px; width:100%; box-sizing:border-box; padding:8px 9px; border:1px dashed #cfd8e6; border-radius:6px; color:#687386; background:#fff; }
+  .rule-list { margin:20px 0 4px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .rule { padding:12px; border-radius:8px; background:#f6f8fb; color:#596579; font-size:13px; }
+  @media(max-width:850px){.flow-grid{grid-template-columns:1fr}.rule-list{grid-template-columns:1fr}}
+</style>
+
+<h2>推荐：只在展开态展示和管理关联</h2>
+<p class="subtitle">列表折叠时完全保持现状；展开后，关联信息进入详情区的末尾，不抢标题、状态和评论的注意力。</p>
+
+<div class="flow-grid">
+  <div class="mockup">
+    <div class="mockup-header">Thread 端：单选未完成 Task</div>
+    <div class="mockup-body">
+      <div class="phone">
+        <div class="top"><div class="title">全部活跃 Threads</div><div class="sub">Codex Desktop 保持执行权威</div></div>
+        <div class="toolbar">⌕ 搜索 thread、项目、模块</div>
+        <div class="item">
+          <div class="item-main"><div class="line"><span>⌄</span><span class="name">todolist 里面需要新增关联能力</span><span class="status">待审核</span></div><div class="meta">AgentKanbanBoard · 2026-07-13</div></div>
+          <div class="detail">
+            <div class="section-title"><span>关联 TASK</span><span class="muted">单选</span></div>
+            <div class="field"><span>↗</span><span class="field-name">异构镜像需要清理残留状态信息</span><span class="action">×</span><span class="action">⌄</span></div>
+            <div class="picker">
+              <div class="picker-search">⌕ 搜索未完成 Task</div>
+              <div class="pick-row"><span>○</span><span>西北中卫质量链路验收</span></div>
+              <div class="pick-row indent pick-selected"><span>◌</span><span><b>异构镜像需要清理残留状态</b><span class="path">西北中卫质量链路验收 / 子任务</span></span></div>
+              <div class="pick-row indent"><span>○</span><span>可观测这周搞完 clickhouse<span class="path">西北中卫质量链路验收 / 子任务</span></span></div>
+              <div class="pick-row"><span>◌</span><span>国产算力规则确认</span></div>
+            </div>
+            <div class="note">选择另一项会直接替换；× 解除关联，可通过提示条撤销。</div>
+          </div>
+        </div>
+        <div class="item"><div class="item-main"><div class="line"><span>›</span><span class="name">清理镜像内指定文件</span><span class="status">待审核</span></div><div class="meta">tools · 2026-07-07</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Task 端：多选待审核 / 挂起 Thread</div>
+    <div class="mockup-body">
+      <div class="phone">
+        <div class="top"><div class="title">To Do List</div><div class="sub">树形任务与过程跟踪</div></div>
+        <div class="toolbar">⌕ 搜索任务、过程与复盘</div>
+        <div class="item">
+          <div class="item-main"><div class="line"><span>⌄</span><span>◌</span><span class="name">异构镜像需要清理残留状态信息</span></div><div class="meta">2026-07-08 → 2026-07-12</div></div>
+          <div class="task-detail">
+            <div class="info"><div class="info-box">过程跟踪<br><span class="muted">排查记录 · 监控面板</span></div><div class="info-box">结果复盘<br><span class="muted">已完成残留验证</span></div></div>
+            <div class="thread-block">
+              <div class="section-title"><span>关联 THREADS</span><span class="muted">2</span></div>
+              <div class="thread-row"><span class="thread-title">todolist 里面需要新增关联能力</span><span class="status">待审核</span><span class="action">↗</span><span class="action">×</span></div>
+              <div class="thread-row"><span class="thread-title">清理镜像内指定文件</span><span class="status suspend">挂起</span><span class="action">↗</span><span class="action">×</span></div>
+              <div class="add">＋ 关联 Thread　　<span class="muted">仅待审核、挂起</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="item"><div class="item-main"><div class="line"><span>›</span><span>○</span><span class="name">可观测这周搞完 clickhouse 的 trace</span></div><div class="meta">2026-07-06 → 2026-07-11</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="rule-list">
+  <div class="rule"><b>默认安静</b><br>折叠行不显示关联数、图标或未关联提醒。</div>
+  <div class="rule"><b>选择即保存</b><br>不增加确认弹窗；解除后提供短暂撤销。</div>
+  <div class="rule"><b>保留上下文</b><br>子任务显示父级路径，Thread 显示状态与项目。</div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve-expanded-structure" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>这个信息层级合适</h3><p>继续设计下拉选择、空态、替换与解除状态。</p></div></div>
+  <div class="option" data-choice="revise-expanded-structure" onclick="toggleSelect(this)"><div class="letter">↺</div><div class="content"><h3>需要调整</h3><p>告诉我哪一端或哪个层级需要更克制或更直接。</p></div></div>
+</div>

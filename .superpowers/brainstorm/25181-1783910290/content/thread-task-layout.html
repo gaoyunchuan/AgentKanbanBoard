@@ -1,0 +1,95 @@
+<style>
+  .cards { grid-template-columns: repeat(3, minmax(260px, 1fr)); }
+  .card-image { padding: 14px; background: #f6f8fb; }
+  .mini-app { width: 100%; max-width: 330px; min-height: 470px; margin: 0 auto; border: 1px solid #d8dee9; border-radius: 14px; background: white; overflow: hidden; color: #273142; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .mini-head { padding: 12px 13px 8px; border-bottom: 1px solid #e7eaf0; }
+  .mini-title { font-size: 15px; font-weight: 700; }
+  .mini-sub { color: #8a93a2; margin-top: 3px; }
+  .search { margin: 9px 10px; padding: 8px 10px; border: 1px solid #dfe3ea; border-radius: 6px; color: #8a93a2; }
+  .thread { padding: 10px 11px; border-top: 1px solid #e7eaf0; }
+  .row { display: flex; gap: 7px; align-items: center; }
+  .chev { color: #8a93a2; }
+  .name { min-width: 0; flex: 1; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status { padding: 2px 5px; border-radius: 4px; background: #fff4df; color: #b87216; font-size: 10px; }
+  .meta { margin: 5px 0 0 16px; color: #8a93a2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .taskline { display:flex; align-items:center; gap:5px; margin: 7px 0 0 16px; color:#3568d4; min-width:0; }
+  .taskchip { display:inline-flex; align-items:center; gap:4px; max-width:230px; padding:3px 6px; border-radius:5px; background:#edf3ff; color:#3568d4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bind { color:#3568d4; font-size:11px; }
+  .expanded { margin: 8px -11px -10px; padding: 10px 13px 11px 27px; border-top: 1px solid #edf0f5; background: #f8faff; }
+  .label { font-size:10px; color:#8a93a2; margin-bottom:6px; }
+  .picker { padding:7px 8px; background:white; border:1px solid #cfd8e6; border-radius:6px; color:#3568d4; }
+  .drawer { margin: 10px; border: 1px solid #dbe1ea; border-radius: 8px; overflow:hidden; box-shadow: 0 5px 16px rgba(31,41,55,.08); }
+  .drawer-head { padding:9px 10px; font-weight:700; border-bottom:1px solid #e7eaf0; }
+  .tree { padding:8px 10px; }
+  .tree div { padding:6px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .selected { background:#edf3ff; color:#3568d4; border-radius:5px; }
+  .indent { margin-left:16px; }
+  @media (max-width: 980px) { .cards { grid-template-columns: 1fr; } }
+</style>
+
+<h2>窄窗口里，Thread 与 Task 的关联信息放在哪里？</h2>
+<p class="subtitle">三种方案都保持列表单列、Thread 只能绑定一个 Task。请选择你平时扫列表最顺眼的一种。</p>
+
+<div class="cards">
+  <div class="card" data-choice="inline" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini-app">
+        <div class="mini-head"><div class="mini-title">全部活跃 Threads</div><div class="mini-sub">集中查看需要处理的会话</div></div>
+        <div class="search">⌕ 搜索 thread、项目、模块</div>
+        <div class="thread">
+          <div class="row"><span class="chev">›</span><span class="name">todolist 里面需要新增关联能力</span><span class="status">待审核</span></div>
+          <div class="meta">AgentKanbanBoard · 2026-07-13</div>
+          <div class="taskline"><span class="taskchip">↗ 异构镜像需要清理残留状态信息</span></div>
+        </div>
+        <div class="thread">
+          <div class="row"><span class="chev">›</span><span class="name">清理镜像内指定文件</span><span class="status">待审核</span></div>
+          <div class="meta">tools · 2026-07-07</div>
+          <div class="taskline"><span class="bind">＋ 关联 Task</span></div>
+        </div>
+        <div class="thread"><div class="row"><span class="chev">›</span><span class="name">升级 agentgrid 到最新版</span><span class="status">挂起</span></div><div class="meta">agentgrid · 2026-07-06</div></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>行内轻量展示</h3><p>关联 Task 作为第三行短标签；未关联时显示低强调入口。扫列表最快，但每个 Thread 会多占一行。</p></div>
+  </div>
+
+  <div class="card" data-choice="expand" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini-app">
+        <div class="mini-head"><div class="mini-title">全部活跃 Threads</div><div class="mini-sub">集中查看需要处理的会话</div></div>
+        <div class="search">⌕ 搜索 thread、项目、模块</div>
+        <div class="thread">
+          <div class="row"><span class="chev">⌄</span><span class="name">todolist 里面需要新增关联能力</span><span class="status">待审核</span></div>
+          <div class="meta">AgentKanbanBoard · 2026-07-13 · 已关联 1</div>
+          <div class="expanded"><div class="label">关联的 TASK</div><div class="picker">↗ 异构镜像需要清理残留状态信息　⌄</div></div>
+        </div>
+        <div class="thread"><div class="row"><span class="chev">›</span><span class="name">清理镜像内指定文件</span><span class="status">待审核</span></div><div class="meta">tools · 2026-07-07 · 未关联</div></div>
+        <div class="thread"><div class="row"><span class="chev">›</span><span class="name">升级 agentgrid 到最新版</span><span class="status">挂起</span></div><div class="meta">agentgrid · 2026-07-06 · 未关联</div></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>展开后管理</h3><p>默认保持当前两行密度，只在展开 Thread 时显示关联控件。更安静，但关联关系不够一眼可见。</p></div>
+  </div>
+
+  <div class="card" data-choice="popover" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini-app">
+        <div class="mini-head"><div class="mini-title">全部活跃 Threads</div><div class="mini-sub">集中查看需要处理的会话</div></div>
+        <div class="search">⌕ 搜索 thread、项目、模块</div>
+        <div class="thread">
+          <div class="row"><span class="chev">›</span><span class="name">todolist 里面需要新增关联能力</span><span class="status">待审核</span><span>↗</span></div>
+          <div class="meta">AgentKanbanBoard · 已关联 Task</div>
+        </div>
+        <div class="drawer">
+          <div class="drawer-head">选择未完成 Task</div>
+          <div class="tree">
+            <div>○ 西北中卫质量链路验收</div>
+            <div class="indent selected">◌ 异构镜像需要清理残留状态</div>
+            <div class="indent">○ 可观测这周搞完 clickhouse</div>
+            <div>◌ 国产算力规则确认</div>
+          </div>
+        </div>
+        <div class="thread"><div class="row"><span class="chev">›</span><span class="name">清理镜像内指定文件</span><span class="status">待审核</span><span>↗</span></div><div class="meta">tools · 未关联 Task</div></div>
+      </div>
+    </div>
+    <div class="card-body"><h3>图标 + 浮层选择</h3><p>每行只增加一个关联图标，点击后就地打开树形选择器。密度最高，但已关联的 Task 名称主要靠点击查看。</p></div>
+  </div>
+</div>

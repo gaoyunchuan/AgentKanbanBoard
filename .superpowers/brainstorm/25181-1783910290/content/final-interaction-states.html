@@ -1,0 +1,64 @@
+<style>
+  .state-grid{display:grid;grid-template-columns:repeat(3,minmax(270px,1fr));gap:16px;align-items:start}.panel{border:1px solid #dfe4ec;border-radius:10px;background:#fff;overflow:hidden}.panel-head{padding:11px 12px;border-bottom:1px solid #e8ebf0;font-weight:700}.panel-body{padding:12px;color:#354052;font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.field{display:flex;align-items:center;gap:6px;padding:8px 9px;border:1px solid #cfd8e6;border-radius:6px}.grow{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.muted{color:#8a93a2}.blue{color:#3568d4}.menu{margin-top:6px;border:1px solid #cfd8e6;border-radius:7px;overflow:hidden;box-shadow:0 6px 16px rgba(30,41,59,.08)}.search{margin:7px;padding:7px 8px;border:1px solid #dfe3ea;border-radius:5px;color:#8a93a2}.group{padding:6px 9px 3px;color:#8a93a2;font-size:10px;font-weight:700}.result{display:flex;gap:6px;align-items:flex-start;padding:7px 9px}.result.selected{background:#edf3ff}.indent{padding-left:24px}.sub{display:block;margin-top:2px;color:#8a93a2;font-size:10px}.tag{padding:2px 5px;border-radius:4px;background:#fff4df;color:#b87216;font-size:10px}.tag.gray{background:#f1f3f6;color:#637083}.empty{padding:18px 10px;text-align:center;color:#8a93a2}.toast{margin-top:10px;padding:8px 9px;border-radius:6px;background:#263244;color:white;display:flex;gap:8px;align-items:center}.toast a{margin-left:auto;color:#b9d1ff}.flow{margin:20px 0;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}.step{padding:8px 10px;border-radius:7px;background:#f3f6fa;color:#536174}.arrow{color:#9aa3b1}.rules{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:18px}.rule{padding:11px 12px;background:#f6f8fb;border-radius:8px;color:#596579}.rule b{color:#303a49}.options{margin-top:18px}@media(max-width:920px){.state-grid{grid-template-columns:1fr}.rules{grid-template-columns:1fr}}
+</style>
+
+<h2>最终交互状态</h2>
+<p class="subtitle">关联动作只出现在展开区；选择器承担搜索与上下文说明，列表本身保持安静。</p>
+
+<div class="state-grid">
+  <div class="panel">
+    <div class="panel-head">Thread → 选择一个 Task</div>
+    <div class="panel-body">
+      <div class="field"><span>↗</span><span class="grow muted">选择未完成 Task…</span><span>⌄</span></div>
+      <div class="menu">
+        <div class="search">⌕ 搜索 Task</div>
+        <div class="result"><span>○</span><span class="grow">西北中卫质量链路验收</span></div>
+        <div class="result indent selected"><span>◌</span><span class="grow"><b>异构镜像需要清理残留状态</b><span class="sub">西北中卫质量链路验收 / 子任务</span></span></div>
+        <div class="result indent"><span>○</span><span class="grow">可观测这周搞完 clickhouse<span class="sub">西北中卫质量链路验收 / 子任务</span></span></div>
+      </div>
+      <p class="sub">候选仅含“未完成、进行中”；排除已完成、已取消。默认按 Todo 树顺序展示，搜索后扁平展示并保留父级路径。</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Task → 选择多个 Thread</div>
+    <div class="panel-body">
+      <div class="field"><span>＋</span><span class="grow muted">关联 Thread…</span><span>⌄</span></div>
+      <div class="menu">
+        <div class="search">⌕ 搜索标题或项目</div>
+        <div class="group">待审核</div>
+        <div class="result"><span class="grow">todolist 里面需要新增关联能力<span class="sub">AgentKanbanBoard · 未关联</span></span><span class="tag">待审核</span></div>
+        <div class="result selected"><span class="grow"><b>清理镜像内指定文件</b><span class="sub">tools · 当前关联：旧 Task</span></span><span class="tag">待审核</span></div>
+        <div class="group">挂起</div>
+        <div class="result"><span class="grow">升级 agentgrid 到最新版<span class="sub">agentgrid · 未关联</span></span><span class="tag gray">挂起</span></div>
+      </div>
+      <p class="sub">候选仅含待审核、挂起。已关联其他 Task 的 Thread 仍可选，并明确显示当前归属。</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">保存、迁移与失败反馈</div>
+    <div class="panel-body">
+      <div class="toast"><span>Thread 已移至“异构镜像需要清理…”</span><a>撤销</a></div>
+      <div class="toast" style="background:#9b3c36"><span>关联保存失败，已恢复原状态</span><a>重试</a></div>
+      <div class="menu" style="margin-top:10px"><div class="empty">没有符合条件的结果<br><span class="sub">可尝试其他关键词</span></div></div>
+      <p class="sub">选择后立即关闭并保存；前端先更新，失败则回滚。解除关联同样不确认，提供短暂撤销。</p>
+    </div>
+  </div>
+</div>
+
+<div class="flow">
+  <span class="step">展开对象</span><span class="arrow">→</span><span class="step">打开关联选择器</span><span class="arrow">→</span><span class="step">搜索 / 选择</span><span class="arrow">→</span><span class="step">立即保存</span><span class="arrow">→</span><span class="step">提示 + 可撤销</span>
+</div>
+
+<div class="rules">
+  <div class="rule"><b>状态变化不自动解绑</b><br>关联后，即使 Task 完成或 Thread 离开待审核/挂起，既有关联仍保留；状态限制只影响“新增选择”。</div>
+  <div class="rule"><b>删除对象自动清理关系</b><br>删除 Task 时解除其全部 Thread；Thread 从本地数据消失时清理对应关系，不阻塞其他内容。</div>
+  <div class="rule"><b>跳转不占主操作位</b><br>已关联名称可点击：Task 名称跳到 To Do List 并展开定位；Thread 名称沿用现有“打开 Codex”。</div>
+  <div class="rule"><b>窄窗口优先</b><br>选择器跟随展开区宽度，最大高度滚动；长标题单行截断，悬停显示完整文本，父级路径另起一行。</div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approve-final-interaction" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>接受最终交互</h3><p>以这套状态、筛选与迁移规则形成设计文档。</p></div></div>
+  <div class="option" data-choice="revise-final-interaction" onclick="toggleSelect(this)"><div class="letter">↺</div><div class="content"><h3>还需调整</h3><p>指出需要修改的候选范围、反馈方式或跳转行为。</p></div></div>
+</div>

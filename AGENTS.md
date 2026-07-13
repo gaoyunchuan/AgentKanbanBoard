@@ -36,3 +36,11 @@ Require review:
 Before starting a task, scan the `Project Knowledge` triggers above and load every detailed knowledge document whose trigger matches the current work. For coding work, always load `docs/agent/coding.md` before editing, reviewing, or explaining code.
 
 </agent-maintained-knowledge>
+
+
+
+# AgentKanbanBoard
+
+## 编码约定
+
+- 直接在main开发，不用拉分支
