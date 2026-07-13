@@ -115,3 +115,31 @@ Expected: TypeScript 与 Vite 构建退出码为 0。
 Run: `git diff --check && git status --short`
 
 Expected: `git diff --check` 无输出；只保留用户原有的 `AGENTS.md`、`.superpowers/` 变更和本任务预期文件状态。
+
+### Task 3: Tauri WKWebView 拖放修复
+
+**Files:**
+- Modify: `src-tauri/tauri.conf.json`
+- Test: `src-ui/src/tauriConfig.test.ts`
+
+**Interfaces:**
+- Consumes: Task 1 的 HTML5 DOM 拖放事件。
+- Produces: 不再被 Tauri 内部文件拖放处理器拦截的 WKWebView 事件链。
+
+- [x] **Step 1: 写配置失败测试并确认 `dragDropEnabled` 为 `undefined`**
+
+Run: `cd src-ui && npm test -- --run src/tauriConfig.test.ts`
+
+Expected: FAIL；期望 `false`，实际为 `undefined`。
+
+- [x] **Step 2: 在窗口配置中设置 `"dragDropEnabled": false`**
+
+- [x] **Step 3: 运行配置、组件和树测试**
+
+Run: `cd src-ui && npm test -- --run src/tauriConfig.test.ts src/todo/TodoListView.test.tsx src/todo/todoTree.test.ts`
+
+Expected: 三个测试文件全部通过。
+
+- [x] **Step 4: 构建并验证真实 Tauri macOS 应用**
+
+构建 `.app` 后复制为独立 bundle identifier，使用临时 HOME 和两条测试任务执行拖放；断言界面顺序与 SQLite `position` 同时从 A、B 变为 B、A。
