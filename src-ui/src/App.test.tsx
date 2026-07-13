@@ -2,7 +2,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
-import type { BackendThread, BackendThreadComment, BoardData } from "./types";
+import type {
+  BackendThread,
+  BackendThreadComment,
+  BackendThreadTaskLink,
+  BoardData
+} from "./types";
+import type { BackendTodoTask } from "./todo/types";
 
 const invokeMock = vi.fn();
 
@@ -99,6 +105,44 @@ const backendThreads: BoardData["threads"] = [
   }
 ];
 
+const backendTodoTasks: BackendTodoTask[] = [
+  {
+    id: "root",
+    parent_id: null,
+    position: 0,
+    title: "父任务",
+    status: "todo",
+    start_date: null,
+    expected_end_date: null,
+    actual_end_date: null,
+    process_tracking: "",
+    result_review: "",
+    created_at: "2026-07-13T08:00:00Z",
+    updated_at: "2026-07-13T08:00:00Z"
+  },
+  {
+    id: "child",
+    parent_id: "root",
+    position: 0,
+    title: "子任务",
+    status: "in_progress",
+    start_date: null,
+    expected_end_date: null,
+    actual_end_date: null,
+    process_tracking: "",
+    result_review: "",
+    created_at: "2026-07-13T08:00:00Z",
+    updated_at: "2026-07-13T08:00:00Z"
+  }
+];
+
+const backendLink = (threadId: string, taskId: string): BackendThreadTaskLink => ({
+  thread_id: threadId,
+  task_id: taskId,
+  created_at: "2026-07-13T08:00:00Z",
+  updated_at: "2026-07-13T08:00:00Z"
+});
+
 const manyBackendThreads = (count: number): BoardData["threads"] =>
   Array.from({ length: count }, (_, index) => ({
     ...backendThreads[1],
@@ -111,6 +155,7 @@ const manyBackendThreads = (count: number): BoardData["threads"] =>
 describe("Codex Kanban App", () => {
   let currentThreads: typeof backendThreads;
   let currentCommentsByThread: Record<string, BackendThreadComment[]>;
+  let currentThreadTaskLinks: BackendThreadTaskLink[];
 
   beforeEach(() => {
     localStorage.clear();
@@ -122,8 +167,9 @@ describe("Codex Kanban App", () => {
     currentCommentsByThread = Object.fromEntries(
       backendThreads.map((thread) => [thread.id, [...(thread.comments ?? [])]])
     );
+    currentThreadTaskLinks = [];
     invokeMock.mockReset();
-    invokeMock.mockImplementation((command: string, args?: { threadId?: string; commentId?: number; body?: string; suspendUntil?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"]; path?: string }) => {
+    invokeMock.mockImplementation((command: string, args?: { threadId?: string; taskId?: string | null; commentId?: number; body?: string; suspendUntil?: string; module?: string; sprint?: string; notes?: string; taskType?: BackendThread["task_type"]; path?: string }) => {
       if (command === "load_board_data") {
         return Promise.resolve({
           threads: currentThreads,
@@ -148,6 +194,21 @@ describe("Codex Kanban App", () => {
       }
       if (command === "load_thread_comments" && args?.threadId) {
         return Promise.resolve(currentCommentsByThread[args.threadId] ?? []);
+      }
+      if (command === "load_thread_task_links") {
+        return Promise.resolve([...currentThreadTaskLinks]);
+      }
+      if (command === "load_todo_tasks") {
+        return Promise.resolve(backendTodoTasks);
+      }
+      if (command === "update_thread_task_link" && args?.threadId) {
+        currentThreadTaskLinks = currentThreadTaskLinks.filter(
+          (link) => link.thread_id !== args.threadId
+        );
+        if (!args.taskId) return Promise.resolve(null);
+        const next = backendLink(args.threadId, args.taskId);
+        currentThreadTaskLinks.push(next);
+        return Promise.resolve(next);
       }
       if (command === "open_project_in_vscode" && args?.path) {
         return Promise.resolve(args.path);
@@ -300,6 +361,47 @@ describe("Codex Kanban App", () => {
       screen.getByText("用树形任务拆解工作，日期双击编辑，⌘⇧Enter 向上新建，⌘Enter 向后新建，Tab 调整层级。")
     ).toBeInTheDocument();
     expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
+  });
+
+  test("Thread 展开后按需加载关联，并可选择子 Task", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
+    expect(invokeMock).toHaveBeenCalledWith("load_thread_task_links", undefined);
+
+    await user.click(screen.getByRole("combobox", { name: "选择未完成 Task" }));
+    await user.type(screen.getByRole("searchbox"), "子任务");
+    await user.click(screen.getByRole("option", { name: /子任务/ }));
+
+    expect(invokeMock).toHaveBeenCalledWith("update_thread_task_link", {
+      threadId: "019ef88b-6207-7122-9f6e-da4d6d52a9ba",
+      taskId: "child",
+      origin: "thread"
+    });
+  });
+
+  test("折叠 Thread 不显示关联信息且轮询不加载关联", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.queryByText("关联 Task")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("load_thread_task_links", undefined);
+  });
+
+  test("点击已关联 Task 切换 Todo 视图并发出定位请求", async () => {
+    const user = userEvent.setup();
+    currentThreadTaskLinks = [
+      backendLink("019ef88b-6207-7122-9f6e-da4d6d52a9ba", "child")
+    ];
+    render(<App />);
+
+    await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
+    await user.click(await screen.findByRole("button", { name: "打开 Task 子任务" }));
+    expect(await screen.findByRole("heading", { name: "To Do List" })).toBeInTheDocument();
   });
 
   test("switches between active and To Do List with Cmd+1 and Cmd+2", async () => {

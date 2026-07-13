@@ -721,7 +721,7 @@ function ExtensionSection({ task, field, title, value, onChange, onOpenLink }: {
   );
 }
 
-function mapBackendTodoTask(task: BackendTodoTask): TodoTask {
+export function mapBackendTodoTask(task: BackendTodoTask): TodoTask {
   return {
     id: task.id,
     parentId: task.parent_id ?? undefined,
@@ -765,7 +765,7 @@ function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function demoTasks(): TodoTask[] {
+export function demoTasks(): TodoTask[] {
   return [
     { ...emptyTask("demo-1", undefined, 0), title: "西北中卫质量链路验收", startDate: "2026-07-08", expectedEndDate: "2026-07-10" },
     { ...emptyTask("demo-2", undefined, 1), title: "顺便修复子东南亚 crash 不生效问题", status: "completed", startDate: "2026-07-09", expectedEndDate: "2026-07-10", actualEndDate: "2026-07-10" },

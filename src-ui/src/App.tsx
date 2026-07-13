@@ -32,7 +32,16 @@ import {
   TimerReset,
   X
 } from "lucide-react";
-import { TodoListView } from "@/todo/TodoListView";
+import {
+  demoTasks,
+  mapBackendTodoTask,
+  TodoListView
+} from "@/todo/TodoListView";
+import type { BackendTodoTask, TodoTask } from "@/todo/types";
+import { AssociationNotice } from "@/associations/AssociationNotice";
+import { ThreadTaskAssociationPanel } from "@/associations/ThreadTaskAssociationPanel";
+import { useThreadTaskLinks } from "@/associations/useThreadTaskLinks";
+import type { ThreadTaskLink } from "@/associations/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,8 +137,24 @@ const projectName = (projectNames: Map<string, string>, projectId: string) =>
 const countByStatus = (threads: ThreadItem[], status: BoardStatus) =>
   threads.filter((thread) => thread.boardStatus === status).length;
 
+type ThreadAssociationBindings = {
+  tasks: TodoTask[];
+  linksByThread: Map<string, ThreadTaskLink>;
+  loading: boolean;
+  savingThreadIds: Set<string>;
+  onEnsureTasks: () => Promise<void>;
+  onAssign: (threadId: string, taskId: string) => Promise<void>;
+  onUnlink: (threadId: string) => Promise<void>;
+  onNavigateTask: (taskId: string) => void;
+};
+
 function App() {
   const { threads, setThreads, projects, setProjects, reloadBoardData } = useBoardData();
+  const associationPersistenceEnabled = shouldInvokeTauri(
+    typeof window === "undefined" || "__TAURI_INTERNALS__" in window,
+    import.meta.env.MODE
+  );
+  const associations = useThreadTaskLinks({ enabled: associationPersistenceEnabled });
   const [view, setView] = useState<ViewKey>("active");
   const [layout, setLayout] = useState<LayoutMode>("list");
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -143,6 +168,38 @@ function App() {
   const [loadingCommentThreadIds, setLoadingCommentThreadIds] = useState<string[]>([]);
   const [toast, setToast] = useState("正在读取 Codex Desktop 真实数据");
   const [todoCount, setTodoCount] = useState(0);
+  const [todoTasksCache, setTodoTasksCache] = useState<TodoTask[]>([]);
+  const [todoTasksLoaded, setTodoTasksLoaded] = useState(false);
+  const [todoNavigationTarget, setTodoNavigationTarget] = useState<{
+    taskId: string;
+    requestId: number;
+  }>();
+  const todoTasksLoadRef = useRef<Promise<void> | undefined>(undefined);
+
+  const loadTodoTasksForAssociation = useCallback(async () => {
+    if (todoTasksLoaded) return;
+    if (todoTasksLoadRef.current) return todoTasksLoadRef.current;
+
+    const load = (async () => {
+      const tasks = associationPersistenceEnabled
+        ? (await invoke<BackendTodoTask[]>("load_todo_tasks")).map(mapBackendTodoTask)
+        : demoTasks();
+      setTodoTasksCache(tasks);
+      setTodoTasksLoaded(true);
+    })().finally(() => {
+      todoTasksLoadRef.current = undefined;
+    });
+    todoTasksLoadRef.current = load;
+    return load;
+  }, [associationPersistenceEnabled, todoTasksLoaded]);
+
+  const navigateToTodoTask = useCallback((taskId: string) => {
+    setView("todos");
+    setTodoNavigationTarget((current) => ({
+      taskId,
+      requestId: (current?.requestId ?? 0) + 1
+    }));
+  }, []);
 
   useEffect(() => {
     const handleViewShortcut = (event: KeyboardEvent) => {
@@ -247,13 +304,19 @@ function App() {
     setExpandedRows((current) =>
       current.includes(id) ? current.filter((rowId) => rowId !== id) : [...current, id]
     );
-    if (willExpand) void loadThreadComments(id);
+    if (willExpand) {
+      void loadThreadComments(id);
+      void associations.loadLinks();
+    }
   };
 
   const toggleBoardCard = (id: string) => {
     const willExpand = expandedBoardCardId !== id;
     setExpandedBoardCardId((current) => (current === id ? undefined : id));
-    if (willExpand) void loadThreadComments(id);
+    if (willExpand) {
+      void loadThreadComments(id);
+      void associations.loadLinks();
+    }
   };
 
   const markReviewed = async (thread: ThreadItem) => {
@@ -379,6 +442,17 @@ function App() {
     const status = await invokeStartCodexSync();
     const next = await reloadBoardData(false);
     setToast(status.lastError ?? next.syncError ?? "已启动后台同步");
+  };
+
+  const threadAssociationBindings: ThreadAssociationBindings = {
+    tasks: todoTasksCache,
+    linksByThread: associations.linksByThread,
+    loading: associations.loading,
+    savingThreadIds: associations.savingThreadIds,
+    onEnsureTasks: loadTodoTasksForAssociation,
+    onAssign: (threadId, taskId) => associations.assign(threadId, taskId, "thread"),
+    onUnlink: associations.unlink,
+    onNavigateTask: navigateToTodoTask
   };
 
   const sidebarCollapsed = sidebarMode !== "expanded";
@@ -643,6 +717,7 @@ function App() {
                     onUpdate={updateThread}
                     onAddComment={addComment}
                     onEditComment={editComment}
+                    associations={threadAssociationBindings}
                   />
                 ) : (
                   <BoardView
@@ -659,12 +734,18 @@ function App() {
                     onCopySessionId={copySessionId}
                     onAddComment={addComment}
                     onEditComment={editComment}
+                    associations={threadAssociationBindings}
                   />
                 )}
               </div>
             </section>
           )}
         </main>
+        <AssociationNotice
+          notice={associations.notice}
+          onAction={associations.runNoticeAction}
+          onDismiss={associations.dismissNotice}
+        />
       </div>
     </TooltipProvider>
   );
@@ -1045,7 +1126,8 @@ function ThreadList({
   onCopySessionId,
   onUpdate,
   onAddComment,
-  onEditComment
+  onEditComment,
+  associations
 }: {
   threads: ThreadItem[];
   projectNames: Map<string, string>;
@@ -1061,6 +1143,7 @@ function ThreadList({
   onUpdate: (id: string, patch: Partial<ThreadItem>) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
+  associations: ThreadAssociationBindings;
 }) {
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const rowVirtualizer = useVirtualizer({
@@ -1078,7 +1161,7 @@ function ThreadList({
 
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [expandedRows, rowVirtualizer]);
+  }, [associations.linksByThread, associations.tasks, expandedRows, rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const rowsToRender =
@@ -1233,6 +1316,17 @@ function ThreadList({
                           />
                         </div>
                       </details>
+                      <ThreadTaskAssociationPanel
+                        thread={thread}
+                        link={associations.linksByThread.get(thread.id)}
+                        tasks={associations.tasks}
+                        loading={associations.loading}
+                        saving={associations.savingThreadIds.has(thread.id)}
+                        onEnsureTasks={associations.onEnsureTasks}
+                        onAssign={associations.onAssign}
+                        onUnlink={associations.onUnlink}
+                        onNavigateTask={associations.onNavigateTask}
+                      />
                     </div>
                   )}
                 </div>
@@ -1574,7 +1668,8 @@ function BoardView({
   onOpenVSCode,
   onCopySessionId,
   onAddComment,
-  onEditComment
+  onEditComment,
+  associations
 }: {
   threads: ThreadItem[];
   projectNames: Map<string, string>;
@@ -1589,6 +1684,7 @@ function BoardView({
   onCopySessionId: (thread: ThreadItem) => void;
   onAddComment: (threadId: string, body: string, suspendUntil?: string) => Promise<void>;
   onEditComment: (threadId: string, commentId: number, body: string) => Promise<void>;
+  associations: ThreadAssociationBindings;
 }) {
   const columns: BoardStatus[] = ["review_pending", "reviewed", "suspended", "archived"];
 
@@ -1692,6 +1788,17 @@ function BoardView({
                               />
                             </div>
                           </details>
+                          <ThreadTaskAssociationPanel
+                            thread={thread}
+                            link={associations.linksByThread.get(thread.id)}
+                            tasks={associations.tasks}
+                            loading={associations.loading}
+                            saving={associations.savingThreadIds.has(thread.id)}
+                            onEnsureTasks={associations.onEnsureTasks}
+                            onAssign={associations.onAssign}
+                            onUnlink={associations.onUnlink}
+                            onNavigateTask={associations.onNavigateTask}
+                          />
                         </div>
                       )}
 
