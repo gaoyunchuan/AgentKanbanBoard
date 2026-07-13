@@ -2,7 +2,7 @@ use codex_kanban::config::AppConfig;
 use codex_kanban::deeplink::{ensure_codex_deeplink, project_deeplink, thread_deeplink};
 use codex_kanban::domain::{
     FilterQuery, ProjectInput, ProjectRecord, TaskType, ThreadCommentInput, ThreadCommentRecord,
-    ThreadRecord, TodoTaskInput, TodoTaskRecord,
+    ThreadRecord, ThreadTaskLinkOrigin, ThreadTaskLinkRecord, TodoTaskInput, TodoTaskRecord,
 };
 use codex_kanban::project_matcher::ProjectRule;
 use codex_kanban::repository::Repository;
@@ -165,6 +165,20 @@ fn save_todo_tasks(tasks: Vec<TodoTaskInput>) -> Result<Vec<TodoTaskRecord>, Str
     repository
         .save_todo_tasks(&tasks)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn load_thread_task_links() -> Result<Vec<ThreadTaskLinkRecord>, String> {
+    open_repository()?.list_thread_task_links()
+}
+
+#[tauri::command]
+fn update_thread_task_link(
+    thread_id: String,
+    task_id: Option<String>,
+    origin: ThreadTaskLinkOrigin,
+) -> Result<Option<ThreadTaskLinkRecord>, String> {
+    open_repository()?.set_thread_task_link(&thread_id, task_id.as_deref(), origin)
 }
 
 #[tauri::command]
@@ -484,9 +498,34 @@ fn basename(path: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        should_refresh_from_codex, validate_external_link, vscode_command_candidates,
-        VscodeCommand, LOAD_BOARD_DATA_FORCE_SYNC, SYNC_CODEX_THREADS_FORCE_SYNC,
+        load_thread_task_links, should_refresh_from_codex, update_thread_task_link,
+        validate_external_link, vscode_command_candidates, ThreadTaskLinkOrigin,
+        ThreadTaskLinkRecord, VscodeCommand, LOAD_BOARD_DATA_FORCE_SYNC,
+        SYNC_CODEX_THREADS_FORCE_SYNC,
     };
+
+    #[test]
+    fn thread_task_link_commands_use_snake_case_origin_values() {
+        assert_eq!(
+            serde_json::from_str::<ThreadTaskLinkOrigin>(r#""thread""#).unwrap(),
+            ThreadTaskLinkOrigin::Thread
+        );
+        assert_eq!(
+            serde_json::from_str::<ThreadTaskLinkOrigin>(r#""task""#).unwrap(),
+            ThreadTaskLinkOrigin::Task
+        );
+        assert_eq!(
+            serde_json::from_str::<ThreadTaskLinkOrigin>(r#""restore""#).unwrap(),
+            ThreadTaskLinkOrigin::Restore
+        );
+
+        let _load: fn() -> Result<Vec<ThreadTaskLinkRecord>, String> = load_thread_task_links;
+        let _update: fn(
+            String,
+            Option<String>,
+            ThreadTaskLinkOrigin,
+        ) -> Result<Option<ThreadTaskLinkRecord>, String> = update_thread_task_link;
+    }
 
     #[test]
     fn command_sync_modes_keep_load_board_data_read_only() {
@@ -560,6 +599,8 @@ fn main() {
             load_thread_comments,
             load_todo_tasks,
             save_todo_tasks,
+            load_thread_task_links,
+            update_thread_task_link,
             mark_thread_reviewed,
             archive_thread,
             unarchive_thread,

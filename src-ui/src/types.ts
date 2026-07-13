@@ -103,6 +103,15 @@ export type BackendThreadComment = {
   edited_at?: string | null;
 };
 
+export type ThreadTaskLinkOrigin = "thread" | "task" | "restore";
+
+export type BackendThreadTaskLink = {
+  thread_id: string;
+  task_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type BoardData = {
   threads: BackendThread[];
   projects: BackendProject[];
