@@ -22,8 +22,8 @@ mod tests {
     use super::config::AppConfig;
     use super::deeplink::{project_deeplink, thread_deeplink};
     use super::domain::{
-        BoardStatus, CodexThreadUpsert, FilterQuery, ProjectInput, TaskType, ThreadCommentInput,
-        ThreadTaskLinkOrigin, TodoTaskInput, TodoTaskStatus,
+        is_subagent_source, BoardStatus, CodexThreadUpsert, FilterQuery, ProjectInput, TaskType,
+        ThreadCommentInput, ThreadTaskLinkOrigin, TodoTaskInput, TodoTaskStatus,
     };
     use super::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
     use super::repository::Repository;
@@ -970,6 +970,38 @@ mod tests {
     }
 
     #[test]
+    fn subagent_source_detection_uses_structured_source_instead_of_title() {
+        assert!(is_subagent_source("subagent"));
+        assert!(is_subagent_source("subAgent"));
+        assert!(is_subagent_source(
+            r#"{"subagent":{"thread_spawn":{"parent_thread_id":"parent"}}}"#
+        ));
+        assert!(is_subagent_source(
+            r#"{"subAgent":{"thread_spawn":{"parent_thread_id":"parent"}}}"#
+        ));
+        assert!(!is_subagent_source("cli"));
+        assert!(!is_subagent_source(r#"{"custom":"automation"}"#));
+        assert!(!is_subagent_source("not-json"));
+    }
+
+    #[test]
+    fn thread_sync_excludes_subagents_from_custom_clients() {
+        let main_thread = synced_thread("main", "idle", "2026-07-13T08:00:00Z");
+        let mut subagent = synced_thread("subagent", "idle", "2026-07-13T08:00:00Z");
+        subagent.title = "有标题的 subagent".to_string();
+        subagent.source_kind =
+            r#"{"subagent":{"thread_spawn":{"parent_thread_id":"main"}}}"#.to_string();
+        let sync = ThreadSync::new(Box::new(StaticThreadClient {
+            threads: vec![main_thread, subagent],
+        }));
+
+        let threads = sync.sync_recent().unwrap();
+
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].id, "main");
+    }
+
+    #[test]
     fn thread_sync_allows_only_read_methods_and_handles_unavailable_client() {
         let client = ReadOnlyCodexClient::new();
         assert!(client.call("thread/list").is_ok());
@@ -1036,6 +1068,26 @@ mod tests {
                     'git@example.com:me/project.git',
                     '用户要求接入真实 Codex Desktop 数据',
                     1782296699015
+                );
+                INSERT INTO threads (
+                    id, rollout_path, created_at, updated_at, source, model_provider, cwd,
+                    title, sandbox_policy, approval_mode, git_branch, git_origin_url, preview,
+                    recency_at_ms
+                ) VALUES (
+                    '019f5b07-91d1-7010-b973-2c07c4dd6da6',
+                    '/Users/me/.codex/sessions/subagent.jsonl',
+                    1782296501,
+                    1782296700,
+                    '{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"019ef927-4206-7823-a752-eb0364a6f11b\"}}}',
+                    'openai',
+                    '/Users/me/project',
+                    '有标题的 subagent',
+                    'workspace-write',
+                    'never',
+                    'main',
+                    'git@example.com:me/project.git',
+                    'subagent 预览',
+                    1782296700015
                 );",
             )
             .unwrap();

@@ -1,6 +1,20 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub fn is_subagent_source(source: &str) -> bool {
+    let source = source.trim();
+    if matches!(source, "subagent" | "subAgent") {
+        return true;
+    }
+
+    match serde_json::from_str::<Value>(source) {
+        Ok(Value::Object(object)) => {
+            object.contains_key("subagent") || object.contains_key("subAgent")
+        }
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoardStatus {

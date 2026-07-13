@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::board_status_mapper::{BoardStatusMapper, StatusInput};
 use crate::config::AppConfig;
-use crate::domain::{BoardStatus, CodexThreadUpsert};
+use crate::domain::{is_subagent_source, BoardStatus, CodexThreadUpsert};
 use crate::project_matcher::{ProjectMatcher, ProjectRule, ThreadProjectHint};
 use crate::repository::Repository;
 
@@ -106,6 +106,7 @@ impl CodexAppServerClient for ReadOnlyCodexClient {
             .map_err(|error| format!("解析 Codex threads 失败：{error}"))?;
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map(exclude_subagent_threads)
             .map_err(|error| format!("解析 Codex thread 行失败：{error}"))
     }
 }
@@ -132,7 +133,9 @@ impl ThreadSync {
     }
 
     pub fn sync_recent(&self) -> Result<Vec<SyncedThread>, String> {
-        self.client.call("thread/list")
+        self.client
+            .call("thread/list")
+            .map(exclude_subagent_threads)
     }
 
     pub fn sync_recent_into(
@@ -288,6 +291,13 @@ impl ThreadSync {
             "thread/metadata/update",
         ]
     }
+}
+
+fn exclude_subagent_threads(threads: Vec<SyncedThread>) -> Vec<SyncedThread> {
+    threads
+        .into_iter()
+        .filter(|thread| !is_subagent_source(&thread.source_kind))
+        .collect()
 }
 
 pub fn refresh_interval_seconds(visibility: SyncVisibility, config: &AppConfig) -> u64 {
