@@ -358,7 +358,7 @@ function App() {
     );
     if (willExpand) {
       void loadThreadComments(id);
-      void associations.loadLinks();
+      void associations.loadLinks().catch(() => undefined);
     }
   };
 
@@ -367,7 +367,7 @@ function App() {
     setExpandedBoardCardId((current) => (current === id ? undefined : id));
     if (willExpand) {
       void loadThreadComments(id);
-      void associations.loadLinks();
+      void associations.loadLinks().catch(() => undefined);
     }
   };
 
@@ -683,6 +683,8 @@ function App() {
               threads={threads}
               projectNames={projectNames}
               linksByThread={associations.linksByThread}
+              linksLoading={associations.loading}
+              linksLoadError={associations.loadError}
               savingThreadIds={associations.savingThreadIds}
               navigationTarget={todoNavigationTarget}
               onTasksChange={(tasks) => {
@@ -694,7 +696,8 @@ function App() {
                 setTodoTasksLoaded(true);
                 associations.reconcileTaskIds(new Set(tasks.map((task) => task.id)));
               }}
-              onExpandTask={() => void associations.loadLinks()}
+              onExpandTask={() => void associations.loadLinks().catch(() => undefined)}
+              onLoadThreadLinks={associations.loadLinks}
               onAssignThread={(threadId, taskId) =>
                 associations.assign(threadId, taskId, "task")
               }

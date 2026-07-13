@@ -64,11 +64,14 @@ type Props = {
   threads?: ThreadItem[];
   projectNames?: Map<string, string>;
   linksByThread?: Map<string, ThreadTaskLink>;
+  linksLoading?: boolean;
+  linksLoadError?: string;
   savingThreadIds?: Set<string>;
   navigationTarget?: { taskId: string; requestId: number };
   onTasksChange?: (tasks: TodoTask[]) => void;
   onTasksPersisted?: (tasks: TodoTask[]) => void;
   onExpandTask?: (taskId: string) => void;
+  onLoadThreadLinks?: (force?: boolean) => Promise<void>;
   onAssignThread?: (threadId: string, taskId: string) => Promise<void>;
   onUnlinkThread?: (threadId: string) => Promise<void>;
   onOpenThread?: (thread: ThreadItem) => void;
@@ -125,11 +128,14 @@ export function TodoListView({
   threads = [],
   projectNames = new Map(),
   linksByThread = new Map(),
+  linksLoading = false,
+  linksLoadError,
   savingThreadIds = new Set(),
   navigationTarget,
   onTasksChange,
   onTasksPersisted,
   onExpandTask,
+  onLoadThreadLinks,
   onAssignThread,
   onUnlinkThread,
   onOpenThread,
@@ -157,6 +163,11 @@ export function TodoListView({
   const handledNavigationRequest = useRef<number>();
   const pendingNavigationId = useRef<string>();
   const navigatingFilters = useRef(false);
+
+  useEffect(() => {
+    if (!onLoadThreadLinks) return;
+    void onLoadThreadLinks().catch(() => undefined);
+  }, [onLoadThreadLinks]);
 
   useEffect(() => {
     if (initialTasks) return;
@@ -557,7 +568,15 @@ export function TodoListView({
                       }}
                     />
                   </div>
-                  <div aria-hidden="true" />
+                  <TaskThreadTags
+                    task={task}
+                    threads={threads}
+                    linksByThread={linksByThread}
+                    loading={linksLoading}
+                    loadError={linksLoadError}
+                    onRetry={onLoadThreadLinks}
+                    onOpenThread={onOpenThread}
+                  />
                   <DateCell task={task} field="expectedEndDate" editing={editingDate} onEdit={setEditingDate} onChange={(value) => updateTask(task.id, { expectedEndDate: value || undefined })} />
                   <DateCell task={task} field="actualEndDate" editing={editingDate} onEdit={setEditingDate} onChange={(value) => updateTask(task.id, { actualEndDate: value || undefined })} />
                   <div className="flex justify-end gap-0.5">
@@ -642,6 +661,64 @@ function DateCell({ task, field, editing, onEdit, onChange }: {
     >
       {value || "—"}
     </button>
+  );
+}
+
+function TaskThreadTags({
+  task,
+  threads,
+  linksByThread,
+  loading,
+  loadError,
+  onRetry,
+  onOpenThread
+}: {
+  task: TodoTask;
+  threads: ThreadItem[];
+  linksByThread: Map<string, ThreadTaskLink>;
+  loading: boolean;
+  loadError?: string;
+  onRetry?: (force?: boolean) => Promise<void>;
+  onOpenThread?: (thread: ThreadItem) => void;
+}) {
+  if (loading) {
+    return <span className="text-[10px] text-muted-foreground">加载中…</span>;
+  }
+  if (loadError) {
+    return (
+      <button
+        type="button"
+        aria-label="重试关联加载"
+        className="w-fit rounded px-1.5 py-0.5 text-[10px] text-destructive hover:bg-destructive/10"
+        onClick={() => void onRetry?.(true).catch(() => undefined)}
+      >
+        加载失败 · 重试
+      </button>
+    );
+  }
+
+  const linkedThreads = threads.filter(
+    (thread) => linksByThread.get(thread.id)?.taskId === task.id
+  );
+  if (linkedThreads.length === 0) {
+    return <span className="text-[11px] text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1 py-1">
+      {linkedThreads.map((thread) => (
+        <button
+          key={thread.id}
+          type="button"
+          aria-label={`打开 Thread ${thread.title}`}
+          title={thread.title}
+          className="flex h-5 max-w-full min-w-0 items-center gap-1 rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+          onClick={() => onOpenThread?.(thread)}
+        >
+          <Link2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+          <span className="truncate">{thread.title}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 

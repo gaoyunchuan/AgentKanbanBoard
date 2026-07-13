@@ -37,6 +37,7 @@ export function useThreadTaskLinks({
 }: UseThreadTaskLinksOptions) {
   const [linksByThread, setLinksByThread] = useState<Map<string, ThreadTaskLink>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string>();
   const [savingThreadIds, setSavingThreadIds] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<AssociationNoticeState>();
   const linksRef = useRef(linksByThread);
@@ -98,6 +99,7 @@ export function useThreadTaskLinks({
       if (loadPromiseRef.current) return loadPromiseRef.current;
 
       setLoading(true);
+      setLoadError(undefined);
       const load = (async () => {
         const records = (await invokeCommand("load_thread_task_links")) as BackendThreadTaskLink[];
         replaceLinks(
@@ -107,10 +109,15 @@ export function useThreadTaskLinks({
           }))
         );
         loadedRef.current = true;
-      })().finally(() => {
-        loadPromiseRef.current = undefined;
-        setLoading(false);
-      });
+      })()
+        .catch((error) => {
+          setLoadError("关联加载失败");
+          throw error;
+        })
+        .finally(() => {
+          loadPromiseRef.current = undefined;
+          setLoading(false);
+        });
       loadPromiseRef.current = load;
       return load;
     },
@@ -300,6 +307,7 @@ export function useThreadTaskLinks({
   return {
     linksByThread,
     loading,
+    loadError,
     savingThreadIds,
     notice,
     loadLinks,

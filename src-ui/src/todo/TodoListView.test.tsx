@@ -309,6 +309,47 @@ describe("TodoListView", () => {
     expect(onAssignThread).toHaveBeenCalledWith("pending", "root");
   });
 
+  test("折叠行第二列展示全部关联 Thread 标签并可直接打开", async () => {
+    const user = userEvent.setup();
+    const onOpenThread = vi.fn();
+    const threadA = associationThread("thread-a", "review_pending");
+    const threadB = associationThread("thread-b", "suspended");
+    render(
+      <TodoListView
+        initialTasks={initialTasks}
+        persistTasks={vi.fn()}
+        threads={[threadA, threadB]}
+        linksByThread={new Map([
+          ["thread-a", associationLink("thread-a", "root")],
+          ["thread-b", associationLink("thread-b", "root")]
+        ])}
+        onOpenThread={onOpenThread}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "打开 Thread thread-a" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开 Thread thread-b" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开 Thread thread-b" }));
+    expect(onOpenThread).toHaveBeenCalledWith(threadB);
+  });
+
+  test("进入列表加载关联，失败后可从第二列强制重试", async () => {
+    const user = userEvent.setup();
+    const onLoadThreadLinks = vi.fn().mockRejectedValue(new Error("读取失败"));
+    render(
+      <TodoListView
+        initialTasks={initialTasks}
+        persistTasks={vi.fn()}
+        linksLoadError="关联加载失败"
+        onLoadThreadLinks={onLoadThreadLinks}
+      />
+    );
+
+    await waitFor(() => expect(onLoadThreadLinks).toHaveBeenCalledWith());
+    await user.click(screen.getAllByRole("button", { name: "重试关联加载" })[0]);
+    expect(onLoadThreadLinks).toHaveBeenLastCalledWith(true);
+  });
+
   test("导航目标会清空筛选、切页、展开、滚动并聚焦深层子 Task", async () => {
     const scrollIntoView = vi.fn();
     const originalScrollIntoView = Element.prototype.scrollIntoView;

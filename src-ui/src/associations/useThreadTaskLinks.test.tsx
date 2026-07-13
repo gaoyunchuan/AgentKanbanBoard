@@ -191,3 +191,23 @@ test("Task 快照成功后只清理本地失效关联", async () => {
   expect([...result.current.linksByThread.keys()]).toEqual(["keep"]);
   expect(invokeCommand).toHaveBeenCalledTimes(1);
 });
+
+test("关联加载失败后暴露错误并允许强制重试", async () => {
+  const invokeCommand = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("读取失败"))
+    .mockResolvedValueOnce([backendLink("thread", "task")]);
+  const { result } = renderHook(() => useThreadTaskLinks({ enabled: true, invokeCommand }));
+
+  await act(async () => {
+    await expect(result.current.loadLinks()).rejects.toThrow("读取失败");
+  });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toBe("关联加载失败");
+
+  await act(async () => {
+    await result.current.loadLinks(true);
+  });
+  expect(result.current.loadError).toBeUndefined();
+  expect(result.current.linksByThread.get("thread")?.taskId).toBe("task");
+});

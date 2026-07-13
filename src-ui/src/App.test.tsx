@@ -363,6 +363,30 @@ describe("Codex Kanban App", () => {
     expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
   });
 
+  test("进入 To Do List 只独立加载一次关联，不加入周期刷新", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /To Do List/ }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("load_thread_task_links", undefined);
+    const loadCount = invokeMock.mock.calls.filter(
+      ([command]) => command === "load_thread_task_links"
+    ).length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "load_thread_task_links")
+    ).toHaveLength(loadCount);
+  });
+
   test("Thread 展开后按需加载关联，并可选择子 Task", async () => {
     const user = userEvent.setup();
     render(<App />);
