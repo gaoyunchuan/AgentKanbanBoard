@@ -709,7 +709,7 @@ function TaskThreadTags({
         <button
           key={thread.id}
           type="button"
-          aria-label={`打开 Thread ${thread.title}`}
+          aria-label={`在 Codex 打开 Thread ${thread.title}`}
           title={thread.title}
           className="flex h-5 max-w-full min-w-0 items-center gap-1 rounded bg-primary/10 px-1.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
           onClick={() => onOpenThread?.(thread)}

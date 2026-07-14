@@ -28,5 +28,12 @@ test("普通浏览器使用可交互 demo 数据且关联流程不调用 Tauri",
 
   expect(await screen.findByRole("button", { name: /打开 Task 异构实现带外探测/ }))
     .toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /打开 Task 异构实现带外探测/ }));
+  await user.click(
+    (await screen.findAllByRole("button", {
+      name: "在 Codex 打开 Thread 浏览器预览：待审核 Thread"
+    }))[0]
+  );
+
   expect(invokeMock).not.toHaveBeenCalled();
 });

@@ -214,10 +214,6 @@ function App() {
     taskId: string;
     requestId: number;
   }>();
-  const [threadNavigationTarget, setThreadNavigationTarget] = useState<{
-    threadId: string;
-    requestId: number;
-  }>();
   const todoTasksLoadRef = useRef<Promise<void> | undefined>(undefined);
 
   const loadTodoTasksForAssociation = useCallback(async () => {
@@ -241,23 +237,6 @@ function App() {
     setView("todos");
     setTodoNavigationTarget((current) => ({
       taskId,
-      requestId: (current?.requestId ?? 0) + 1
-    }));
-  }, []);
-
-  const navigateToThread = useCallback((thread: ThreadItem) => {
-    setLayout("list");
-    setFilters({
-      search: "",
-      projectId: "all",
-      boardStatuses: [thread.boardStatus]
-    });
-    setView(thread.boardStatus === "archived" ? "archived" : "active");
-    setExpandedRows((current) =>
-      current.includes(thread.id) ? current : [...current, thread.id]
-    );
-    setThreadNavigationTarget((current) => ({
-      threadId: thread.id,
       requestId: (current?.requestId ?? 0) + 1
     }));
   }, []);
@@ -442,6 +421,10 @@ function App() {
   };
 
   const openThread = async (thread: ThreadItem) => {
+    if (!associationPersistenceEnabled) {
+      setToast("浏览器预览不支持打开 Codex，请在桌面端使用");
+      return;
+    }
     if (!thread.codexSessionId || !isSessionUuid(thread.codexSessionId)) {
       setToast(`无法打开：${thread.title} 缺少有效 Codex session id`);
       return;
@@ -723,7 +706,7 @@ function App() {
                 associations.assign(threadId, taskId, "task")
               }
               onUnlinkThread={associations.unlink}
-              onOpenThread={navigateToThread}
+              onOpenThread={openThread}
               onNavigationError={setToast}
             />
           ) : (
@@ -805,7 +788,6 @@ function App() {
                     threads={visibleThreads}
                     projectNames={projectNames}
                     expandedRows={expandedRows}
-                    navigationTarget={threadNavigationTarget}
                     onLoadComments={loadThreadComments}
                     onToggleExpand={toggleListRow}
                     onMarkReviewed={markReviewed}
@@ -1218,7 +1200,6 @@ function ThreadList({
   threads,
   projectNames,
   expandedRows,
-  navigationTarget,
   onLoadComments,
   onToggleExpand,
   onMarkReviewed,
@@ -1235,7 +1216,6 @@ function ThreadList({
   threads: ThreadItem[];
   projectNames: Map<string, string>;
   expandedRows: string[];
-  navigationTarget?: { threadId: string; requestId: number };
   onLoadComments: (threadId: string) => void;
   onToggleExpand: (id: string) => void;
   onMarkReviewed: (thread: ThreadItem) => void;
@@ -1266,19 +1246,6 @@ function ThreadList({
   useEffect(() => {
     rowVirtualizer.measure();
   }, [associations.linksByThread, associations.tasks, expandedRows, rowVirtualizer]);
-
-  useEffect(() => {
-    if (!navigationTarget) return;
-    const index = threads.findIndex((thread) => thread.id === navigationTarget.threadId);
-    if (index < 0) return;
-    rowVirtualizer.scrollToIndex(index, { align: "center" });
-    const frame = window.requestAnimationFrame(() => {
-      const row = [...(scrollParentRef.current?.querySelectorAll<HTMLElement>("[data-thread-id]") ?? [])]
-        .find((element) => element.dataset.threadId === navigationTarget.threadId);
-      row?.querySelector<HTMLButtonElement>("button")?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [navigationTarget, rowVirtualizer, threads]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const rowsToRender =
@@ -1325,7 +1292,6 @@ function ThreadList({
                   key={thread.id}
                   ref={rowVirtualizer.measureElement}
                   data-index={virtualRow.index}
-                  data-thread-id={thread.id}
                   data-expanded={expanded}
                   data-testid="thread-list-row"
                   className="absolute left-0 top-0 min-w-[480px] w-full border-b last:border-b-0"

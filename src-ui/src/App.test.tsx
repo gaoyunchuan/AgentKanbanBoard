@@ -387,7 +387,7 @@ describe("Codex Kanban App", () => {
     ).toHaveLength(loadCount);
   });
 
-  test("点击 Todo 第二列标签会切换并展开应用内对应 Thread", async () => {
+  test("点击 Todo 关联 Thread 会打开 Codex 并停留在 To Do List", async () => {
     const user = userEvent.setup();
     currentThreadTaskLinks = [
       backendLink("019ef88b-6207-7122-9f6e-da4d6d52a9ba", "demo-1")
@@ -399,17 +399,19 @@ describe("Codex Kanban App", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("load_thread_task_links", undefined)
     );
-    await screen.findByDisplayValue("西北中卫质量链路验收");
     await user.click(
       await screen.findByRole("button", {
-        name: "打开 Thread 修正 Grafana 日志 service 名称"
+        name: "在 Codex 打开 Thread 修正 Grafana 日志 service 名称"
       })
     );
 
-    expect(await screen.findByRole("heading", { name: "全部活跃 Threads" })).toBeInTheDocument();
-    expect(
-      threadRowFor(screen.getByText("修正 Grafana 日志 service 名称"))
-    ).toHaveAttribute("data-expanded", "true");
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("open_codex_deeplink", {
+        target: "codex://threads/019ef88b-6207-7122-9f6e-da4d6d52a9ba"
+      })
+    );
+    expect(screen.getByRole("heading", { name: "To Do List" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "全部活跃 Threads" })).not.toBeInTheDocument();
   });
 
   test("Thread 展开后按需加载关联，并可选择子 Task", async () => {

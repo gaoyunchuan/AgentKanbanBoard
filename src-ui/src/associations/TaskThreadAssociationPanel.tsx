@@ -68,7 +68,7 @@ export function TaskThreadAssociationPanel({
                   variant="ghost"
                   size="sm"
                   className="h-7 min-w-0 flex-1 justify-start px-2"
-                  aria-label={`打开 Thread ${thread.title}`}
+                  aria-label={`在 Codex 打开 Thread ${thread.title}`}
                   onClick={() => onOpenThread(thread)}
                 >
                   <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

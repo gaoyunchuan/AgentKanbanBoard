@@ -323,14 +323,29 @@ describe("TodoListView", () => {
           ["thread-a", associationLink("thread-a", "root")],
           ["thread-b", associationLink("thread-b", "root")]
         ])}
+        onAssignThread={vi.fn()}
+        onUnlinkThread={vi.fn()}
         onOpenThread={onOpenThread}
       />
     );
 
-    expect(screen.getByRole("button", { name: "打开 Thread thread-a" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开 Thread thread-b" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "打开 Thread thread-b" }));
-    expect(onOpenThread).toHaveBeenCalledWith(threadB);
+    expect(
+      screen.getByRole("button", { name: "在 Codex 打开 Thread thread-a" })
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "在 Codex 打开 Thread thread-b" })
+    );
+    expect(onOpenThread).toHaveBeenLastCalledWith(threadB);
+
+    await user.click(screen.getByRole("button", { name: "展开 父任务" }));
+    const associationPanel = screen.getByRole("region", { name: "关联 Thread" });
+    await user.click(
+      within(associationPanel).getByRole("button", {
+        name: "在 Codex 打开 Thread thread-b"
+      })
+    );
+    expect(onOpenThread).toHaveBeenLastCalledWith(threadB);
+    expect(onOpenThread).toHaveBeenCalledTimes(2);
   });
 
   test("进入列表加载关联，失败后可从第二列强制重试", async () => {
