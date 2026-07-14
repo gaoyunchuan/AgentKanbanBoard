@@ -28,7 +28,7 @@
 - Task 端选择已关联其他 Task 的 Thread 时直接迁移到当前 Task；前端按 Thread 串行提交、不同 Thread 可并行，失败后回滚并重新加载，成功反馈提供 5 秒撤销。
 - 普通 Vite 浏览器预览需要提供可交互的 Thread/Task demo 数据，但不得调用 Tauri command，便于在窄窗口完成双向关联视觉验收。
 - To Do List 的顶层任务树按完成度派生排序：没有完成态节点、完成与未完成混合、全部为完成态依次展示；`completed` 和 `cancelled` 都视为完成态，同组内保持持久化 `position`，子任务不单独分组。
-- To Do List 折叠行第二列展示全部关联 Thread 的可点击紧凑标签；点击后在应用内切换并定位、展开对应 Thread；进入 To Do 页面时单独加载一次关联并提供失败重试，但关联仍不得进入 `BoardData` 或五秒轮询链路。
+- To Do List 折叠行第二列和展开详情展示全部关联 Thread；点击任一关联 Thread 都直接打开 Codex Desktop 对应会话并保持 To Do 页面，不再切换到应用内 Thread 列表；普通浏览器预览不得调用 Tauri。进入 To Do 页面时单独加载一次关联并提供失败重试，但关联仍不得进入 `BoardData` 或五秒轮询链路。
 - To Do List 不再展示或编辑起始日期，但必须继续在快照中保留历史 `start_date`；展开详情显示只读的本地添加日期，新建任务的预期结束日期默认为本地日历下一天。
 
 ## Update Notes
@@ -49,3 +49,4 @@
 - 2026-07-13: 新增 Thread 与 To Do Task 的双向懒加载关联、直接迁移、失败回滚和 5 秒撤销约束。
 - 2026-07-13: 恢复 To Do 同级拖放排序，手柄改为常显并取消拖放改层级语义；关闭 Tauri 内部拖放处理器以允许 WKWebView DOM 拖放。
 - 2026-07-13: To Do List 新增顶层任务树完成度排序、折叠行 Thread 标签、只读添加日期和新任务默认次日截止，并隐藏起始日期、压缩结束日期列。
+- 2026-07-14: To Do List 的关联 Thread 入口改为直接打开 Codex Desktop，不再跳转应用内 Thread 列表。
