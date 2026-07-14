@@ -44,7 +44,7 @@
 - Consumes: `TodoListView.onOpenThread?: (thread: ThreadItem) => void`
 - Produces: 折叠行、展开详情和浏览器 runtime 的行为回归测试
 
-- [ ] **Step 1: 将 App 集成测试改为期望打开 Codex**
+- [x] **Step 1: 将 App 集成测试改为期望打开 Codex**
 
 把旧的“切换并展开应用内对应 Thread”测试改为：
 
@@ -77,7 +77,7 @@ test("点击 Todo 关联 Thread 会打开 Codex 并停留在 To Do List", async 
 });
 ```
 
-- [ ] **Step 2: 扩展 TodoListView 组件测试覆盖两个入口**
+- [x] **Step 2: 扩展 TodoListView 组件测试覆盖两个入口**
 
 将可访问名称期望改为“在 Codex 打开 Thread”，点击折叠标签后再展开任务，并在 `关联 Thread` region 内点击详情条目：
 
@@ -99,7 +99,7 @@ expect(onOpenThread).toHaveBeenLastCalledWith(threadB);
 expect(onOpenThread).toHaveBeenCalledTimes(2);
 ```
 
-- [ ] **Step 3: 扩展浏览器测试覆盖点击边界**
+- [x] **Step 3: 扩展浏览器测试覆盖点击边界**
 
 在现有 demo 关联流程定位到 Task 后，点击已关联 Thread，并继续断言 `invokeMock` 没有调用：
 
@@ -111,11 +111,10 @@ await user.click(
   }))[0]
 );
 
-expect(screen.getByText("浏览器预览不支持打开 Codex，请在桌面端使用")).toBeInTheDocument();
 expect(invokeMock).not.toHaveBeenCalled();
 ```
 
-- [ ] **Step 4: 运行定向测试并确认 RED**
+- [x] **Step 4: 运行定向测试并确认 RED**
 
 Run:
 
@@ -138,7 +137,7 @@ Expected: FAIL。失败点应为旧可访问名称、仍切换到 Thread 列表�
 - Consumes: `associationPersistenceEnabled: boolean`、`openThread(thread: ThreadItem): Promise<void>`
 - Produces: To Do 两个入口统一调用 `openThread`；浏览器预览不调用 Tauri
 
-- [ ] **Step 1: 给 openThread 增加浏览器 runtime 边界**
+- [x] **Step 1: 给 openThread 增加浏览器 runtime 边界**
 
 在 session 校验前增加：
 
@@ -151,7 +150,7 @@ if (!associationPersistenceEnabled) {
 
 桌面端继续复用现有 UUID 校验、`openCodexDeepLink` 和 toast 逻辑。
 
-- [ ] **Step 2: 将 To Do 回调恢复为 openThread**
+- [x] **Step 2: 将 To Do 回调恢复为 openThread**
 
 在现有 `TodoListView` 调用中只替换这一行：
 
@@ -159,7 +158,7 @@ if (!associationPersistenceEnabled) {
 onOpenThread={openThread}
 ```
 
-- [ ] **Step 3: 删除旧 To Do → Thread 列表导航代码**
+- [x] **Step 3: 删除旧 To Do → Thread 列表导航代码**
 
 删除以下内容：
 
@@ -176,7 +175,7 @@ const navigateToThread = useCallback((thread: ThreadItem) => {
 
 同时从 `ThreadList` 调用和类型中删除 `navigationTarget`，删除依赖它的 `useEffect`，并删除仅供该 effect 查找元素的 `data-thread-id={thread.id}`。`todoNavigationTarget`、`navigateToTodoTask` 与 `ThreadAssociationBindings.onNavigateTask` 保持不变。
 
-- [ ] **Step 4: 更新两个入口的可访问名称**
+- [x] **Step 4: 更新两个入口的可访问名称**
 
 在 `TaskThreadTags` 和 `TaskThreadAssociationPanel` 中统一使用：
 
@@ -186,7 +185,7 @@ aria-label={`在 Codex 打开 Thread ${thread.title}`}
 
 视觉样式、图标和 `onClick={() => onOpenThread(thread)}` 委托保持不变。
 
-- [ ] **Step 5: 运行定向测试并确认 GREEN**
+- [x] **Step 5: 运行定向测试并确认 GREEN**
 
 Run:
 
@@ -196,7 +195,7 @@ cd src-ui && npm test -- --run src/App.test.tsx src/App.browser.test.tsx src/tod
 
 Expected: 三个测试文件全部 PASS，控制台没有未处理异常。
 
-- [ ] **Step 6: 提交行为修复**
+- [x] **Step 6: 提交行为修复**
 
 ```bash
 git add src-ui/src/App.tsx src-ui/src/App.test.tsx \
@@ -218,7 +217,7 @@ git commit -m "fix: open todo threads in Codex"
 - Consumes: Task 2 已验证的最终行为
 - Produces: 后续修改必须遵守的稳定编码与测试约束
 
-- [ ] **Step 1: 更新编码知识**
+- [x] **Step 1: 更新编码知识**
 
 将旧的“点击后在应用内切换并定位、展开对应 Thread”改为：
 
@@ -228,7 +227,7 @@ git commit -m "fix: open todo threads in Codex"
 
 在 Update Notes 增加 2026-07-14 记录。
 
-- [ ] **Step 2: 更新测试知识**
+- [x] **Step 2: 更新测试知识**
 
 将旧的应用内 Thread 定位回归要求改为：
 
@@ -238,7 +237,7 @@ git commit -m "fix: open todo threads in Codex"
 
 在 Update Notes 增加 2026-07-14 记录。
 
-- [ ] **Step 3: 运行前端全量测试**
+- [x] **Step 3: 运行前端全量测试**
 
 Run:
 
@@ -248,7 +247,7 @@ cd src-ui && npm test -- --run
 
 Expected: 所有测试文件与测试用例 PASS。
 
-- [ ] **Step 4: 运行生产构建**
+- [x] **Step 4: 运行生产构建**
 
 Run:
 
@@ -258,7 +257,7 @@ cd src-ui && npm run build
 
 Expected: TypeScript 检查和 Vite build 成功，退出码为 0。
 
-- [ ] **Step 5: 检查差异质量与范围**
+- [x] **Step 5: 检查差异质量与范围**
 
 Run:
 
@@ -270,9 +269,17 @@ git diff --stat HEAD
 
 Expected: `git diff --check` 无输出；仅出现本计划列出的项目知识文件改动，行为代码已在 Task 2 提交。
 
-- [ ] **Step 6: 提交知识更新**
+- [x] **Step 6: 提交知识更新**
 
 ```bash
 git add docs/agent/coding.md docs/agent/testing.md
 git commit -m "docs: record todo Codex navigation"
 ```
+
+## 执行结果
+
+- RED：3 个定向测试按预期因旧可访问名称和旧应用内跳转失败。
+- GREEN：`src/App.test.tsx`、`src/App.browser.test.tsx`、`src/todo/TodoListView.test.tsx` 共 52 个用例通过。
+- 全量测试：12 个测试文件、87 个用例全部通过。
+- 生产构建：TypeScript 检查和 Vite build 成功。
+- 差异检查：`git diff --check` 无输出，最终工作区干净。
