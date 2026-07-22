@@ -62,6 +62,12 @@ function dragOverAt(element: HTMLElement, clientY: number) {
 describe("TodoListView", () => {
   afterEach(() => cleanup());
 
+  test("列表卡片提供独立的响应式宽度容器", () => {
+    render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
+
+    expect(screen.getByText("关联 Thread").closest(".todo-list-container")).not.toBeNull();
+  });
+
   test("完成任务时写入实际结束日期，再次点击可恢复", async () => {
     const user = userEvent.setup();
     const persistTasks = vi.fn().mockResolvedValue(undefined);

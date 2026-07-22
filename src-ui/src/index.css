@@ -55,13 +55,27 @@
     grid-template-columns: minmax(0, 1fr) 64px 78px;
   }
 
+  .todo-list-container {
+    container-type: inline-size;
+  }
+
   .todo-grid {
     grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(64px, 96px) minmax(64px, 96px) minmax(44px, 84px);
   }
 
-  @media (max-width: 520px) {
+  @container (max-width: 520px) {
     .todo-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px 64px 44px;
+      grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);
+    }
+
+    .todo-grid > :nth-child(n + 3) {
+      display: none;
+    }
+  }
+
+  @container (max-width: 320px) {
+    .todo-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
 

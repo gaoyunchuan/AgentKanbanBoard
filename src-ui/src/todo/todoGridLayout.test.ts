@@ -11,10 +11,20 @@ describe("To Do List 列宽优先级", () => {
     );
   });
 
-  test("极窄屏最后才让任务和关联 Thread 等权继续收缩", () => {
-    expect(css).toContain("@media (max-width: 520px)");
+  test("窄容器完整隐藏尾部三列并保留任务与 Thread", () => {
+    expect(css).toContain("container-type: inline-size;");
+    expect(css).toContain("@container (max-width: 520px)");
     expect(css).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px 64px 44px;"
+      "grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);"
+    );
+    expect(css).toContain(".todo-grid > :nth-child(n + 3)");
+    expect(css).toContain("display: none;");
+  });
+
+  test("极窄容器最后才让任务与 Thread 等权收缩", () => {
+    expect(css).toContain("@container (max-width: 320px)");
+    expect(css).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);"
     );
   });
 });
