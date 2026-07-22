@@ -210,7 +210,7 @@ Run: `git diff --check && git status --short && git diff --stat HEAD`
 
 Expected: `git diff --check` 无输出；仅包含本计划列出的实现、测试、知识和计划文件。
 
-- [ ] **Step 5: 提交修复**
+- [x] **Step 5: 提交修复**
 
 ```bash
 git add src-ui/src/index.css src-ui/src/todo/TodoListView.tsx src-ui/src/todo/todoGridLayout.test.ts src-ui/src/todo/TodoListView.test.tsx docs/agent/coding.md docs/agent/testing.md docs/superpowers/plans/2026-07-22-todo-list-hide-trailing-columns.md
