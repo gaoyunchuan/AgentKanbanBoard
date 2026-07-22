@@ -56,12 +56,12 @@
   }
 
   .todo-grid {
-    grid-template-columns: minmax(0, 1fr) 180px 96px 96px 84px;
+    grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(64px, 96px) minmax(64px, 96px) minmax(44px, 84px);
   }
 
-  @media (max-width: 900px) {
+  @media (max-width: 520px) {
     .todo-grid {
-      grid-template-columns: minmax(0, 1fr) 140px 96px 96px 84px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px 64px 44px;
     }
   }
 

@@ -30,7 +30,7 @@
 - Consumes: `.todo-grid` 同时应用于 `TodoListView` 的表头与任务行。
 - Produces: 常规 `.todo-grid` 五列定义，依次为任务、关联 Thread、预期结束日期、实际结束日期、操作。
 
-- [ ] **Step 1: 编写普通窄屏失败测试**
+- [x] **Step 1: 编写普通窄屏失败测试**
 
 ```ts
 import { readFileSync } from "node:fs";
@@ -47,13 +47,13 @@ describe("To Do List 列宽优先级", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认因旧列定义失败**
+- [x] **Step 2: 运行测试并确认因旧列定义失败**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoGridLayout.test.ts`
 
 Expected: FAIL；输出显示期望的新 `grid-template-columns` 不存在，当前 CSS 仍包含 `minmax(0, 1fr) 180px 96px 96px 84px`。
 
-- [ ] **Step 3: 写入最小常规网格实现**
+- [x] **Step 3: 写入最小常规网格实现**
 
 ```css
 .todo-grid {
@@ -63,7 +63,7 @@ Expected: FAIL；输出显示期望的新 `grid-template-columns` 不存在，�
 
 删除原有 `900px` 断点中把 Thread 列单独改为固定 `140px` 的重复规则；常规规则本身已覆盖该行为并允许其他三列优先收缩。
 
-- [ ] **Step 4: 运行测试并确认通过**
+- [x] **Step 4: 运行测试并确认通过**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoGridLayout.test.ts`
 
@@ -79,7 +79,7 @@ Expected: PASS，1 个测试通过。
 - Consumes: Task 1 的常规五列定义。
 - Produces: `@media (max-width: 520px)` 极窄规则；前两列等权收缩，后三列保持紧凑宽度。
 
-- [ ] **Step 1: 编写极窄阶段失败测试**
+- [x] **Step 1: 编写极窄阶段失败测试**
 
 在同一个 `describe` 中增加：
 
@@ -92,13 +92,13 @@ test("极窄屏最后才让任务和关联 Thread 等权继续收缩", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认因极窄规则缺失而失败**
+- [x] **Step 2: 运行测试并确认因极窄规则缺失而失败**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoGridLayout.test.ts`
 
 Expected: FAIL；普通窄屏用例通过，极窄用例显示缺少 `520px` 断点或等权列定义。
 
-- [ ] **Step 3: 写入最小极窄规则**
+- [x] **Step 3: 写入最小极窄规则**
 
 ```css
 @media (max-width: 520px) {
@@ -108,13 +108,13 @@ Expected: FAIL；普通窄屏用例通过，极窄用例显示缺少 `520px` 断
 }
 ```
 
-- [ ] **Step 4: 运行定向测试并确认通过**
+- [x] **Step 4: 运行定向测试并确认通过**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoGridLayout.test.ts`
 
 Expected: PASS，2 个测试通过。
 
-- [ ] **Step 5: 检查改动范围**
+- [x] **Step 5: 检查改动范围**
 
 Run: `git diff -- src-ui/src/index.css src-ui/src/todo/todoGridLayout.test.ts`
 
@@ -130,25 +130,25 @@ Expected: 只包含 `.todo-grid` 两阶段规则和对应回归测试，不包�
 - Consumes: Task 1–2 的 CSS 与回归测试。
 - Produces: 自动化测试、构建和实际浏览器计算样式证据。
 
-- [ ] **Step 1: 运行完整前端测试**
+- [x] **Step 1: 运行完整前端测试**
 
 Run: `cd src-ui && npm test -- --run`
 
 Expected: PASS，所有测试文件和用例通过，无失败用例。
 
-- [ ] **Step 2: 运行生产构建**
+- [x] **Step 2: 运行生产构建**
 
 Run: `cd src-ui && npm run build`
 
 Expected: PASS，TypeScript 检查与 Vite 构建均以退出码 `0` 完成。
 
-- [ ] **Step 3: 启动普通浏览器预览**
+- [x] **Step 3: 启动普通浏览器预览**
 
 Run: `cd src-ui && npm run dev -- --host 127.0.0.1`
 
 Expected: Vite 输出可访问的本地地址；浏览器 demo 不调用 Tauri bridge。
 
-- [ ] **Step 4: 验证约 650px 内容宽度**
+- [x] **Step 4: 验证约 650px 内容宽度**
 
 在 `700 × 768` 左右视口打开 To Do List，通过浏览器计算 `.todo-grid` 的 `grid-template-columns` 和每列边界：
 
@@ -158,7 +158,7 @@ Expected: Vite 输出可访问的本地地址；浏览器 demo 不调用 Tauri b
 - `document.documentElement.scrollWidth <= document.documentElement.clientWidth`。
 - Thread 标签允许换行，日期值与行操作仍可见。
 
-- [ ] **Step 5: 验证极窄视口**
+- [x] **Step 5: 验证极窄视口**
 
 在 `480 × 768` 视口重复检查：
 
@@ -167,7 +167,7 @@ Expected: Vite 输出可访问的本地地址；浏览器 demo 不调用 Tauri b
 - `document.documentElement.scrollWidth <= document.documentElement.clientWidth`。
 - 浏览器控制台错误为 `0`。
 
-- [ ] **Step 6: 运行差异检查**
+- [x] **Step 6: 运行差异检查**
 
 Run: `git diff --check && git status --short`
 
@@ -179,3 +179,11 @@ Expected: `git diff --check` 退出码为 `0`；状态仅包含本计划列出�
 git add src-ui/src/index.css src-ui/src/todo/todoGridLayout.test.ts docs/superpowers/plans/2026-07-22-todo-list-column-shrink-priority.md
 git commit -m "fix: 调整 todo 窄屏列宽优先级"
 ```
+
+## 执行结果
+
+- RED：普通窄屏和极窄屏用例分别在对应规则缺失时按预期失败；测试路径错误先修正后重新取得有效 RED。
+- GREEN：定向测试 2 个用例通过；完整前端测试 13 个测试文件、89 个用例全部通过。
+- 构建：TypeScript 检查和 Vite 生产构建成功。
+- 浏览器验收：`700 × 768` 视口下五列计算宽度为 `140 / 140 / 64 / 64 / 44px`；`480 × 768` 极窄视口下为 `20 / 20 / 64 / 64 / 44px`。
+- 溢出与日志：两档视口均满足 `scrollWidth === clientWidth`，浏览器控制台错误为 `0`。
