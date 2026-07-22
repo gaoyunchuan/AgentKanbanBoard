@@ -173,7 +173,7 @@ Run: `git diff --check && git status --short`
 
 Expected: `git diff --check` 退出码为 `0`；状态仅包含本计划列出的实现文件和计划进度更新。
 
-- [ ] **Step 7: 提交实现**
+- [x] **Step 7: 提交实现**
 
 ```bash
 git add src-ui/src/index.css src-ui/src/todo/todoGridLayout.test.ts docs/superpowers/plans/2026-07-22-todo-list-column-shrink-priority.md
