@@ -125,7 +125,7 @@ Run: `git diff --check && git status --short && git diff --stat HEAD`
 
 Expected: `git diff --check` 无输出；仅包含分页常量、分页测试、项目测试知识和本计划进度。
 
-- [ ] **Step 5: 提交实现**
+- [x] **Step 5: 提交实现**
 
 ```bash
 git add src-ui/src/todo/TodoListView.tsx src-ui/src/todo/TodoListView.test.tsx docs/agent/testing.md docs/superpowers/plans/2026-07-22-todo-list-page-size-200.md
