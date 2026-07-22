@@ -8,7 +8,7 @@
 - 后端需要覆盖 command 同步语义，确保 `load_board_data` 保持只读、`sync_codex_threads` 保持显式强制同步、后台 `start_codex_sync` 不会并发启动多个同步任务。
 - 前端需要覆盖常驻工具栏不再显示停止同步、停止刷新、停止解析、只读轮询、关闭评论等旧诊断开关，确保这些开关不会被误恢复。
 - 涉及评论加载时，需要覆盖评论懒加载和 BoardData merge 行为，确认最新评论异步展示不会进入周期刷新主链路，已加载评论在数据刷新后能按 thread id 保留。
-- 修改 To Do List 时，需要覆盖 SQLite 快照 upsert 与 `created_at` 保留、树结构展开、Enter/Cmd+Enter/Cmd+Shift+Enter/Tab/Shift+Tab、拖拽手柄常显、同级任务上/下半区排序且不改变层级、`dragDropEnabled: false` 的 Tauri 配置、父子状态独立、完成日期、行内日期编辑、扩展信息逐条编辑、Markdown 命名链接协议白名单和每页 50 条分页。
+- 修改 To Do List 时，需要覆盖 SQLite 快照 upsert 与 `created_at` 保留、树结构展开、Enter/Cmd+Enter/Cmd+Shift+Enter/Tab/Shift+Tab、拖拽手柄常显、同级任务上/下半区排序且不改变层级、`dragDropEnabled: false` 的 Tauri 配置、父子状态独立、完成日期、行内日期编辑、扩展信息逐条编辑、Markdown 命名链接协议白名单和每页 200 条分页。
 - 修改视图快捷键或禅模式时，需要覆盖输入控件聚焦下的 `Cmd+1`/`Cmd+2`、非目标修饰键、To Do List 禅模式入口、跨视图保持禅模式以及退出后的导航恢复。
 - To Do List 的视觉交付需要在 1440 × 1024 检查主状态，并至少补充一次 1024 × 768 窄窗口检查；普通浏览器预览控制台不应出现 Tauri bridge 错误。
 - To Do 拖放交付必须额外在真实 Tauri macOS `.app` 中验证 DOM 顺序和 SQLite `position` 同时变化；使用独立 bundle identifier、临时 HOME 和测试数据库，禁止操作用户正式任务数据。
@@ -35,3 +35,4 @@
 - 2026-07-13: 增加 To Do 顶层树完成度排序、默认次日、添加日期、紧凑结束日期列和折叠行 Thread 标签的回归范围。
 - 2026-07-14: To Do 关联 Thread 点击回归改为直接打开 Codex、保持 To Do 页面并覆盖普通浏览器 Tauri 边界。
 - 2026-07-22: 增加 To Do List 两阶段列宽收缩规则的自动化与浏览器回归要求。
+- 2026-07-22: To Do List 默认分页大小从 50 调整为 200，回归边界改为 200/201 条并覆盖关联定位第二页。

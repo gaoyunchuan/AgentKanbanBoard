@@ -89,7 +89,7 @@ const dateLabels: Record<DateField, string> = {
   expectedEndDate: "预期结束日期",
   actualEndDate: "实际结束日期"
 };
-const todoPageSize = 50;
+const todoPageSize = 200;
 
 function taskDropPlacement(
   clientY: number,

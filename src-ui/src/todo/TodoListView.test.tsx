@@ -369,13 +369,13 @@ describe("TodoListView", () => {
     const scrollIntoView = vi.fn();
     const originalScrollIntoView = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = scrollIntoView;
-    const tasks = Array.from({ length: 51 }, (_, index) => ({
+    const tasks = Array.from({ length: 201 }, (_, index) => ({
       ...initialTasks[0],
       id: `task-${index + 1}`,
       title: `任务 ${index + 1}`,
       position: index,
       parentId: undefined,
-      status: index === 50 ? ("completed" as const) : ("todo" as const)
+      status: index === 200 ? ("completed" as const) : ("todo" as const)
     }));
     const persistTasks = vi.fn();
     const { rerender } = render(
@@ -386,12 +386,12 @@ describe("TodoListView", () => {
       <TodoListView
         initialTasks={tasks}
         persistTasks={persistTasks}
-        navigationTarget={{ taskId: "task-51", requestId: 1 }}
+        navigationTarget={{ taskId: "task-201", requestId: 1 }}
       />
     );
 
-    expect(await screen.findByDisplayValue("任务 51")).toHaveFocus();
-    expect(screen.getByText("第 2 / 2 页 · 共 51 条")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("任务 201")).toHaveFocus();
+    expect(screen.getByText("第 2 / 2 页 · 共 201 条")).toBeInTheDocument();
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
@@ -453,31 +453,38 @@ describe("TodoListView", () => {
     expect(within(processSection).queryByText("不应保存")).not.toBeInTheDocument();
   });
 
-  test("列表使用紧凑行高并默认每页显示 50 条", async () => {
+  test("列表使用紧凑行高并默认每页显示 200 条", async () => {
     const user = userEvent.setup();
-    const manyTasks: TodoTask[] = Array.from({ length: 52 }, (_, index) => ({
+    const manyTasks: TodoTask[] = Array.from({ length: 201 }, (_, index) => ({
       ...initialTasks[0],
       id: `task-${index + 1}`,
-      title: `任务 ${String(index + 1).padStart(2, "0")}`,
+      title: `任务 ${String(index + 1).padStart(3, "0")}`,
       position: index,
-      parentId: undefined
+      parentId: undefined,
+      status: index === 200 ? "in_progress" : "todo"
     }));
     render(<TodoListView initialTasks={manyTasks} persistTasks={vi.fn()} />);
 
-    expect(screen.getAllByLabelText("任务标题")).toHaveLength(50);
-    expect(screen.getByText("第 1 / 2 页 · 共 52 条")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("任务 01").closest("[data-task-row]")).toHaveClass("min-h-9");
-    expect(screen.getByDisplayValue("任务 01")).toHaveClass("text-[12px]");
+    expect(screen.getAllByLabelText("任务标题")).toHaveLength(200);
+    expect(screen.getByText("第 1 / 2 页 · 共 201 条")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("任务 001").closest("[data-task-row]")).toHaveClass("min-h-9");
+    expect(screen.getByDisplayValue("任务 001")).toHaveClass("text-[12px]");
 
     await user.click(screen.getByRole("button", { name: "下一页" }));
-    expect(screen.getAllByLabelText("任务标题")).toHaveLength(2);
-    expect(screen.getByDisplayValue("任务 51")).toBeInTheDocument();
-    expect(screen.getByText("第 2 / 2 页 · 共 52 条")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("任务标题")).toHaveLength(1);
+    expect(screen.getByDisplayValue("任务 201")).toBeInTheDocument();
+    expect(screen.getByText("第 2 / 2 页 · 共 201 条")).toBeInTheDocument();
 
-    await user.type(screen.getByRole("textbox", { name: "搜索任务" }), "任务 01");
+    await user.type(screen.getByRole("textbox", { name: "搜索任务" }), "任务 001");
     expect(screen.getByText("第 1 / 1 页 · 共 1 条")).toBeInTheDocument();
     expect(screen.getAllByLabelText("任务标题")).toHaveLength(1);
-    expect(screen.getAllByLabelText("任务标题")[0]).toHaveValue("任务 01");
+    expect(screen.getAllByLabelText("任务标题")[0]).toHaveValue("任务 001");
+
+    await user.clear(screen.getByRole("textbox", { name: "搜索任务" }));
+    await user.click(screen.getByRole("button", { name: "下一页" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "状态筛选" }), "todo");
+    expect(screen.getByText("第 1 / 1 页 · 共 200 条")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("任务标题")).toHaveLength(200);
   });
 
   test("顶层任务树按全部未完成、部分未完成、全部已完成展示", () => {
