@@ -319,7 +319,7 @@ git commit -m "feat: 定义 todo 列宽分阶段压缩模型"
 - Consumes: `resolveTodoGridLayout` 和 `TodoGridWidths`。
 - Produces: `useTodoGridLayout(containerRef)`；在容器写入五个 `--todo-*-column-width` 属性以及 `data-todo-*-hidden` 状态。
 
-- [ ] **Step 1: 编写观察器失败测试**
+- [x] **Step 1: 编写观察器失败测试**
 
 创建 `useTodoGridLayout.test.tsx`：
 
@@ -474,7 +474,7 @@ describe("useTodoGridLayout", () => {
 });
 ```
 
-- [ ] **Step 2: 运行 hook 测试并确认 RED**
+- [x] **Step 2: 运行 hook 测试并确认 RED**
 
 Run:
 
@@ -485,7 +485,7 @@ npm test -- --run src/todo/useTodoGridLayout.test.tsx
 
 Expected: FAIL；报告找不到 `useTodoGridLayout`。
 
-- [ ] **Step 3: 实现布局 hook**
+- [x] **Step 3: 实现布局 hook**
 
 创建 `useTodoGridLayout.ts`，包含以下结构：
 
@@ -595,7 +595,7 @@ export function useTodoGridLayout(
 
 实现时保留中文注释解释“隐藏后空白不能回填到前两列”和“恢复到基线后重新进入自然布局”两个非直观约束。
 
-- [ ] **Step 4: 运行 hook 与模型测试并确认 GREEN**
+- [x] **Step 4: 运行 hook 与模型测试并确认 GREEN**
 
 Run:
 
@@ -606,7 +606,7 @@ npm test -- --run src/todo/todoGridLayoutModel.test.ts src/todo/useTodoGridLayou
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交观察器适配层**
+- [x] **Step 5: 提交观察器适配层**
 
 ```bash
 git add src-ui/src/todo/useTodoGridLayout.ts src-ui/src/todo/useTodoGridLayout.test.tsx
