@@ -32,7 +32,7 @@
 - Produces: `TodoGridWidths`、`TodoGridLayout` 和 `resolveTodoGridLayout(baseline, availableWidth)`。
 - Consumes: 无 DOM 或 React 依赖。
 
-- [ ] **Step 1: 编写尾列优先级失败测试**
+- [x] **Step 1: 编写尾列优先级失败测试**
 
 创建 `todoGridLayoutModel.test.ts`：
 
@@ -83,7 +83,7 @@ describe("resolveTodoGridLayout", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认 RED**
+- [x] **Step 2: 运行测试并确认 RED**
 
 Run:
 
@@ -94,7 +94,7 @@ npm test -- --run src/todo/todoGridLayoutModel.test.ts
 
 Expected: FAIL；报告找不到 `./todoGridLayout`。
 
-- [ ] **Step 3: 编写前两列阶段失败测试**
+- [x] **Step 3: 编写前两列阶段失败测试**
 
 继续加入：
 
@@ -162,7 +162,7 @@ test("极小宽度保持非负且不超过可用宽度", () => {
 });
 ```
 
-- [ ] **Step 4: 实现最小纯函数**
+- [x] **Step 4: 实现最小纯函数**
 
 创建 `todoGridLayout.ts`：
 
@@ -291,7 +291,7 @@ export function resolveTodoGridLayout(
 }
 ```
 
-- [ ] **Step 5: 运行纯函数测试并确认 GREEN**
+- [x] **Step 5: 运行纯函数测试并确认 GREEN**
 
 Run:
 
@@ -302,7 +302,7 @@ npm test -- --run src/todo/todoGridLayoutModel.test.ts
 
 Expected: PASS；所有尾列、Thread、任务和比例边界用例通过。
 
-- [ ] **Step 6: 提交纯函数**
+- [x] **Step 6: 提交纯函数**
 
 ```bash
 git add src-ui/src/todo/todoGridLayout.ts src-ui/src/todo/todoGridLayoutModel.test.ts
