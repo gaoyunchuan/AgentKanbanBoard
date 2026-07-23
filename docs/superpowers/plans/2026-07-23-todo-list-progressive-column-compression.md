@@ -838,7 +838,7 @@ git add \
 git commit -m "docs: 记录 todo 分阶段列宽验收"
 ```
 
-- [ ] **Step 7: 提交后复验**
+- [x] **Step 7: 提交后复验**
 
 重新运行：
 
