@@ -625,7 +625,7 @@ git commit -m "feat: 动态捕获 todo 列宽压缩基线"
 - Consumes: `useTodoGridLayout(containerRef)` 和 hook 写入的 CSS 自定义属性、`data-*` 状态。
 - Produces: 表头与所有任务行共享的运行时五列布局。
 
-- [ ] **Step 1: 改写 CSS 契约失败测试**
+- [x] **Step 1: 改写 CSS 契约失败测试**
 
 把旧 `520px/320px` 用例替换为：
 
@@ -661,7 +661,7 @@ test("不再使用固定容器断点压缩前两列", () => {
 expect(screen.getByText("任务").closest("[data-todo-grid-header]")).not.toBeNull();
 ```
 
-- [ ] **Step 2: 运行接线测试并确认 RED**
+- [x] **Step 2: 运行接线测试并确认 RED**
 
 Run:
 
@@ -672,7 +672,7 @@ npm test -- --run src/todo/todoGridLayout.test.ts src/todo/TodoListView.test.tsx
 
 Expected: FAIL；CSS 仍包含旧容器查询，表头缺少 `data-todo-grid-header`。
 
-- [ ] **Step 3: 在组件安装 hook**
+- [x] **Step 3: 在组件安装 hook**
 
 在 `TodoListView.tsx`：
 
@@ -696,7 +696,7 @@ useTodoGridLayout(listContainerRef);
 >
 ```
 
-- [ ] **Step 4: 用 CSS 变量和独立隐藏状态替换固定断点**
+- [x] **Step 4: 用 CSS 变量和独立隐藏状态替换固定断点**
 
 把 `.todo-grid` 改为：
 
@@ -719,7 +719,7 @@ useTodoGridLayout(listContainerRef);
 
 删除两个旧 `@container` 块。保留 `.todo-list-container { container-type: inline-size; }`，使容器继续明确建立独立 inline-size 布局边界。
 
-- [ ] **Step 5: 运行 Todo 定向测试并确认 GREEN**
+- [x] **Step 5: 运行 Todo 定向测试并确认 GREEN**
 
 Run:
 
@@ -734,7 +734,7 @@ npm test -- --run \
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交组件与样式接线**
+- [x] **Step 6: 提交组件与样式接线**
 
 ```bash
 git add \

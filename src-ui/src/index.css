@@ -60,23 +60,18 @@
   }
 
   .todo-grid {
-    grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(64px, 96px) minmax(64px, 96px) minmax(44px, 84px);
+    grid-template-columns:
+      var(--todo-task-column-width, minmax(140px, 1fr))
+      var(--todo-thread-column-width, minmax(140px, 180px))
+      var(--todo-expected-column-width, minmax(64px, 96px))
+      var(--todo-actual-column-width, minmax(64px, 96px))
+      var(--todo-actions-column-width, minmax(44px, 84px));
   }
 
-  @container (max-width: 520px) {
-    .todo-grid {
-      grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);
-    }
-
-    .todo-grid > :nth-child(n + 3) {
-      display: none;
-    }
-  }
-
-  @container (max-width: 320px) {
-    .todo-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
+  .todo-list-container[data-todo-expected-hidden] .todo-grid > :nth-child(3),
+  .todo-list-container[data-todo-actual-hidden] .todo-grid > :nth-child(4),
+  .todo-list-container[data-todo-actions-hidden] .todo-grid > :nth-child(5) {
+    display: none;
   }
 
   .thin-scrollbar::-webkit-scrollbar {

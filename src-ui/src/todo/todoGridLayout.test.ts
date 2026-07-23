@@ -5,26 +5,27 @@ import { describe, expect, test } from "vitest";
 const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 
 describe("To Do List 列宽优先级", () => {
-  test("普通窄屏为任务和关联 Thread 保留 140px 并优先压缩其他列", () => {
+  test("运行时宽度变量统一驱动五列", () => {
     expect(css).toContain(
-      "grid-template-columns: minmax(140px, 1fr) minmax(140px, 180px) minmax(64px, 96px) minmax(64px, 96px) minmax(44px, 84px);"
+      "var(--todo-task-column-width, minmax(140px, 1fr))"
     );
+    expect(css).toContain(
+      "var(--todo-thread-column-width, minmax(140px, 180px))"
+    );
+    expect(css).toContain("var(--todo-expected-column-width, minmax(64px, 96px))");
+    expect(css).toContain("var(--todo-actual-column-width, minmax(64px, 96px))");
+    expect(css).toContain("var(--todo-actions-column-width, minmax(44px, 84px))");
   });
 
-  test("窄容器完整隐藏尾部三列并保留任务与 Thread", () => {
-    expect(css).toContain("container-type: inline-size;");
-    expect(css).toContain("@container (max-width: 520px)");
-    expect(css).toContain(
-      "grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);"
-    );
-    expect(css).toContain(".todo-grid > :nth-child(n + 3)");
+  test("三个尾列分别完整隐藏", () => {
+    expect(css).toContain("[data-todo-actions-hidden]");
+    expect(css).toContain("[data-todo-actual-hidden]");
+    expect(css).toContain("[data-todo-expected-hidden]");
     expect(css).toContain("display: none;");
   });
 
-  test("极窄容器最后才让任务与 Thread 等权收缩", () => {
-    expect(css).toContain("@container (max-width: 320px)");
-    expect(css).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);"
-    );
+  test("不再使用固定容器断点压缩前两列", () => {
+    expect(css).not.toContain("@container (max-width: 520px)");
+    expect(css).not.toContain("@container (max-width: 320px)");
   });
 });

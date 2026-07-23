@@ -38,6 +38,7 @@ import {
 } from "./todoTree";
 import type { TaskDropPlacement } from "./todoTree";
 import type { BackendTodoTask, TodoStatus, TodoTask } from "./types";
+import { useTodoGridLayout } from "./useTodoGridLayout";
 
 type DateField = "expectedEndDate" | "actualEndDate";
 type ExtensionField = "processTracking" | "resultReview";
@@ -163,6 +164,8 @@ export function TodoListView({
   const handledNavigationRequest = useRef<number>();
   const pendingNavigationId = useRef<string>();
   const navigatingFilters = useRef(false);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  useTodoGridLayout(listContainerRef);
 
   useEffect(() => {
     if (!onLoadThreadLinks) return;
@@ -369,7 +372,10 @@ export function TodoListView({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col p-3">
-      <div className="todo-list-container flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card shadow-sm">
+      <div
+        ref={listContainerRef}
+        className="todo-list-container flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card shadow-sm"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={addRootTask}>
@@ -404,7 +410,10 @@ export function TodoListView({
           </div>
         </div>
 
-        <div className="todo-grid grid border-b bg-secondary/25 px-3 py-1.5 text-[10px] font-medium text-muted-foreground">
+        <div
+          data-todo-grid-header
+          className="todo-grid grid border-b bg-secondary/25 px-3 py-1.5 text-[10px] font-medium text-muted-foreground"
+        >
           <div className="flex items-center gap-2 pl-1"><ListTodo className="h-3.5 w-3.5" />任务</div>
           <div>关联 Thread</div>
           <div className="flex items-center gap-1">预期结束日期<span className="font-normal text-muted-foreground/70">· 双击编辑</span></div>

@@ -66,6 +66,7 @@ describe("TodoListView", () => {
     render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
 
     expect(screen.getByText("关联 Thread").closest(".todo-list-container")).not.toBeNull();
+    expect(screen.getByText("任务").closest("[data-todo-grid-header]")).not.toBeNull();
   });
 
   test("完成任务时写入实际结束日期，再次点击可恢复", async () => {
