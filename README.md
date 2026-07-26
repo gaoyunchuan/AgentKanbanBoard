@@ -1,156 +1,159 @@
 # Codex Thread Kanban
 
-Codex Thread Kanban 是一个面向 Codex Desktop 用户的本地桌面看板。它把分散在不同项目里的 Codex threads 汇总到一个只读工作台中，帮助你快速看到哪些任务正在运行、哪些任务需要人工审核、哪些历史会话可以归档。
+English | [简体中文](README_zh.md)
 
-这个项目的核心价值不是替代 Codex Desktop，而是补上“多线程并行工作时的注意力管理层”：Codex Desktop 继续负责创建、执行、审批和查看 thread 详情；Codex Thread Kanban 负责同步、分组、筛选、标记、归档和跳转。
+Codex Thread Kanban is a local desktop board for Codex Desktop users. It brings Codex threads from different projects into one read-only workspace, making it easy to see which tasks are running, which ones need human review, and which historical conversations are ready to archive.
 
-本项目以 [MIT License](LICENSE) 开源。
+The project does not replace Codex Desktop. Instead, it adds an attention-management layer for people working with many threads in parallel: Codex Desktop continues to create and run threads, handle approvals, and display thread details, while Codex Thread Kanban synchronizes, groups, filters, annotates, archives, and opens them.
 
-![Codex Thread Kanban 看板截图](docs/images/app-kanban.png)
+This project is open source under the [MIT License](LICENSE).
 
-## 主要功能
+![Codex Thread Kanban board](docs/images/app-kanban.png)
 
-- **统一看板视图**：汇总本机 Codex Desktop threads，提供全部活跃、待人工审核、运行中、未分类、归档和项目视图。
-- **可靠的只读同步**：读取 Codex Desktop 本地 thread 快照与名称索引，跟随 Codex 中的 thread 名称，并自动排除 subagent thread；同步不会调用执行、审批、删除等写操作。
-- **本地状态管理**：将 thread 映射为 `untriaged`、`running`、`review_pending`、`reviewed`、`suspended`、`archived`，并在本地保留人工状态。
-- **待审核队列**：把结束运行或等待处理的 thread 聚合到待人工审核入口，适合集中检查 Codex 的输出。
-- **归档与恢复**：归档默认从活跃视图隐藏，但不删除本地数据，也不删除 Codex Desktop 里的 thread。
-- **项目归类**：根据 cwd、origin URL、路径别名等信息识别 thread 所属项目，无法识别时进入 Unknown。
-- **固定字段标注**：支持为 thread 维护 `task_type`、`module`、`sprint` 和 notes，便于后续筛选和复盘。
-- **列表 / 看板双布局**：列表适合快速扫描和批量处理，看板适合按状态跟踪队列。
-- **独立 To Do List**：提供持久化的树形任务列表，支持状态、截止日期、Markdown 扩展信息、同级拖拽排序以及快捷插入任务。
-- **Thread / Task 双向关联**：一个 thread 可以关联一个任务，一个任务可以关联多个 threads；关联支持迁移、撤销和双向定位。
-- **高效任务组织**：任务树按完成度分组，默认每页展示 200 条；关联 thread 可从任务列表直接在 Codex Desktop 中打开。
-- **自适应窄屏布局**：To Do List 根据可用宽度依次压缩或隐藏操作与日期列，优先保留任务和关联 thread 信息。
-- **快捷操作**：支持 `Cmd+1` / `Cmd+2` 切换看板与 To Do List、禅模式隐藏导航，并可从 thread 行打开 Codex、打开 VS Code 或复制 session id。
-- **评论与大列表性能**：thread 评论按需加载，列表使用虚拟化渲染，保持周期刷新链路轻量。
+## Features
 
-## 适合谁用
+- **Unified board**: Collects local Codex Desktop threads into views for all active work, review pending, running, untriaged, archived, and individual projects.
+- **Reliable read-only synchronization**: Reads local Codex Desktop thread snapshots and the thread name index, keeps names aligned with Codex, and automatically excludes subagent threads. Synchronization never executes, approves, or deletes Codex work.
+- **Local status management**: Maps threads to `untriaged`, `running`, `review_pending`, `reviewed`, `suspended`, and `archived` while preserving manual decisions locally.
+- **Review queue**: Collects completed or waiting threads in one place for focused review.
+- **Archive and restore**: Hides archived threads from active views without deleting local data or the corresponding Codex Desktop thread.
+- **Project classification**: Identifies a thread's project from its working directory, origin URL, and path aliases; unmatched threads are placed under Unknown.
+- **Structured annotations**: Adds `task_type`, `module`, `sprint`, and notes fields for filtering and retrospectives.
+- **List and board layouts**: Uses a list for fast scanning and batch processing, or a board for status-oriented tracking.
+- **Independent To Do List**: Provides a persistent tree of tasks with statuses, due dates, Markdown details, same-level drag-and-drop ordering, and keyboard-based insertion.
+- **Bidirectional Thread / Task links**: Associates one thread with one task and multiple threads with the same task, with migration, undo, and navigation in both directions.
+- **Efficient task organization**: Groups task trees by completion, displays 200 items per page by default, and opens linked threads directly in Codex Desktop.
+- **Responsive narrow-screen layout**: Gradually compresses or hides action and date columns while preserving task and linked-thread information for as long as possible.
+- **Keyboard and quick actions**: Uses `Cmd+1` / `Cmd+2` to switch between the board and To Do List, supports a navigation-free Zen mode, and can open Codex, open VS Code, or copy a session ID from a thread row.
+- **Comments and large-list performance**: Loads thread comments on demand and virtualizes long lists to keep periodic refreshes lightweight.
 
-如果你经常同时开多个 Codex Desktop 任务，这个工具可以帮助你回答几个问题：
+## Who It Is For
 
-- 现在还有哪些 thread 在跑？
-- 哪些 thread 已经结束，需要我回 Codex Desktop 审核结果？
-- 某个项目最近有哪些 Codex 工作？
-- 哪些旧 thread 已经可以从活跃视图里收起来？
-- 我能不能用 module、sprint、任务类型把 Codex 工作粗略组织起来？
-- 一个产品任务关联了哪些 Codex threads，当前整体进度如何？
+If you regularly run several Codex Desktop tasks at once, this tool helps answer questions such as:
 
-## 数据边界
+- Which threads are still running?
+- Which threads have finished and need review in Codex Desktop?
+- What Codex work has recently happened in a project?
+- Which old threads can be removed from active views?
+- Can I organize Codex work by module, sprint, or task type?
+- Which Codex threads belong to a product task, and what is its overall progress?
 
-Codex Thread Kanban 是本地优先、只读同步的 sidecar 应用。
+## Data Boundaries
 
-- Codex 数据源：默认只读 `~/.codex/state_5.sqlite` 和同目录的 thread 名称索引。
-- 看板本地库：默认写入 `~/.codex-kanban/app.db`。
-- 应用只保存自己的看板状态、人工字段、归档状态、项目识别结果、To Do 任务和 Thread / Task 关联。
-- 应用不会启动 thread、恢复 thread、审批请求、执行 shell command 或删除 Codex 数据。
-- 打开 Codex 只通过 `codex://` deep link 跳转，后续执行仍由 Codex Desktop 接管。
+Codex Thread Kanban is a local-first, read-only sidecar application.
 
-## 技术栈
+- Codex data source: reads `~/.codex/state_5.sqlite` and the thread name index in the same directory.
+- Local board database: writes to `~/.codex-kanban/app.db` by default.
+- The application stores only its own board state, manual fields, archive state, project classification, To Do tasks, and Thread / Task links.
+- It does not start or resume threads, approve requests, execute shell commands, or delete Codex data.
+- Codex is opened through `codex://` deep links; all subsequent execution remains in Codex Desktop.
 
-- 桌面壳：Tauri 2
-- 后端：Rust、rusqlite、SQLite
-- 前端：React 18、TypeScript、Vite
-- UI：Tailwind CSS、Radix UI、lucide-react
-- 测试：Vitest、Rust unit tests
-- 构建产物：macOS `.dmg`
+## Technology Stack
 
-## 本地开发
+- Desktop shell: Tauri 2
+- Backend: Rust, rusqlite, SQLite
+- Frontend: React 18, TypeScript, Vite
+- UI: Tailwind CSS, Radix UI, lucide-react
+- Testing: Vitest and Rust unit tests
+- Build artifact: macOS `.dmg`
 
-前置依赖：
+## Local Development
 
-- Node.js 22 或兼容版本
+Prerequisites:
+
+- Node.js 22 or a compatible version
 - npm
 - Rust stable
-- macOS 上构建 dmg 需要系统自带 `hdiutil`
+- The system-provided `hdiutil` when building a dmg on macOS
 
-安装前端依赖：
+Install frontend dependencies:
 
 ```bash
 npm --prefix src-ui ci
 ```
 
-只调试前端界面时，可以启动 Vite：
+Start Vite when working only on the frontend:
 
 ```bash
 npm --prefix src-ui run dev
 ```
 
-运行完整桌面应用时，使用 Tauri 开发模式。该命令会根据 Tauri 配置自动启动前端开发服务：
+Run the full desktop application in Tauri development mode. Tauri starts the frontend development server according to its configuration:
 
 ```bash
 cd src-ui
 npm exec tauri dev
 ```
 
-## 测试
+## Testing
 
-在仓库根目录执行：
+Run from the repository root:
 
 ```bash
 make test
 ```
 
-该命令会运行：
+This command runs:
 
 - `npm --prefix src-ui run test`
 - `cargo test --manifest-path src-tauri/Cargo.toml`
 
-## 本地构建
+## Local Build
 
-在仓库根目录执行：
+Run from the repository root:
 
 ```bash
 make build
 ```
 
-该命令会安装前端依赖、构建 Tauri 应用，并生成 macOS dmg 安装包。生成路径：
+The command installs frontend dependencies, builds the Tauri application, and creates a macOS dmg at:
 
 ```text
 src-tauri/target/release/bundle/dmg/
 ```
 
-也可以直接执行：
+You can also run:
 
 ```bash
 make build-dmg
 ```
 
-## GitHub 自动构建
+## GitHub Actions Build
 
-仓库包含 GitHub Actions workflow：
+The repository includes this GitHub Actions workflow:
 
 ```text
 .github/workflows/build-artifacts.yml
 ```
 
-触发方式：
+It runs when:
 
-- 推送到 `main`
-- 创建或更新 Pull Request
-- 在 GitHub Actions 页面手动执行 `Build Artifacts`
+- Changes are pushed to `main`
+- A pull request is created or updated
+- `Build Artifacts` is started manually from GitHub Actions
 
-workflow 会在 macOS runner 上运行测试，构建 dmg，并上传名为 `codex-thread-kanban-dmg` 的构建制品。
+The workflow runs tests on a macOS runner, builds the dmg, and uploads it as the `codex-thread-kanban-dmg` artifact.
 
-## 项目结构
+## Project Structure
 
 ```text
 .
-├── src-ui/        # React + TypeScript 前端
-├── src-tauri/     # Tauri / Rust 后端、本地 SQLite、deep link、同步逻辑
-├── openspec/      # 功能设计与变更规格
-├── docs/images/   # README 和文档截图
-├── Makefile       # 测试与 dmg 构建入口
+├── src-ui/        # React and TypeScript frontend
+├── src-tauri/     # Tauri and Rust backend, local SQLite, deep links, and synchronization
+├── openspec/      # Feature designs and change specifications
+├── docs/images/   # README and documentation images
+├── Makefile       # Test and dmg build entry points
 ├── LICENSE        # MIT License
-└── README.md
+├── README.md      # English documentation
+└── README_zh.md   # Simplified Chinese documentation
 ```
 
-## 许可证
+## License
 
 Copyright (c) 2026 gaoyunchuan
 
-本项目基于 [MIT License](LICENSE) 开源。你可以自由使用、复制、修改、合并、发布、分发、再许可或销售本软件的副本，但必须在软件副本或主要部分中保留原始版权声明和许可声明。
+This project is available under the [MIT License](LICENSE). You may use, copy, modify, merge, publish, distribute, sublicense, and sell copies of the software, provided that the original copyright and license notices remain in all copies or substantial portions of the software.
 
-## 当前状态
+## Project Status
 
-这是一个持续迭代中的本地桌面工具，已经具备真实 Codex thread 读取、看板展示、筛选、字段编辑、审核与挂起、归档恢复、Codex 跳转、持久化 To Do List、Thread / Task 双向关联和窄屏自适应能力。后续适合继续完善项目配置编辑、状态同步适配和打包发布。
+Codex Thread Kanban is under active development. It already supports real Codex thread synchronization, board and list views, filtering, editable metadata, review and suspension workflows, archive and restore, Codex navigation, a persistent To Do List, bidirectional Thread / Task links, and responsive narrow-screen layouts. Future work can continue to improve project configuration, synchronization compatibility, packaging, and releases.
