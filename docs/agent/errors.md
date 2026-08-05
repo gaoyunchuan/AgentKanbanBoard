@@ -26,6 +26,14 @@
 - 处理：菜单触发按钮在更新打开状态前调用 `event.stopPropagation()`；菜单外后续点击仍由 document 监听器关闭。
 - 经验：使用 document 级外部点击监听器的弹层不能只靠组件测试验收；需要真实浏览器点击触发器，确认菜单在事件完成后仍然存在并可操作。
 
+### npm ci 报 `Invalid Version`
+
+- 场景：使用 npm 11 执行 `npm --prefix src-ui ci` 或 `make build`。
+- 现象：依赖安装立即失败，仅报告 `npm error Invalid Version:`；调试日志栈位于 Arborist 的 `Node.canDedupe` / `PlaceDep`。
+- 根因：`package-lock.json` 中存在没有 `version` 的 Tauri CLI 可选平台包节点；这些包被错误记录在 CLI 的嵌套 `node_modules` 下。
+- 处理：删除残缺节点，用 `npm --prefix src-ui install --package-lock-only --ignore-scripts` 补全为顶层平台包节点；确认既有依赖版本未变化后，重新运行 `npm ci` 和 `make build`。
+- 经验：遇到没有包名的 `Invalid Version` 时，应程序化扫描锁文件的空版本节点，并在干净依赖目录中复现；不要直接升级依赖或手工猜测版本。
+
 ## Update Notes
 
 - 2026-07-04: 沉淀 Thread Kanban 间歇性消失问题的症状、定位边界和最终修复约束。
@@ -33,3 +41,4 @@
 - 2026-07-04: 压缩错误记录，只保留问题本质和可复用经验。
 - 2026-07-13: 记录 Tauri 内部拖放处理器阻止 macOS WKWebView DOM 拖放的问题与验证方式。
 - 2026-08-05: 记录 React 离散事件中菜单触发点击被新挂载 document 监听器立即关闭的问题。
+- 2026-08-05: 记录 Tauri 可选平台包残缺锁节点导致 npm 11 Arborist 报空版本错误的问题。
