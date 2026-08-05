@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS todo_tasks (
   title TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'todo'
     CHECK (status IN ('todo', 'in_progress', 'cancelled', 'completed')),
+  pinned INTEGER NOT NULL DEFAULT 0,
   start_date TEXT,
   expected_end_date TEXT,
   actual_end_date TEXT,

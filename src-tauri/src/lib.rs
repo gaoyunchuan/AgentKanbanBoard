@@ -86,6 +86,7 @@ mod tests {
             position: 0,
             title: id.to_string(),
             status,
+            pinned: false,
             start_date: None,
             expected_end_date: None,
             actual_end_date: None,
@@ -202,6 +203,7 @@ mod tests {
                 position: 0,
                 title: "根任务".to_string(),
                 status: TodoTaskStatus::InProgress,
+                pinned: false,
                 start_date: Some("2026-07-11".to_string()),
                 expected_end_date: Some("2026-07-15".to_string()),
                 actual_end_date: None,
@@ -214,6 +216,7 @@ mod tests {
                 position: 0,
                 title: "子任务".to_string(),
                 status: TodoTaskStatus::Completed,
+                pinned: false,
                 start_date: None,
                 expected_end_date: None,
                 actual_end_date: Some("2026-07-11".to_string()),
@@ -252,6 +255,7 @@ mod tests {
             position: 0,
             title: "首次创建".to_string(),
             status: TodoTaskStatus::Todo,
+            pinned: false,
             start_date: None,
             expected_end_date: None,
             actual_end_date: None,
@@ -266,6 +270,83 @@ mod tests {
         assert_eq!(second.created_at, first.created_at);
         assert_ne!(second.updated_at, first.updated_at);
         assert_eq!(second.title, "更新标题");
+    }
+
+    #[test]
+    fn repository_persists_root_pin() {
+        let repo = Repository::open_in_memory().unwrap();
+        let mut root = todo_input("root", TodoTaskStatus::Todo);
+        root.pinned = true;
+
+        let saved = repo.save_todo_tasks(&[root]).unwrap();
+
+        assert!(saved[0].pinned);
+        assert!(repo.list_todo_tasks().unwrap()[0].pinned);
+    }
+
+    #[test]
+    fn repository_transfers_child_pin_to_new_root() {
+        let repo = Repository::open_in_memory().unwrap();
+        let root = todo_input("root", TodoTaskStatus::Todo);
+        let mut moving = todo_input("moving", TodoTaskStatus::Todo);
+        moving.parent_id = Some("root".to_string());
+        moving.pinned = true;
+
+        let saved = repo.save_todo_tasks(&[root, moving]).unwrap();
+
+        assert!(saved.iter().find(|task| task.id == "root").unwrap().pinned);
+        assert!(
+            !saved
+                .iter()
+                .find(|task| task.id == "moving")
+                .unwrap()
+                .pinned
+        );
+    }
+
+    #[test]
+    fn repository_migrates_existing_todo_tasks_with_unpinned_default() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "codex-kanban-todo-pin-migration-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp_path);
+        {
+            let connection = rusqlite::Connection::open(&temp_path).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE todo_tasks (
+                       id TEXT PRIMARY KEY,
+                       parent_id TEXT,
+                       position INTEGER NOT NULL DEFAULT 0,
+                       title TEXT NOT NULL,
+                       status TEXT NOT NULL DEFAULT 'todo',
+                       start_date TEXT,
+                       expected_end_date TEXT,
+                       actual_end_date TEXT,
+                       process_tracking TEXT NOT NULL DEFAULT '',
+                       result_review TEXT NOT NULL DEFAULT '',
+                       created_at TEXT NOT NULL,
+                       updated_at TEXT NOT NULL
+                     );
+                     INSERT INTO todo_tasks (
+                       id, parent_id, position, title, status, process_tracking,
+                       result_review, created_at, updated_at
+                     ) VALUES (
+                       'legacy', NULL, 0, '历史任务', 'todo', '', '',
+                       '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'
+                     );",
+                )
+                .unwrap();
+        }
+
+        let repo = Repository::open_path(&temp_path).unwrap();
+        let tasks = repo.list_todo_tasks().unwrap();
+
+        assert_eq!(tasks.len(), 1);
+        assert!(!tasks[0].pinned);
+        drop(repo);
+        std::fs::remove_file(temp_path).unwrap();
     }
 
     #[test]

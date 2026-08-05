@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::domain::{
@@ -113,7 +114,7 @@ impl Repository {
 
     pub fn list_todo_tasks(&self) -> rusqlite::Result<Vec<TodoTaskRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, parent_id, position, title, status, start_date, expected_end_date,
+            "SELECT id, parent_id, position, title, status, pinned, start_date, expected_end_date,
                     actual_end_date, process_tracking, result_review, created_at, updated_at
              FROM todo_tasks
              ORDER BY position ASC, created_at ASC, id ASC",
@@ -126,13 +127,14 @@ impl Repository {
                 position: row.get(2)?,
                 title: row.get(3)?,
                 status: TodoTaskStatus::parse(&status).unwrap_or(TodoTaskStatus::Todo),
-                start_date: row.get(5)?,
-                expected_end_date: row.get(6)?,
-                actual_end_date: row.get(7)?,
-                process_tracking: row.get(8)?,
-                result_review: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                pinned: int_to_bool(row.get(5)?),
+                start_date: row.get(6)?,
+                expected_end_date: row.get(7)?,
+                actual_end_date: row.get(8)?,
+                process_tracking: row.get(9)?,
+                result_review: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?;
         rows.collect()
@@ -142,6 +144,8 @@ impl Repository {
         &self,
         tasks: &[TodoTaskInput],
     ) -> rusqlite::Result<Vec<TodoTaskRecord>> {
+        // 保存边界再次归一化，保证旧客户端或异常调用也只能把置顶状态落在当前 root 上。
+        let pinned_root_ids = normalized_pinned_root_ids(tasks);
         let transaction = self.connection.unchecked_transaction()?;
         let existing_ids = {
             let mut statement = transaction.prepare("SELECT id FROM todo_tasks")?;
@@ -157,14 +161,15 @@ impl Repository {
         for task in tasks {
             transaction.execute(
                 "INSERT INTO todo_tasks (
-                   id, parent_id, position, title, status, start_date, expected_end_date,
+                   id, parent_id, position, title, status, pinned, start_date, expected_end_date,
                    actual_end_date, process_tracking, result_review, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
                  ON CONFLICT(id) DO UPDATE SET
                    parent_id = excluded.parent_id,
                    position = excluded.position,
                    title = excluded.title,
                    status = excluded.status,
+                   pinned = excluded.pinned,
                    start_date = excluded.start_date,
                    expected_end_date = excluded.expected_end_date,
                    actual_end_date = excluded.actual_end_date,
@@ -177,6 +182,7 @@ impl Repository {
                     task.position,
                     task.title,
                     task.status.as_str(),
+                    bool_to_i64(pinned_root_ids.contains(task.id.as_str())),
                     task.start_date,
                     task.expected_end_date,
                     task.actual_end_date,
@@ -975,6 +981,17 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
         )?;
     }
 
+    let todo_columns = connection
+        .prepare("PRAGMA table_info(todo_tasks)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !todo_columns.iter().any(|column| column == "pinned") {
+        connection.execute(
+            "ALTER TABLE todo_tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+
     let codex_threads_sql: String = connection.query_row(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'codex_threads'",
         [],
@@ -1063,6 +1080,38 @@ fn bool_to_i64(value: bool) -> i64 {
         1
     } else {
         0
+    }
+}
+
+fn normalized_pinned_root_ids(tasks: &[TodoTaskInput]) -> HashSet<String> {
+    let tasks_by_id = tasks
+        .iter()
+        .map(|task| (task.id.as_str(), task))
+        .collect::<HashMap<_, _>>();
+
+    tasks
+        .iter()
+        .filter(|task| task.pinned)
+        .filter_map(|task| todo_root_id(&tasks_by_id, task.id.as_str()))
+        .map(str::to_string)
+        .collect()
+}
+
+fn todo_root_id<'a>(
+    tasks_by_id: &HashMap<&'a str, &'a TodoTaskInput>,
+    task_id: &str,
+) -> Option<&'a str> {
+    let mut current = *tasks_by_id.get(task_id)?;
+    let mut visited = HashSet::new();
+    loop {
+        // 快照是完整任务树；父节点缺失或成环时清除异常置顶，避免落库后出现非 root 置顶。
+        if !visited.insert(current.id.as_str()) {
+            return None;
+        }
+        let Some(parent_id) = current.parent_id.as_deref() else {
+            return Some(current.id.as_str());
+        };
+        current = *tasks_by_id.get(parent_id)?;
     }
 }
 
