@@ -204,6 +204,20 @@ describe("TodoListView", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  test("设置按钮打开的菜单不会被同一次冒泡触发的外部处理关闭", () => {
+    const closeAfterOpeningClick = () => fireEvent.click(document.body);
+    document.addEventListener("click", closeAfterOpeningClick, { once: true });
+    try {
+      render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "设置 父任务" }));
+
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+    } finally {
+      document.removeEventListener("click", closeAfterOpeningClick);
+    }
+  });
+
   test("双击日期单元格后原位进入日期编辑", async () => {
     const user = userEvent.setup();
     render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);

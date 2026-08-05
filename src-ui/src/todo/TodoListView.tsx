@@ -617,7 +617,15 @@ export function TodoListView({
                     <button className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-60 transition-opacity hover:bg-secondary hover:text-primary group-hover:opacity-100" onClick={() => addChildTask(task.id)} aria-label={`为 ${task.title || "未命名任务"} 添加子任务`}>
                       <Plus className="h-3 w-3" />子任务
                     </button>
-                    <button className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground" onClick={() => setStatusMenuId((current) => current === task.id ? undefined : task.id)} aria-label={`设置 ${task.title || "未命名任务"}`}>
+                    <button
+                      className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      onClick={(event) => {
+                        // 真实浏览器会在离散事件内挂载外部监听器；阻止本次点击把刚打开的菜单立即关闭。
+                        event.stopPropagation();
+                        setStatusMenuId((current) => current === task.id ? undefined : task.id);
+                      }}
+                      aria-label={`设置 ${task.title || "未命名任务"}`}
+                    >
                       <MoreVertical className="h-3.5 w-3.5" />
                     </button>
                   </div>

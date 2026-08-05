@@ -45,7 +45,7 @@
 - Produces: `TodoTaskInput.pinned: bool`、`TodoTaskRecord.pinned: bool`。
 - Produces: `normalized_pinned_root_ids(tasks: &[TodoTaskInput]) -> HashSet<String>`，供快照 upsert 只写入有效 root 置顶状态。
 
-- [ ] **Step 1：扩展测试夹具并写入失败测试**
+- [x] **Step 1：扩展测试夹具并写入失败测试**
 
 在 `todo_input` 中补充 `pinned: false`，再增加两个测试：一个保存置顶 root 后重新加载仍为置顶；另一个把 `pinned: true` 的任务放到新 root 下，断言保存结果中子任务为 `false`、新 root 为 `true`。
 
@@ -70,13 +70,13 @@ fn repository_persists_root_pin_and_transfers_child_pin_to_new_root() {
 
 为迁移单独创建临时 SQLite 文件，先用旧版 `todo_tasks` 结构写入一条任务，再用 `Repository::open_path` 打开，断言任务可以加载且 `pinned == false`；测试结束删除该明确临时文件。
 
-- [ ] **Step 2：运行后端目标测试并确认失败**
+- [x] **Step 2：运行后端目标测试并确认失败**
 
 Run: `cd src-tauri && cargo test repository_persists_root_pin_and_transfers_child_pin_to_new_root -- --nocapture && cargo test repository_migrates_existing_todo_tasks_with_unpinned_default -- --nocapture`
 
 Expected: FAIL，错误指向 `TodoTaskInput`/`TodoTaskRecord` 尚无 `pinned` 或旧表尚无迁移列。
 
-- [ ] **Step 3：增加字段和安全迁移**
+- [x] **Step 3：增加字段和安全迁移**
 
 在 SQL 与 Rust 模型中增加字段：
 
@@ -93,7 +93,7 @@ connection.execute(
 )?;
 ```
 
-- [ ] **Step 4：实现后端置顶归一化并接入 upsert**
+- [x] **Step 4：实现后端置顶归一化并接入 upsert**
 
 构建 `id -> task` 索引，对每个 `pinned == true` 的输入沿 `parent_id` 向上查找 `parent_id == None` 的 root；缺失父节点或出现环时不产生置顶 root。保存每条任务时只在其 id 属于归一化 root 集合时写入 `1`：
 
@@ -107,7 +107,7 @@ for task in tasks {
 
 同步更新 SELECT、INSERT 和 `ON CONFLICT DO UPDATE` 的字段序号与 `TodoTaskRecord` 映射。
 
-- [ ] **Step 5：运行 Rust 测试和格式检查**
+- [x] **Step 5：运行 Rust 测试和格式检查**
 
 Run: `cd src-tauri && cargo test`
 
@@ -117,7 +117,7 @@ Run: `cd src-tauri && cargo fmt --check`
 
 Expected: PASS。
 
-- [ ] **Step 6：提交后端变更**
+- [x] **Step 6：提交后端变更**
 
 ```bash
 git add src-tauri/db/001_init.sql src-tauri/src/domain.rs src-tauri/src/repository.rs src-tauri/src/lib.rs
@@ -137,7 +137,7 @@ git commit -m "feat: 持久化 todo root 置顶状态"
 - Produces: `TodoTask.pinned: boolean`、`BackendTodoTask.pinned: boolean`。
 - Preserves: `flattenTodoTreeByCompletion(tasks, collapsedIds)` 的现有签名。
 
-- [ ] **Step 1：给测试任务补充默认字段并写入失败测试**
+- [x] **Step 1：给测试任务补充默认字段并写入失败测试**
 
 测试工厂默认返回 `pinned: false`。增加以下覆盖：
 
@@ -166,13 +166,13 @@ test("置顶任务缩进后把置顶状态转移到新 root", () => {
 
 另加跨层级 `moveTaskRelative` 的转移断言，证明拖放路径使用同一归一化规则。
 
-- [ ] **Step 2：运行树测试并确认失败**
+- [x] **Step 2：运行树测试并确认失败**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoTree.test.ts`
 
 Expected: FAIL，`normalizeTodoPins` 未导出，置顶任务尚未优先排序。
 
-- [ ] **Step 3：实现纯函数归一化**
+- [x] **Step 3：实现纯函数归一化**
 
 `normalizeTodoPins` 先建立任务索引，再收集所有置顶任务当前所属的有效 root id，最后只让这些 root 保持 `pinned: true`：
 
@@ -194,7 +194,7 @@ export function normalizeTodoPins(tasks: TodoTask[]): TodoTask[] {
 
 `findTodoRootId` 使用 visited 集合阻止父链环；父节点缺失时返回 `undefined`，不保留无效置顶。
 
-- [ ] **Step 4：让置顶 root 树优先于完成度排序**
+- [x] **Step 4：让置顶 root 树优先于完成度排序**
 
 在 `flattenTodoTreeByCompletion` 的 block 排序器中先比较 root 的 `pinned`。两个置顶 root 直接按原 block index 排序；两个未置顶 root 再沿用 `completionRank` 和 index：
 
@@ -205,7 +205,7 @@ if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
 if (leftPinned && rightPinned) return left.index - right.index;
 ```
 
-- [ ] **Step 5：运行树测试与 TypeScript 构建**
+- [x] **Step 5：运行树测试与 TypeScript 构建**
 
 Run: `cd src-ui && npm test -- --run src/todo/todoTree.test.ts`
 
@@ -215,7 +215,7 @@ Run: `cd src-ui && npm run build`
 
 Expected: 首次可能列出尚未补充 `pinned` 的 UI 夹具位置；逐一补为明确的 `false`，直到 PASS，不将字段改为可选以掩盖遗漏。
 
-- [ ] **Step 6：提交树模型变更**
+- [x] **Step 6：提交树模型变更**
 
 ```bash
 git add src-ui/src/todo/types.ts src-ui/src/todo/todoTree.ts src-ui/src/todo/todoTree.test.ts
@@ -233,7 +233,7 @@ git commit -m "feat: 归一化 todo 置顶任务树"
 - Consumes: `TodoTask.pinned: boolean`。
 - Produces: root 菜单“置顶/取消置顶”、`data-pinned="true"` 主任务行和“已置顶 <任务名>”图标可访问名称。
 
-- [ ] **Step 1：补齐 UI 夹具并写入失败交互测试**
+- [x] **Step 1：补齐 UI 夹具并写入失败交互测试**
 
 `initialTasks` 和独立后端夹具增加 `pinned`。新增测试：
 
@@ -257,13 +257,13 @@ test("root 可置顶且子任务菜单不提供置顶操作", async () => {
 
 再断言置顶 root 行具有 `data-pinned="true"` 和 `bg-emerald-50`，子任务行没有；表头仍为现有五个 grid 子元素且不存在“置顶”列标题。
 
-- [ ] **Step 2：运行 UI 目标测试并确认失败**
+- [x] **Step 2：运行 UI 目标测试并确认失败**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
 
 Expected: FAIL，菜单项、图标和浅绿色背景尚不存在。
 
-- [ ] **Step 3：在统一入口接入归一化和字段映射**
+- [x] **Step 3：在统一入口接入归一化和字段映射**
 
 让 `applyTasks` 先归一化 position，再调用 `normalizeTodoPins`，保证所有层级变化立即转移置顶；`mapBackendTodoTask` 和 `mapTodoTaskInput` 显式映射 `pinned`，`newTask` 与 demo 数据默认 `false`：
 
@@ -271,7 +271,7 @@ Expected: FAIL，菜单项、图标和浅绿色背景尚不存在。
 const normalized = normalizeTodoPins(normalizeTodoPositions(next));
 ```
 
-- [ ] **Step 4：扩展现有菜单而不新增列**
+- [x] **Step 4：扩展现有菜单而不新增列**
 
 从 `lucide-react` 引入 `Pin`、`PinOff`。`StatusMenu` 新增可选回调 `onTogglePinned?: () => void`；仅 `depth === 0` 时传入。菜单项文案根据当前状态为“置顶”或“取消置顶”，点击后更新快照并关闭菜单。
 
@@ -285,7 +285,7 @@ const normalized = normalizeTodoPins(normalizeTodoPositions(next));
 />
 ```
 
-- [ ] **Step 5：增加整行绿色状态并保留交互反馈**
+- [x] **Step 5：增加整行绿色状态并保留交互反馈**
 
 在主任务行增加 `data-pinned`，并让置顶样式优先于普通展开背景：
 
@@ -299,7 +299,7 @@ depth === 0 && task.pinned
 
 不要把绿色类名放到包裹主行与扩展面板的外层节点，确保展开详情不染色。
 
-- [ ] **Step 6：运行 UI 测试与完整前端测试**
+- [x] **Step 6：运行 UI 测试与完整前端测试**
 
 Run: `cd src-ui && npm test -- --run src/todo/TodoListView.test.tsx`
 
@@ -313,7 +313,7 @@ Run: `cd src-ui && npm run build`
 
 Expected: PASS。
 
-- [ ] **Step 7：提交 UI 变更**
+- [x] **Step 7：提交 UI 变更**
 
 ```bash
 git add src-ui/src/todo/TodoListView.tsx src-ui/src/todo/TodoListView.test.tsx
@@ -330,13 +330,13 @@ git commit -m "feat: 添加 todo root 置顶交互"
 - Consumes: 已完成的数据库、树模型和 UI 行为。
 - Produces: 可复核的长期约束、回归范围和最终验证证据。
 
-- [ ] **Step 1：更新项目知识**
+- [x] **Step 1：更新项目知识**
 
 在 `docs/agent/coding.md` 记录：置顶状态只属于 root；层级变化必须转移到新 root；置顶排序高于完成度；图钉不得新增表格列；只有置顶 root 主行使用绿色。
 
 在 `docs/agent/testing.md` 记录迁移、持久化、排序、层级转移、菜单权限、单图标布局、绿色主行与两档视觉验收范围，并添加 2026-08-05 更新说明。
 
-- [ ] **Step 2：运行全量确定性验证**
+- [x] **Step 2：运行全量确定性验证**
 
 Run: `cd src-ui && npm test -- --run`
 
@@ -358,7 +358,7 @@ Run: `git diff --check`
 
 Expected: 无输出，退出码为 0。
 
-- [ ] **Step 3：执行浏览器视觉验收**
+- [x] **Step 3：执行浏览器视觉验收**
 
 启动普通 Vite demo，在 1440 × 1024 与 1024 × 768 分别检查：
 
@@ -367,7 +367,7 @@ Expected: 无输出，退出码为 0。
 - 浅绿色覆盖置顶 root 的完整主任务行，子任务和展开详情保持原背景。
 - 页面无横向溢出，控制台错误为 0。
 
-- [ ] **Step 4：提交知识文档并检查工作树**
+- [x] **Step 4：提交知识文档并检查工作树**
 
 ```bash
 git add docs/agent/coding.md docs/agent/testing.md
