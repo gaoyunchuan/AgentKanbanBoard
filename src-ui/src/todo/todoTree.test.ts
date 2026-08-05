@@ -6,6 +6,7 @@ import {
   indentTask,
   insertSiblingTask,
   moveTaskRelative,
+  normalizeTodoPins,
   outdentTask,
   todoTreeCompletion
 } from "./todoTree";
@@ -21,6 +22,7 @@ const task = (
   position,
   title,
   status: "todo",
+  pinned: false,
   processTracking: "",
   resultReview: ""
 });
@@ -53,6 +55,30 @@ describe("todo tree operations", () => {
       "partial-child",
       "complete",
       "complete-second"
+    ]);
+  });
+
+  test("置顶 root 树优先展示且置顶组保持 position", () => {
+    const tasks = [
+      { ...task("done", undefined, 0), status: "completed" as const },
+      {
+        ...task("pinned-b", undefined, 2),
+        status: "cancelled" as const,
+        pinned: true
+      },
+      {
+        ...task("pinned-a", undefined, 1),
+        status: "completed" as const,
+        pinned: true
+      },
+      task("open", undefined, 3)
+    ];
+
+    expect(flattenTodoTreeByCompletion(tasks).map(({ task }) => task.id)).toEqual([
+      "pinned-a",
+      "pinned-b",
+      "open",
+      "done"
     ]);
   });
 
@@ -89,6 +115,18 @@ describe("todo tree operations", () => {
     expect(indentTask(tasks, "done").find((item) => item.id === "done")?.parentId).toBe(
       "open"
     );
+  });
+
+  test("置顶任务缩进后把置顶状态转移到新 root", () => {
+    const tasks = [
+      { ...task("target", undefined, 0), pinned: true },
+      { ...task("moving", undefined, 1), pinned: true }
+    ];
+
+    const changed = normalizeTodoPins(indentTask(tasks, "moving"));
+
+    expect(changed.find(({ id }) => id === "target")?.pinned).toBe(true);
+    expect(changed.find(({ id }) => id === "moving")?.pinned).toBe(false);
   });
 
   test("Shift+Tab 将任务提升到父任务之后", () => {
@@ -173,6 +211,21 @@ describe("todo tree operations", () => {
       position: 0
     });
     expect(changed.find((item) => item.id === "child")?.position).toBe(1);
+  });
+
+  test("置顶任务跨层级移动后把置顶状态转移到目标 root", () => {
+    const tasks = [
+      task("target", undefined, 0),
+      task("target-child", "target", 0),
+      { ...task("moving", undefined, 1), pinned: true }
+    ];
+
+    const changed = normalizeTodoPins(
+      moveTaskRelative(tasks, "moving", "target-child", "before")
+    );
+
+    expect(changed.find(({ id }) => id === "target")?.pinned).toBe(true);
+    expect(changed.find(({ id }) => id === "moving")?.pinned).toBe(false);
   });
 
   test("中部落点成为目标的最后一个子任务，并阻止移动到自身后代", () => {

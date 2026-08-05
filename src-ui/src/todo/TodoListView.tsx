@@ -105,6 +105,7 @@ const emptyTask = (id: string, parentId: string | undefined, position: number): 
   position,
   title: "",
   status: "todo",
+  pinned: false,
   processTracking: "",
   resultReview: ""
 });
@@ -963,6 +964,7 @@ export function mapBackendTodoTask(task: BackendTodoTask): TodoTask {
     position: task.position,
     title: task.title,
     status: task.status,
+    pinned: task.pinned,
     startDate: task.start_date ?? undefined,
     expectedEndDate: task.expected_end_date ?? undefined,
     actualEndDate: task.actual_end_date ?? undefined,
@@ -979,6 +981,7 @@ function mapTodoTaskInput(task: TodoTask) {
     position: task.position,
     title: task.title.trim() || "未命名任务",
     status: task.status,
+    pinned: task.pinned,
     start_date: task.startDate ?? null,
     expected_end_date: task.expectedEndDate ?? null,
     actual_end_date: task.actualEndDate ?? null,

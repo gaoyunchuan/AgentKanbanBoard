@@ -25,6 +25,34 @@ export function normalizeTodoPositions(tasks: TodoTask[]): TodoTask[] {
   return tasks.map((task) => ({ ...task, position: positions.get(task.id) ?? task.position }));
 }
 
+export function normalizeTodoPins(tasks: TodoTask[]): TodoTask[] {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const pinnedRootIds = new Set<string>();
+  for (const task of tasks) {
+    if (!task.pinned) continue;
+    const rootId = findPinnedRootId(tasksById, task.id);
+    if (rootId) pinnedRootIds.add(rootId);
+  }
+
+  // 置顶表达的是整棵顶层任务树；层级变化后必须把状态转移到新 root，子任务自身不能保留置顶。
+  return tasks.map((task) => ({
+    ...task,
+    pinned: !task.parentId && pinnedRootIds.has(task.id)
+  }));
+}
+
+function findPinnedRootId(tasksById: Map<string, TodoTask>, taskId: string) {
+  let current = tasksById.get(taskId);
+  const visited = new Set<string>();
+  while (current) {
+    if (visited.has(current.id)) return undefined;
+    visited.add(current.id);
+    if (!current.parentId) return current.id;
+    current = tasksById.get(current.parentId);
+  }
+  return undefined;
+}
+
 export function flattenTodoTree(tasks: TodoTask[], collapsedIds: Set<string> = new Set()): FlatTodoTask[] {
   const normalized = normalizeTodoPositions(tasks);
   const knownIds = new Set(normalized.map((task) => task.id));
@@ -125,6 +153,10 @@ export function flattenTodoTreeByCompletion(
   return blocks
     .map((items, index) => ({ items, index }))
     .sort((left, right) => {
+      const leftPinned = Boolean(left.items[0]?.task.pinned);
+      const rightPinned = Boolean(right.items[0]?.task.pinned);
+      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+      if (leftPinned && rightPinned) return left.index - right.index;
       const leftRoot = left.items[0]?.task.id ?? "";
       const rightRoot = right.items[0]?.task.id ?? "";
       return (

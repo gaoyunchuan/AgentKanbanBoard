@@ -12,6 +12,7 @@ const initialTasks: TodoTask[] = [
     position: 0,
     title: "父任务",
     status: "todo",
+    pinned: false,
     expectedEndDate: "2026-07-15",
     processTracking: "  普通记录  \n\n[排查记录](https://example.com/trace)\n保留内容",
     resultReview: ""
@@ -22,6 +23,7 @@ const initialTasks: TodoTask[] = [
     position: 0,
     title: "子任务",
     status: "in_progress",
+    pinned: false,
     processTracking: "",
     resultReview: ""
   }
@@ -147,6 +149,7 @@ describe("TodoListView", () => {
       position: 0,
       title: "后端任务",
       status: "todo",
+      pinned: true,
       start_date: "2026-07-11",
       expected_end_date: null,
       actual_end_date: null,
@@ -157,6 +160,7 @@ describe("TodoListView", () => {
     };
     const mapped = mapBackendTodoTask(backendTask);
     expect(mapped.createdAt).toBe("2026-07-13T12:00:00");
+    expect(mapped.pinned).toBe(true);
 
     const user = userEvent.setup();
     render(<TodoListView initialTasks={[mapped]} persistTasks={vi.fn()} />);
@@ -196,6 +200,7 @@ describe("TodoListView", () => {
     expect(created).toHaveLength(4);
     expect(created.every((task) => task.expectedEndDate === "2027-01-01")).toBe(true);
     expect(created.every((task) => task.createdAt?.startsWith("2026-12-31"))).toBe(true);
+    expect(created.every((task) => task.pinned === false)).toBe(true);
   });
 
   test("Enter 不创建任务，Cmd+Enter 向后创建，Cmd+Shift+Enter 向前创建", async () => {

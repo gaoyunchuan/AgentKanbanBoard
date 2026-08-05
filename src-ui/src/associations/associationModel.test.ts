@@ -19,6 +19,7 @@ const task = (
   position,
   title: id,
   status,
+  pinned: false,
   processTracking: "",
   resultReview: ""
 });

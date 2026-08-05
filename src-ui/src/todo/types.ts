@@ -6,6 +6,7 @@ export type TodoTask = {
   position: number;
   title: string;
   status: TodoStatus;
+  pinned: boolean;
   startDate?: string;
   expectedEndDate?: string;
   actualEndDate?: string;
@@ -20,6 +21,7 @@ export type BackendTodoTask = {
   position: number;
   title: string;
   status: TodoStatus;
+  pinned: boolean;
   start_date?: string | null;
   expected_end_date?: string | null;
   actual_end_date?: string | null;
