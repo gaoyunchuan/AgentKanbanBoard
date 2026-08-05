@@ -13,6 +13,8 @@ import {
   ListTodo,
   Minus,
   MoreVertical,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Trash2,
@@ -31,6 +33,7 @@ import {
   indentTask,
   insertSiblingTask,
   moveTaskRelative,
+  normalizeTodoPins,
   normalizeTodoPositions,
   outdentTask,
   removeTaskTree,
@@ -143,7 +146,9 @@ export function TodoListView({
   onOpenThread,
   onNavigationError
 }: Props) {
-  const [tasks, setTasks] = useState<TodoTask[]>(initialTasks ?? []);
+  const [tasks, setTasks] = useState<TodoTask[]>(() =>
+    normalizeTodoPins(initialTasks ?? [])
+  );
   const [tasksReady, setTasksReady] = useState(initialTasks !== undefined);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | TodoStatus>("all");
@@ -296,7 +301,8 @@ export function TodoListView({
   };
 
   const applyTasks = (next: TodoTask[], options?: { focusId?: string; persist?: boolean }) => {
-    const normalized = normalizeTodoPositions(next);
+    // 所有交互共用这一入口，避免缩进或跨层级移动后把置顶状态遗留在子任务上。
+    const normalized = normalizeTodoPins(normalizeTodoPositions(next));
     setTasks(normalized);
     onTasksChange?.(normalized);
     if (options?.focusId) {
@@ -348,6 +354,12 @@ export function TodoListView({
       status,
       actualEndDate: status === "completed" ? task.actualEndDate ?? today() : undefined
     });
+    setStatusMenuId(undefined);
+  };
+
+  const togglePinned = (task: TodoTask) => {
+    if (task.parentId) return;
+    updateTask(task.id, { pinned: !task.pinned });
     setStatusMenuId(undefined);
   };
 
@@ -437,10 +449,15 @@ export function TodoListView({
                 <div
                   data-task-row
                   data-depth={depth}
+                  data-pinned={depth === 0 && task.pinned ? "true" : undefined}
                   data-drop-placement={dropTarget?.taskId === task.id ? dropTarget.placement : undefined}
                   className={cn(
                     "todo-grid group relative grid min-h-9 items-center border-b px-3 transition-colors",
-                    expandedId === task.id ? "bg-accent/55" : "hover:bg-accent/35",
+                    depth === 0 && task.pinned
+                      ? "bg-emerald-50 hover:bg-emerald-100/80 dark:bg-emerald-950/35 dark:hover:bg-emerald-950/50"
+                      : expandedId === task.id
+                        ? "bg-accent/55"
+                        : "hover:bg-accent/35",
                     draggedId && draggedId !== task.id && "hover:bg-primary/5",
                     dropTarget?.taskId === task.id && dropTarget.placement === "before" && "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-primary",
                     dropTarget?.taskId === task.id && dropTarget.placement === "after" && "after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-0.5 after:bg-primary"
@@ -523,6 +540,13 @@ export function TodoListView({
                     >
                       {expandedId === task.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     </button>
+                    {depth === 0 && task.pinned && (
+                      <Pin
+                        role="img"
+                        aria-label={`已置顶 ${task.title || "未命名任务"}`}
+                        className="mr-1 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-300"
+                      />
+                    )}
                     <div className="relative mr-2">
                       <button
                         aria-label={`${task.status === "completed" ? "恢复" : "完成"} ${task.title || "未命名任务"}`}
@@ -543,7 +567,7 @@ export function TodoListView({
                         <StatusIcon status={task.status} />
                       </button>
                       {statusMenuId === task.id && (
-                        <StatusMenu task={task} onSelect={(status) => setStatus(task, status)} onDelete={() => deleteTask(task)} onClose={() => setStatusMenuId(undefined)} />
+                        <StatusMenu task={task} onSelect={(status) => setStatus(task, status)} onTogglePinned={depth === 0 ? () => togglePinned(task) : undefined} onDelete={() => deleteTask(task)} onClose={() => setStatusMenuId(undefined)} />
                       )}
                     </div>
                     <input
@@ -770,9 +794,10 @@ function StatusIcon({ status }: { status: TodoStatus }) {
   return <Circle className="h-5 w-5" strokeWidth={1.8} />;
 }
 
-function StatusMenu({ task, onSelect, onDelete, onClose }: {
+function StatusMenu({ task, onSelect, onTogglePinned, onDelete, onClose }: {
   task: TodoTask;
   onSelect: (status: TodoStatus) => void;
+  onTogglePinned?: () => void;
   onDelete?: () => void;
   onClose: () => void;
 }) {
@@ -793,6 +818,15 @@ function StatusMenu({ task, onSelect, onDelete, onClose }: {
           <StatusIcon status={status} />{statusLabels[status]}
         </button>
       ))}
+      {onTogglePinned && (
+        <>
+          <div className="my-1 border-t" />
+          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover:bg-accent" onClick={onTogglePinned} role="menuitem">
+            {task.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+            {task.pinned ? "取消置顶" : "置顶"}
+          </button>
+        </>
+      )}
       {onDelete && (
         <>
           <div className="my-1 border-t" />

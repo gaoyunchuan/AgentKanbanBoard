@@ -98,6 +98,94 @@ describe("TodoListView", () => {
     expect(screen.getByRole("menu")).toHaveClass("bg-card");
   });
 
+  test("root 可从现有菜单置顶并显示紧凑图钉和浅绿色整行", async () => {
+    const user = userEvent.setup();
+    const persistTasks = vi.fn().mockResolvedValue(undefined);
+    render(<TodoListView initialTasks={initialTasks} persistTasks={persistTasks} />);
+
+    await user.click(screen.getByRole("button", { name: "设置 父任务" }));
+    await user.click(screen.getByRole("menuitem", { name: "置顶" }));
+
+    const rootRow = screen.getByDisplayValue("父任务").closest("[data-task-row]");
+    const childRow = screen.getByDisplayValue("子任务").closest("[data-task-row]");
+    expect(rootRow).toHaveAttribute("data-pinned", "true");
+    expect(rootRow).toHaveClass("bg-emerald-50");
+    expect(childRow).not.toHaveAttribute("data-pinned", "true");
+    expect(childRow).not.toHaveClass("bg-emerald-50");
+    expect(screen.getByRole("img", { name: "已置顶 父任务" })).toBeInTheDocument();
+
+    const header = screen.getByText("任务").closest("[data-todo-grid-header]");
+    expect(header?.children).toHaveLength(5);
+    expect(within(header as HTMLElement).queryByText("置顶")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(persistTasks).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: "root", pinned: true })])
+      )
+    );
+
+    await user.click(screen.getByRole("button", { name: "展开 父任务" }));
+    expect(screen.getByText("过程跟踪").closest(".grid")).not.toHaveClass("bg-emerald-50");
+  });
+
+  test("已置顶 root 可从现有菜单取消置顶", async () => {
+    const user = userEvent.setup();
+    const persistTasks = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TodoListView
+        initialTasks={[{ ...initialTasks[0], pinned: true }, initialTasks[1]]}
+        persistTasks={persistTasks}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "设置 父任务" }));
+    await user.click(screen.getByRole("menuitem", { name: "取消置顶" }));
+
+    expect(screen.queryByRole("img", { name: "已置顶 父任务" })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(persistTasks).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: "root", pinned: false })])
+      )
+    );
+  });
+
+  test("子任务菜单不提供置顶操作", async () => {
+    const user = userEvent.setup();
+    render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "设置 子任务" }));
+
+    expect(screen.queryByRole("menuitem", { name: "置顶" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "取消置顶" })).not.toBeInTheDocument();
+  });
+
+  test("置顶 root 缩进后持久化快照只保留新 root 置顶", async () => {
+    const user = userEvent.setup();
+    const persistTasks = vi.fn().mockResolvedValue(undefined);
+    const pinnedRoots: TodoTask[] = [
+      { ...initialTasks[0], id: "target", title: "目标 root", pinned: true },
+      {
+        ...initialTasks[0],
+        id: "moving",
+        title: "待缩进 root",
+        position: 1,
+        pinned: true
+      }
+    ];
+    render(<TodoListView initialTasks={pinnedRoots} persistTasks={persistTasks} />);
+
+    screen.getByDisplayValue("待缩进 root").focus();
+    await user.keyboard("{Tab}");
+
+    await waitFor(() => {
+      const latest = persistTasks.mock.calls[persistTasks.mock.calls.length - 1]?.[0] as TodoTask[];
+      expect(latest.find((task) => task.id === "target")).toMatchObject({ pinned: true });
+      expect(latest.find((task) => task.id === "moving")).toMatchObject({
+        parentId: "target",
+        pinned: false
+      });
+    });
+  });
+
   test("拖拽手柄默认可见", () => {
     render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
 
