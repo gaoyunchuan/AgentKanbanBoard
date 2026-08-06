@@ -11,6 +11,7 @@ export type TodoTask = {
   expectedEndDate?: string;
   actualEndDate?: string;
   createdAt?: string;
+  updatedAt?: string;
   processTracking: string;
   resultReview: string;
 };

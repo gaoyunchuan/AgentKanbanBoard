@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { BoardStatus, ThreadItem } from "@/types";
 import type { ThreadTaskLink } from "@/associations/types";
 import type { BackendTodoTask, TodoTask } from "./types";
-import { mapBackendTodoTask, TodoListView } from "./TodoListView";
+import { mapBackendTodoTask, mapTodoTaskInput, TodoListView } from "./TodoListView";
 
 const initialTasks: TodoTask[] = [
   {
@@ -262,7 +262,9 @@ describe("TodoListView", () => {
     };
     const mapped = mapBackendTodoTask(backendTask);
     expect(mapped.createdAt).toBe("2026-07-13T12:00:00");
+    expect(mapped.updatedAt).toBe("2026-07-13T12:00:00");
     expect(mapped.pinned).toBe(true);
+    expect(mapTodoTaskInput(mapped)).not.toHaveProperty("updated_at");
 
     const user = userEvent.setup();
     render(<TodoListView initialTasks={[mapped]} persistTasks={vi.fn()} />);

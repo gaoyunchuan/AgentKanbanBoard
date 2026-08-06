@@ -1011,12 +1011,13 @@ export function mapBackendTodoTask(task: BackendTodoTask): TodoTask {
     expectedEndDate: task.expected_end_date ?? undefined,
     actualEndDate: task.actual_end_date ?? undefined,
     createdAt: task.created_at,
+    updatedAt: task.updated_at,
     processTracking: task.process_tracking,
     resultReview: task.result_review
   };
 }
 
-function mapTodoTaskInput(task: TodoTask) {
+export function mapTodoTaskInput(task: TodoTask) {
   return {
     id: task.id,
     parent_id: task.parentId ?? null,
