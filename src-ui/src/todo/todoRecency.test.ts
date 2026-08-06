@@ -47,6 +47,23 @@ describe("todoRecency", () => {
     expect(stampChangedTodoTasks([], [baseTask()], nowIso)[0].updatedAt).toBe(nowIso);
   });
 
+  test.each([
+    ["任务", " 任务 "],
+    ["未命名任务", ""],
+    ["未命名任务", "   "]
+  ])("持久化标题等价时保留原时间：%s → %s", (beforeTitle, nextTitle) => {
+    const updatedAt = "2026-07-01T00:00:00Z";
+    const previous = [{ ...baseTask(updatedAt), title: beforeTitle }];
+
+    const stamped = stampChangedTodoTasks(
+      previous,
+      [{ ...previous[0], title: nextTitle }],
+      "2026-08-06T12:00:00Z"
+    );
+
+    expect(stamped[0].updatedAt).toBe(updatedAt);
+  });
+
   test.each<Partial<TodoTask>>([
     { parentId: "parent" },
     { position: 1 },

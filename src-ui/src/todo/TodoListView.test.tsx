@@ -1,10 +1,11 @@
-import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { BoardStatus, ThreadItem } from "@/types";
 import type { ThreadTaskLink } from "@/associations/types";
 import type { BackendTodoTask, TodoTask } from "./types";
-import { mapBackendTodoTask, mapTodoTaskInput, TodoListView } from "./TodoListView";
+import { demoTasks, mapBackendTodoTask, mapTodoTaskInput, TodoListView } from "./TodoListView";
+import { TODO_RECENCY_WINDOW_MS } from "./todoRecency";
 
 const initialTasks: TodoTask[] = [
   {
@@ -62,7 +63,10 @@ function dragOverAt(element: HTMLElement, clientY: number) {
 }
 
 describe("TodoListView", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   test("列表卡片提供独立的响应式宽度容器", () => {
     render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
@@ -345,6 +349,41 @@ describe("TodoListView", () => {
     );
   });
 
+  test("空标题任务按 Backspace 删除后将上一任务的光标折叠在末尾", async () => {
+    const user = userEvent.setup();
+    const tasks: TodoTask[] = [
+      {
+        ...initialTasks[0],
+        id: "previous",
+        parentId: undefined,
+        position: 0,
+        title: "上一任务"
+      },
+      {
+        ...initialTasks[0],
+        id: "empty",
+        parentId: undefined,
+        position: 1,
+        title: ""
+      }
+    ];
+    render(<TodoListView initialTasks={tasks} persistTasks={vi.fn()} />);
+
+    const emptyTitle = screen
+      .getAllByLabelText("任务标题")
+      .find((input) => (input as HTMLInputElement).value === "") as HTMLInputElement;
+    emptyTitle.focus();
+    await user.keyboard("{Backspace}");
+
+    const previousTitle = screen.getByDisplayValue("上一任务") as HTMLInputElement;
+    await waitFor(() => expect(previousTitle).toHaveFocus());
+    expect(previousTitle.selectionStart).toBe(4);
+    expect(previousTitle.selectionEnd).toBe(4);
+
+    await user.keyboard("{Backspace}");
+    expect(previousTitle).toHaveValue("上一任");
+  });
+
   test("展开扩展信息后可显示命名链接，并在分栏内提交 HTTP 链接", async () => {
     const user = userEvent.setup();
     const openLink = vi.fn();
@@ -603,6 +642,272 @@ describe("TodoListView", () => {
     expect(screen.getAllByLabelText("任务标题")).toHaveLength(200);
   });
 
+  test("周视图筛选过去 168 小时任务并只补齐祖先", async () => {
+    const user = userEvent.setup();
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    const recent = "2026-08-05T12:00:00Z";
+    const old = "2026-07-20T12:00:00Z";
+    const tasks: TodoTask[] = [
+      { ...initialTasks[0], id: "parent", title: "旧父任务", position: 0, updatedAt: old },
+      {
+        ...initialTasks[1],
+        id: "recent-child",
+        parentId: "parent",
+        title: "近期子任务",
+        position: 0,
+        updatedAt: recent
+      },
+      {
+        ...initialTasks[1],
+        id: "old-sibling",
+        parentId: "parent",
+        title: "旧兄弟",
+        position: 1,
+        updatedAt: old
+      },
+      {
+        ...initialTasks[0],
+        id: "recent-completed",
+        title: "近期已完成",
+        position: 1,
+        status: "completed",
+        updatedAt: recent
+      },
+      {
+        ...initialTasks[0],
+        id: "invalid",
+        title: "无效时间",
+        position: 2,
+        updatedAt: "invalid"
+      }
+    ];
+    render(
+      <TodoListView
+        initialTasks={tasks}
+        persistTasks={vi.fn()}
+        now={() => now}
+      />
+    );
+
+    const weekButton = screen.getByRole("button", { name: "周视图" });
+    expect(weekButton).toHaveAttribute("aria-pressed", "false");
+    await user.click(weekButton);
+
+    expect(weekButton).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByDisplayValue("旧父任务")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("近期子任务")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("旧兄弟")).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("近期已完成")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("无效时间")).not.toBeInTheDocument();
+    expect(screen.queryByText(recent)).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "搜索任务" }), "近期");
+    await user.selectOptions(screen.getByRole("combobox", { name: "状态筛选" }), "in_progress");
+    expect(screen.getByDisplayValue("旧父任务")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("近期子任务")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("近期已完成")).not.toBeInTheDocument();
+  });
+
+  test("周视图删除空任务后聚焦上一条可见任务", async () => {
+    const user = userEvent.setup();
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    const tasks: TodoTask[] = [
+      {
+        ...initialTasks[0],
+        id: "recent-previous",
+        position: 0,
+        title: "近期上一任务",
+        updatedAt: "2026-08-05T12:00:00Z"
+      },
+      {
+        ...initialTasks[0],
+        id: "old-hidden",
+        position: 1,
+        title: "过期隐藏任务",
+        updatedAt: "2026-07-20T12:00:00Z"
+      },
+      {
+        ...initialTasks[0],
+        id: "recent-empty",
+        position: 2,
+        title: "",
+        updatedAt: "2026-08-05T12:00:00Z"
+      }
+    ];
+    render(
+      <TodoListView
+        initialTasks={tasks}
+        persistTasks={vi.fn()}
+        now={() => now}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "周视图" }));
+    expect(screen.queryByDisplayValue("过期隐藏任务")).not.toBeInTheDocument();
+
+    const emptyTitle = screen
+      .getAllByLabelText("任务标题")
+      .find((input) => (input as HTMLInputElement).value === "") as HTMLInputElement;
+    emptyTitle.focus();
+    await user.keyboard("{Backspace}");
+
+    const previousTitle = screen.getByDisplayValue("近期上一任务") as HTMLInputElement;
+    await waitFor(() => expect(previousTitle).toHaveFocus());
+    expect(previousTitle.selectionStart).toBe(previousTitle.value.length);
+    expect(previousTitle.selectionEnd).toBe(previousTitle.value.length);
+  });
+
+  test("周视图跨页删除空任务后按可见顺序定位分页并聚焦", async () => {
+    const user = userEvent.setup();
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    const tasks: TodoTask[] = Array.from({ length: 601 }, (_, index) => [
+      ...(
+        index < 250
+          ? [{
+              ...initialTasks[0],
+              id: `old-${index}`,
+              title: `过期任务 ${index}`,
+              updatedAt: "2026-07-20T12:00:00Z"
+            }]
+          : []
+      ),
+      {
+        ...initialTasks[0],
+        id: `recent-${index}`,
+        title: index === 250 ? "" : `近期任务 ${index}`,
+        updatedAt: "2026-08-05T12:00:00Z"
+      }
+    ]).flat().map((task, position) => ({ ...task, position }));
+    render(
+      <TodoListView
+        initialTasks={tasks}
+        persistTasks={vi.fn()}
+        now={() => now}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "周视图" }));
+    await user.click(screen.getByRole("button", { name: "下一页" }));
+    const emptyTitle = screen
+      .getAllByLabelText("任务标题")
+      .find((input) => (input as HTMLInputElement).value === "") as HTMLInputElement;
+    expect(emptyTitle).toHaveValue("");
+
+    emptyTitle.focus();
+    await user.keyboard("{Backspace}");
+
+    const previousTitle = await screen.findByDisplayValue("近期任务 249");
+    await waitFor(() => expect(previousTitle).toHaveFocus());
+    expect(screen.getByText("第 2 / 3 页 · 共 600 条")).toBeInTheDocument();
+  });
+
+  test("切换周视图回到第一页，跨视图定位时关闭周视图", async () => {
+    const user = userEvent.setup();
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    const recent = "2026-08-05T12:00:00Z";
+    const tasks: TodoTask[] = Array.from({ length: 201 }, (_, index) => ({
+      ...initialTasks[0],
+      id: `week-${index}`,
+      title: index === 200 ? "旧定位任务" : `近期任务 ${index}`,
+      position: index,
+      updatedAt: index === 200 ? "2026-07-20T12:00:00Z" : recent
+    }));
+    const props = {
+      initialTasks: tasks,
+      persistTasks: vi.fn(),
+      now: () => now
+    };
+    const { rerender } = render(<TodoListView {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "下一页" }));
+    expect(screen.getByText("第 2 / 2 页 · 共 201 条")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "周视图" }));
+    expect(screen.getByText("第 1 / 1 页 · 共 200 条")).toBeInTheDocument();
+
+    rerender(
+      <TodoListView
+        {...props}
+        navigationTarget={{ taskId: "week-200", requestId: 1 }}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "周视图" })).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      )
+    );
+    expect(screen.getByDisplayValue("旧定位任务")).toBeInTheDocument();
+  });
+
+  test("当前会话编辑后会立即命中周视图", async () => {
+    const user = userEvent.setup();
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    render(
+      <TodoListView
+        initialTasks={[
+          {
+            ...initialTasks[0],
+            id: "edited",
+            title: "旧任务",
+            updatedAt: "2026-07-20T12:00:00Z"
+          }
+        ]}
+        persistTasks={vi.fn()}
+        now={() => now}
+      />
+    );
+
+    const title = screen.getByDisplayValue("旧任务");
+    await user.clear(title);
+    await user.type(title, "刚刚修改");
+    await user.click(screen.getByRole("button", { name: "周视图" }));
+
+    expect(screen.getByDisplayValue("刚刚修改")).toBeInTheDocument();
+  });
+
+  test("周视图每分钟推进滚动窗口", () => {
+    vi.useFakeTimers();
+    let now = Date.parse("2026-08-06T12:00:00Z");
+    const updatedAt = new Date(now - TODO_RECENCY_WINDOW_MS + 30_000).toISOString();
+    render(
+      <TodoListView
+        initialTasks={[
+          { ...initialTasks[0], id: "expiring", title: "即将过期", updatedAt }
+        ]}
+        persistTasks={vi.fn()}
+        now={() => now}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "周视图" }));
+    expect(screen.getByDisplayValue("即将过期")).toBeInTheDocument();
+
+    act(() => {
+      now += 60_000;
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.queryByDisplayValue("即将过期")).not.toBeInTheDocument();
+  });
+
+  test("浏览器 demo 可演示近期、过期和近期子任务的祖先", async () => {
+    const user = userEvent.setup();
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    render(
+      <TodoListView
+        initialTasks={demoTasks(now)}
+        persistTasks={vi.fn()}
+        now={() => now}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "周视图" }));
+
+    expect(screen.getByDisplayValue("西北中卫质量链路验收")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("异构镜像需要清理管控 agent 的残留状态信息")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("异构实现带外探测 from 方文奇")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("云助手标准输出放大一些")).not.toBeInTheDocument();
+  });
+
   test("顶层任务树按全部未完成、部分未完成、全部已完成展示", () => {
     const groupedTasks: TodoTask[] = [
       { ...initialTasks[0], id: "done", title: "全部已完成", parentId: undefined, position: 0, status: "completed" },
@@ -656,7 +961,14 @@ describe("TodoListView", () => {
       { ...initialTasks[0], id: "c", title: "任务 C", parentId: undefined, position: 2 }
     ];
     const persistTasks = vi.fn();
-    render(<TodoListView initialTasks={roots} persistTasks={persistTasks} />);
+    const now = Date.parse("2026-08-06T12:00:00Z");
+    render(
+      <TodoListView
+        initialTasks={roots}
+        persistTasks={persistTasks}
+        now={() => now}
+      />
+    );
 
     const rowA = screen.getByDisplayValue("任务 A").closest("[data-task-row]") as HTMLElement;
     vi.spyOn(rowA, "getBoundingClientRect").mockReturnValue({
@@ -705,7 +1017,11 @@ describe("TodoListView", () => {
       "data-depth",
       "0"
     );
-    await waitFor(() => expect(persistTasks).toHaveBeenLastCalledWith(roots));
+    await waitFor(() =>
+      expect(persistTasks).toHaveBeenLastCalledWith(
+        roots.map((task) => ({ ...task, updatedAt: "2026-08-06T12:00:00.000Z" }))
+      )
+    );
   });
 
   test("拖到任务行中线后方只调整顺序，拖动结束会清除提示", () => {

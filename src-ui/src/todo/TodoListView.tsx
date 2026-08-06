@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
@@ -41,6 +42,11 @@ import {
 } from "./todoTree";
 import type { TaskDropPlacement } from "./todoTree";
 import type { BackendTodoTask, TodoStatus, TodoTask } from "./types";
+import {
+  isTodoTaskRecentlyUpdated,
+  normalizeTodoTitleForPersistence,
+  stampChangedTodoTasks
+} from "./todoRecency";
 import { useTodoGridLayout } from "./useTodoGridLayout";
 
 type DateField = "expectedEndDate" | "actualEndDate";
@@ -64,6 +70,7 @@ type Props = {
   persistTasks?: (tasks: TodoTask[]) => Promise<void> | void;
   openLink?: (url: string) => Promise<void> | void;
   today?: () => string;
+  now?: () => number;
   onCountChange?: (count: number) => void;
   threads?: ThreadItem[];
   projectNames?: Map<string, string>;
@@ -124,11 +131,14 @@ const newTask = (
   createdAt: `${today}T00:00:00`
 });
 
+type TitleFocusMode = "select-all" | "caret-end";
+
 export function TodoListView({
   initialTasks,
   persistTasks,
   openLink,
   today = localToday,
+  now = Date.now,
   onCountChange,
   threads = [],
   projectNames = new Map(),
@@ -152,11 +162,13 @@ export function TodoListView({
   const [tasksReady, setTasksReady] = useState(initialTasks !== undefined);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | TodoStatus>("all");
+  const [weekViewEnabled, setWeekViewEnabled] = useState(false);
+  const [recencyNow, setRecencyNow] = useState(() => now());
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string>();
   const [statusMenuId, setStatusMenuId] = useState<string>();
   const [editingDate, setEditingDate] = useState<{ taskId: string; field: DateField }>();
-  const [focusId, setFocusId] = useState<string>();
+  const [titleFocus, setTitleFocus] = useState<{ taskId: string; mode: TitleFocusMode }>();
   const [draggedId, setDraggedId] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{
     taskId: string;
@@ -208,17 +220,30 @@ export function TodoListView({
   useEffect(() => onCountChange?.(tasks.length), [onCountChange, tasks.length]);
 
   useEffect(() => {
-    if (!focusId) return;
-    const input = titleRefs.current.get(focusId);
+    if (!weekViewEnabled) return;
+    setRecencyNow(now());
+    const timer = window.setInterval(() => setRecencyNow(now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [now, weekViewEnabled]);
+
+  useEffect(() => {
+    if (!titleFocus) return;
+    const input = titleRefs.current.get(titleFocus.taskId);
     if (!input) return;
     input.focus();
-    input.select();
-    if (pendingNavigationId.current === focusId) {
+    // 空任务删除后要从上一标题末尾继续退格；其他聚焦场景仍全文选中以便直接录入。
+    if (titleFocus.mode === "caret-end") {
+      const caretPosition = input.value.length;
+      input.setSelectionRange(caretPosition, caretPosition);
+    } else {
+      input.select();
+    }
+    if (pendingNavigationId.current === titleFocus.taskId) {
       input.scrollIntoView?.({ block: "center" });
       pendingNavigationId.current = undefined;
     }
-    setFocusId(undefined);
-  }, [focusId, tasks]);
+    setTitleFocus(undefined);
+  }, [titleFocus, tasks]);
 
   const flatTasks = useMemo(() => flattenTodoTreeByCompletion(tasks), [tasks]);
   const visibleIds = useMemo(() => {
@@ -232,7 +257,8 @@ export function TodoListView({
                 .join(" ")
                 .toLowerCase()
                 .includes(normalizedQuery)) &&
-            (statusFilter === "all" || task.status === statusFilter)
+            (statusFilter === "all" || task.status === statusFilter) &&
+            (!weekViewEnabled || isTodoTaskRecentlyUpdated(task, recencyNow))
         )
         .map((task) => task.id)
     );
@@ -244,7 +270,7 @@ export function TodoListView({
       }
     }
     return matched;
-  }, [query, statusFilter, tasks]);
+  }, [query, recencyNow, statusFilter, tasks, weekViewEnabled]);
   const visibleTasks = flatTasks.filter(({ task }) => visibleIds.has(task.id));
   const pageCount = Math.max(1, Math.ceil(visibleTasks.length / todoPageSize));
   const currentPage = Math.min(page, pageCount);
@@ -259,7 +285,7 @@ export function TodoListView({
       return;
     }
     setPage(1);
-  }, [query, statusFilter]);
+  }, [query, statusFilter, weekViewEnabled]);
   useEffect(() => setPage((current) => Math.min(current, pageCount)), [pageCount]);
 
   useEffect(() => {
@@ -273,14 +299,16 @@ export function TodoListView({
     }
 
     handledNavigationRequest.current = navigationTarget.requestId;
-    navigatingFilters.current = query !== "" || statusFilter !== "all";
+    navigatingFilters.current =
+      query !== "" || statusFilter !== "all" || weekViewEnabled;
     setQuery("");
     setStatusFilter("all");
+    setWeekViewEnabled(false);
     setPage(todoTargetPage(tasks, target.id, todoPageSize) ?? 1);
     setExpandedId(target.id);
     pendingNavigationId.current = target.id;
-    setFocusId(target.id);
-  }, [navigationTarget, onNavigationError, query, statusFilter, tasks, tasksReady]);
+    setTitleFocus({ taskId: target.id, mode: "select-all" });
+  }, [navigationTarget, onNavigationError, query, statusFilter, tasks, tasksReady, weekViewEnabled]);
 
   const saveSnapshot = (next: TodoTask[]) => {
     saveQueue.current = saveQueue.current
@@ -300,19 +328,37 @@ export function TodoListView({
     return saveQueue.current;
   };
 
-  const applyTasks = (next: TodoTask[], options?: { focusId?: string; persist?: boolean }) => {
+  const applyTasks = (
+    next: TodoTask[],
+    options?: {
+      focusId?: string;
+      focusMode?: TitleFocusMode;
+      focusPage?: number;
+      persist?: boolean;
+    }
+  ) => {
     // 所有交互共用这一入口，避免缩进或跨层级移动后把置顶状态遗留在子任务上。
     const normalized = normalizeTodoPins(normalizeTodoPositions(next));
-    setTasks(normalized);
-    onTasksChange?.(normalized);
+    // 后端仍生成权威时间；本地只给实际变化任务打戳，让启用中的周视图即时响应。
+    const timestamped = stampChangedTodoTasks(
+      tasks,
+      normalized,
+      new Date(now()).toISOString()
+    );
+    setTasks(timestamped);
+    onTasksChange?.(timestamped);
     if (options?.focusId) {
-      const focusIndex = flattenTodoTreeByCompletion(normalized).findIndex(
-        ({ task }) => task.id === options.focusId
-      );
-      if (focusIndex >= 0) setPage(Math.floor(focusIndex / todoPageSize) + 1);
-      setFocusId(options.focusId);
+      if (options.focusPage) {
+        setPage(options.focusPage);
+      } else {
+        const focusIndex = flattenTodoTreeByCompletion(timestamped).findIndex(
+          ({ task }) => task.id === options.focusId
+        );
+        if (focusIndex >= 0) setPage(Math.floor(focusIndex / todoPageSize) + 1);
+      }
+      setTitleFocus({ taskId: options.focusId, mode: options.focusMode ?? "select-all" });
     }
-    if (options?.persist !== false) void saveSnapshot(normalized);
+    if (options?.persist !== false) void saveSnapshot(timestamped);
   };
 
   const updateTask = (taskId: string, patch: Partial<TodoTask>, persist = true) => {
@@ -420,6 +466,23 @@ export function TodoListView({
               <option value="completed">已完成</option>
               <option value="cancelled">已取消</option>
             </select>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={cn(
+                weekViewEnabled &&
+                  "border-primary/50 bg-primary/10 text-primary shadow-sm hover:bg-primary/15"
+              )}
+              aria-pressed={weekViewEnabled}
+              onClick={() => {
+                setRecencyNow(now());
+                setWeekViewEnabled((enabled) => !enabled);
+              }}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              周视图
+            </Button>
           </div>
         </div>
 
@@ -594,10 +657,17 @@ export function TodoListView({
                           applyTasks(event.shiftKey ? outdentTask(tasks, task.id) : indentTask(tasks, task.id), { focusId: task.id });
                         } else if (event.key === "Backspace" && !task.title && tasks.length > 1) {
                           event.preventDefault();
-                          const flat = flattenTodoTreeByCompletion(tasks);
-                          const index = flat.findIndex(({ task: item }) => item.id === task.id);
-                          const nextFocus = flat[Math.max(0, index - 1)]?.task.id;
-                          applyTasks(removeTaskTree(tasks, task.id), { focusId: nextFocus });
+                          const index = visibleTasks.findIndex(
+                            ({ task: item }) => item.id === task.id
+                          );
+                          const nextFocus =
+                            visibleTasks[Math.max(0, index - 1)]?.task.id;
+                          applyTasks(removeTaskTree(tasks, task.id), {
+                            focusId: nextFocus,
+                            focusMode: "caret-end",
+                            focusPage:
+                              Math.floor(Math.max(0, index - 1) / todoPageSize) + 1
+                          });
                         }
                       }}
                     />
@@ -1022,7 +1092,7 @@ export function mapTodoTaskInput(task: TodoTask) {
     id: task.id,
     parent_id: task.parentId ?? null,
     position: task.position,
-    title: task.title.trim() || "未命名任务",
+    title: normalizeTodoTitleForPersistence(task.title),
     status: task.status,
     pinned: task.pinned,
     start_date: task.startDate ?? null,
@@ -1063,19 +1133,21 @@ function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-export function demoTasks(): TodoTask[] {
+export function demoTasks(nowMs = Date.now()): TodoTask[] {
+  const recent = new Date(nowMs - 24 * 60 * 60 * 1000).toISOString();
+  const expired = new Date(nowMs - 8 * 24 * 60 * 60 * 1000).toISOString();
   return [
-    { ...emptyTask("demo-1", undefined, 0), title: "西北中卫质量链路验收", startDate: "2026-07-08", expectedEndDate: "2026-07-10" },
-    { ...emptyTask("demo-2", undefined, 1), title: "顺便修复子东南亚 crash 不生效问题", status: "completed", startDate: "2026-07-09", expectedEndDate: "2026-07-10", actualEndDate: "2026-07-10" },
-    { ...emptyTask("demo-3", undefined, 2), title: "异构镜像需要清理管控 agent 的残留状态信息", status: "in_progress", startDate: "2026-07-08", expectedEndDate: "2026-07-12", processTracking: "[排查记录](https://example.com/trace)\n[监控面板](https://example.com/dashboard)\n[修复方案](https://example.com/fix)", resultReview: "已完成残留状态清理与验证，agent 运行稳定。\n[查看事故复盘](https://example.com/review)" },
-    { ...emptyTask("demo-4", "demo-3", 0), title: "异构实现带外探测 from 方文奇", startDate: "2026-07-07", expectedEndDate: "2026-07-07" },
+    { ...emptyTask("demo-1", undefined, 0), title: "西北中卫质量链路验收", startDate: "2026-07-08", expectedEndDate: "2026-07-10", updatedAt: recent },
+    { ...emptyTask("demo-2", undefined, 1), title: "顺便修复子东南亚 crash 不生效问题", status: "completed", startDate: "2026-07-09", expectedEndDate: "2026-07-10", actualEndDate: "2026-07-10", updatedAt: expired },
+    { ...emptyTask("demo-3", undefined, 2), title: "异构镜像需要清理管控 agent 的残留状态信息", status: "in_progress", startDate: "2026-07-08", expectedEndDate: "2026-07-12", processTracking: "[排查记录](https://example.com/trace)\n[监控面板](https://example.com/dashboard)\n[修复方案](https://example.com/fix)", resultReview: "已完成残留状态清理与验证，agent 运行稳定。\n[查看事故复盘](https://example.com/review)", updatedAt: expired },
+    { ...emptyTask("demo-4", "demo-3", 0), title: "异构实现带外探测 from 方文奇", startDate: "2026-07-07", expectedEndDate: "2026-07-07", updatedAt: recent },
     { ...emptyTask("demo-5", "demo-3", 1), title: "可观测这周搞完 clickhouse 的 trace", startDate: "2026-07-06", expectedEndDate: "2026-07-11" },
-    { ...emptyTask("demo-6", undefined, 3), title: "云助手标准输出放大一些", status: "completed", startDate: "2026-07-03", expectedEndDate: "2026-07-10", actualEndDate: "2026-07-10" },
-    { ...emptyTask("demo-7", undefined, 4), title: "GpuError: DegmlHealth NVLink NVLinkDown 告警—重启", status: "in_progress", startDate: "2026-07-03", expectedEndDate: "2026-07-12" },
+    { ...emptyTask("demo-6", undefined, 3), title: "云助手标准输出放大一些", status: "completed", startDate: "2026-07-03", expectedEndDate: "2026-07-10", actualEndDate: "2026-07-10", updatedAt: expired },
+    { ...emptyTask("demo-7", undefined, 4), title: "GpuError: DegmlHealth NVLink NVLinkDown 告警—重启", status: "in_progress", startDate: "2026-07-03", expectedEndDate: "2026-07-12", updatedAt: recent },
     { ...emptyTask("demo-8", "demo-7", 0), title: "一键诊断 国产先停用", startDate: "2026-06-30", expectedEndDate: "2026-07-03" },
     { ...emptyTask("demo-9", "demo-7", 1), title: "国产算力 管控 agent label selector", startDate: "2026-06-30", expectedEndDate: "2026-07-08" },
     { ...emptyTask("demo-10", "demo-7", 2), title: "jcs 集群支持 trace", startDate: "2026-06-30", expectedEndDate: "2026-07-09" },
     { ...emptyTask("demo-11", "demo-7", 3), title: "边缘支持 NPD", status: "completed", startDate: "2026-06-30", expectedEndDate: "2026-07-10", actualEndDate: "2026-07-10" },
-    { ...emptyTask("demo-12", undefined, 5), title: "国产算力规则确认", startDate: "2026-07-11", expectedEndDate: "2026-07-15" }
+    { ...emptyTask("demo-12", undefined, 5), title: "国产算力规则确认", startDate: "2026-07-11", expectedEndDate: "2026-07-15", updatedAt: recent }
   ];
 }

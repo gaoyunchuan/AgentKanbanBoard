@@ -16,6 +16,20 @@ const persistedFields = [
   "resultReview"
 ] as const satisfies readonly (keyof TodoTask)[];
 
+export function normalizeTodoTitleForPersistence(title: string) {
+  return title.trim() || "未命名任务";
+}
+
+function persistedFieldValue(
+  task: TodoTask,
+  field: (typeof persistedFields)[number]
+) {
+  // 标题保存前会去除首尾空白并填充默认值，变动判断必须使用相同语义。
+  return field === "title"
+    ? normalizeTodoTitleForPersistence(task.title)
+    : task[field];
+}
+
 export function isTodoTaskRecentlyUpdated(task: TodoTask, nowMs: number) {
   if (!task.updatedAt) return false;
   const updatedAtMs = Date.parse(task.updatedAt);
@@ -32,7 +46,10 @@ export function stampChangedTodoTasks(
   return next.map((task) => {
     const before = previousById.get(task.id);
     const changed =
-      !before || persistedFields.some((field) => before[field] !== task[field]);
+      !before ||
+      persistedFields.some(
+        (field) => persistedFieldValue(before, field) !== persistedFieldValue(task, field)
+      );
     return changed
       ? { ...task, updatedAt: nowIso }
       : { ...task, updatedAt: before.updatedAt };
