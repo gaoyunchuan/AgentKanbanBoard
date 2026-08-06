@@ -273,6 +273,54 @@ mod tests {
     }
 
     #[test]
+    fn repository_todo_snapshot_updates_timestamp_only_for_changed_tasks() {
+        let tick = Arc::new(AtomicUsize::new(0));
+        let clock_tick = Arc::clone(&tick);
+        let repo = Repository::open_in_memory_with_clock(Box::new(move || {
+            format!(
+                "2026-08-06T08:00:{:02}Z",
+                clock_tick.fetch_add(1, Ordering::SeqCst)
+            )
+        }))
+        .unwrap();
+        let mut tasks = vec![
+            todo_input("changed", TodoTaskStatus::Todo),
+            TodoTaskInput {
+                position: 1,
+                ..todo_input("unchanged", TodoTaskStatus::Todo)
+            },
+        ];
+
+        let first = repo.save_todo_tasks(&tasks).unwrap();
+        assert!(first.iter().all(|task| task.created_at == task.updated_at));
+        let no_op = repo.save_todo_tasks(&tasks).unwrap();
+        let first_changed = first.iter().find(|task| task.id == "changed").unwrap();
+        let first_unchanged = first.iter().find(|task| task.id == "unchanged").unwrap();
+        let no_op_changed = no_op.iter().find(|task| task.id == "changed").unwrap();
+        let no_op_unchanged = no_op.iter().find(|task| task.id == "unchanged").unwrap();
+        assert_eq!(no_op_changed.updated_at, first_changed.updated_at);
+        assert_eq!(no_op_unchanged.updated_at, first_unchanged.updated_at);
+
+        tasks[0].title = "已修改".to_string();
+        let saved = repo.save_todo_tasks(&tasks).unwrap();
+        let changed = saved.iter().find(|task| task.id == "changed").unwrap();
+        let unchanged = saved.iter().find(|task| task.id == "unchanged").unwrap();
+        assert_ne!(changed.updated_at, first_changed.updated_at);
+        assert_eq!(unchanged.updated_at, first_unchanged.updated_at);
+
+        tasks[0].position = 1;
+        tasks[1].position = 0;
+        let reordered = repo.save_todo_tasks(&tasks).unwrap();
+        let reordered_changed = reordered.iter().find(|task| task.id == "changed").unwrap();
+        let reordered_unchanged = reordered
+            .iter()
+            .find(|task| task.id == "unchanged")
+            .unwrap();
+        assert_ne!(reordered_changed.updated_at, changed.updated_at);
+        assert_ne!(reordered_unchanged.updated_at, unchanged.updated_at);
+    }
+
+    #[test]
     fn repository_persists_root_pin() {
         let repo = Repository::open_in_memory().unwrap();
         let mut root = todo_input("root", TodoTaskStatus::Todo);
