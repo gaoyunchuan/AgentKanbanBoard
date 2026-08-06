@@ -41,8 +41,7 @@ impl Repository {
     ) -> rusqlite::Result<Self> {
         let connection = Connection::open(path)?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
-        connection.execute_batch(INIT_SQL)?;
-        migrate_schema(&connection, &clock())?;
+        initialize_schema(&connection, &clock())?;
         Ok(Self { connection, clock })
     }
 
@@ -53,8 +52,7 @@ impl Repository {
     pub fn open_in_memory_with_clock(clock: Box<dyn Fn() -> String>) -> rusqlite::Result<Self> {
         let connection = Connection::open_in_memory()?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
-        connection.execute_batch(INIT_SQL)?;
-        migrate_schema(&connection, &clock())?;
+        initialize_schema(&connection, &clock())?;
         Ok(Self { connection, clock })
     }
 
@@ -115,7 +113,7 @@ impl Repository {
     pub fn list_todo_tasks(&self) -> rusqlite::Result<Vec<TodoTaskRecord>> {
         let mut statement = self.connection.prepare(
             "SELECT id, parent_id, position, title, status, pinned, start_date, expected_end_date,
-                    actual_end_date, process_tracking, result_review, created_at, updated_at
+                    actual_end_date, process_tracking, result_review, created_at, activity_at
              FROM todo_tasks
              ORDER BY position ASC, created_at ASC, id ASC",
         )?;
@@ -159,13 +157,13 @@ impl Repository {
         }
         let now = self.now_text();
         for task in tasks {
-            // 完整快照会重复提交未变化任务；只有字段实际变化时更新，才能让 updated_at
-            // 表达单个任务的真实变动，而不是任意任务触发保存的时间。
+            // 完整快照会重复提交未变化任务；只有字段实际变化时更新 activity_at，
+            // 才能表达单个任务的真实变动，而不是任意任务触发保存的时间。
             transaction.execute(
                 "INSERT INTO todo_tasks (
                    id, parent_id, position, title, status, pinned, start_date, expected_end_date,
-                   actual_end_date, process_tracking, result_review, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
+                   actual_end_date, process_tracking, result_review, created_at, updated_at, activity_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?12)
                  ON CONFLICT(id) DO UPDATE SET
                    parent_id = excluded.parent_id,
                    position = excluded.position,
@@ -177,7 +175,8 @@ impl Repository {
                    actual_end_date = excluded.actual_end_date,
                    process_tracking = excluded.process_tracking,
                    result_review = excluded.result_review,
-                   updated_at = excluded.updated_at
+                   updated_at = excluded.updated_at,
+                   activity_at = excluded.activity_at
                  WHERE todo_tasks.parent_id IS NOT excluded.parent_id
                     OR todo_tasks.position IS NOT excluded.position
                     OR todo_tasks.title IS NOT excluded.title
@@ -969,6 +968,17 @@ fn thread_comment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadCo
     })
 }
 
+fn initialize_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
+    // Tauri command 会各自打开连接；首次升级必须等待并串行执行完整迁移，
+    // 避免多个连接同时观察到缺列后重复执行 ALTER TABLE。
+    connection.busy_timeout(std::time::Duration::from_secs(5))?;
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)?;
+    transaction.execute_batch(INIT_SQL)?;
+    migrate_schema(&transaction, now)?;
+    transaction.commit()
+}
+
 fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     let columns = connection
         .prepare("PRAGMA table_info(codex_threads)")?
@@ -1003,6 +1013,16 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    if !todo_columns.iter().any(|column| column == "activity_at") {
+        // 旧版完整快照曾统一刷新 updated_at，无法代表单项任务的真实变动。
+        // 首次只增加独立字段，随后由幂等回填建立无污染基线。
+        connection.execute("ALTER TABLE todo_tasks ADD COLUMN activity_at TEXT", [])?;
+    }
+    // 加列与回填可能因进程退出分属两次启动；NULL 回填必须保持幂等，才能恢复中断迁移。
+    connection.execute(
+        "UPDATE todo_tasks SET activity_at = created_at WHERE activity_at IS NULL",
+        [],
+    )?;
 
     let codex_threads_sql: String = connection.query_row(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'codex_threads'",

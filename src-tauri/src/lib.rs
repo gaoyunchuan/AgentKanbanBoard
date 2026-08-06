@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_migrates_existing_todo_tasks_with_unpinned_default() {
+    fn repository_migrates_existing_todo_tasks_with_unpinned_and_activity_baseline() {
         let temp_path = std::env::temp_dir().join(format!(
             "codex-kanban-todo-pin-migration-{}.sqlite",
             std::process::id()
@@ -382,18 +382,141 @@ mod tests {
                        result_review, created_at, updated_at
                      ) VALUES (
                        'legacy', NULL, 0, '历史任务', 'todo', '', '',
-                       '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'
+                       '2026-07-11T00:00:00Z', '2026-08-06T02:46:20Z'
                      );",
                 )
                 .unwrap();
         }
 
-        let repo = Repository::open_path(&temp_path).unwrap();
+        let repo =
+            Repository::open_path_with_clock(&temp_path, fixed_clock("2026-08-07T00:00:00Z"))
+                .unwrap();
         let tasks = repo.list_todo_tasks().unwrap();
 
         assert_eq!(tasks.len(), 1);
         assert!(!tasks[0].pinned);
+        assert_eq!(tasks[0].updated_at, "2026-07-11T00:00:00Z");
+        let read_physical_times = || {
+            let connection = rusqlite::Connection::open(&temp_path).unwrap();
+            connection
+                .query_row(
+                    "SELECT updated_at, activity_at FROM todo_tasks WHERE id = 'legacy'",
+                    [],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .unwrap()
+        };
+        assert_eq!(
+            read_physical_times(),
+            (
+                "2026-08-06T02:46:20Z".to_string(),
+                "2026-07-11T00:00:00Z".to_string()
+            )
+        );
+
+        let mut legacy = todo_input("legacy", TodoTaskStatus::Todo);
+        legacy.title = "历史任务".to_string();
+        assert_eq!(
+            repo.save_todo_tasks(&[legacy.clone()]).unwrap()[0].updated_at,
+            "2026-07-11T00:00:00Z"
+        );
+        assert_eq!(
+            read_physical_times(),
+            (
+                "2026-08-06T02:46:20Z".to_string(),
+                "2026-07-11T00:00:00Z".to_string()
+            )
+        );
+
+        legacy.title = "历史任务已修改".to_string();
+        assert_eq!(
+            repo.save_todo_tasks(&[legacy]).unwrap()[0].updated_at,
+            "2026-08-07T00:00:00Z"
+        );
+        assert_eq!(
+            read_physical_times(),
+            (
+                "2026-08-07T00:00:00Z".to_string(),
+                "2026-08-07T00:00:00Z".to_string()
+            )
+        );
         drop(repo);
+        std::fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn repository_repairs_incomplete_todo_activity_migration() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "codex-kanban-todo-incomplete-activity-migration-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp_path);
+        let connection = rusqlite::Connection::open(&temp_path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE todo_tasks (
+                   id TEXT PRIMARY KEY,
+                   parent_id TEXT,
+                   position INTEGER NOT NULL DEFAULT 0,
+                   title TEXT NOT NULL,
+                   status TEXT NOT NULL DEFAULT 'todo',
+                   pinned INTEGER NOT NULL DEFAULT 0,
+                   start_date TEXT,
+                   expected_end_date TEXT,
+                   actual_end_date TEXT,
+                   process_tracking TEXT NOT NULL DEFAULT '',
+                   result_review TEXT NOT NULL DEFAULT '',
+                   created_at TEXT NOT NULL,
+                   updated_at TEXT NOT NULL,
+                   activity_at TEXT
+                 );
+                 INSERT INTO todo_tasks (
+                   id, title, created_at, updated_at, activity_at
+                 ) VALUES (
+                   'legacy', '历史任务', '2026-07-11T00:00:00Z',
+                   '2026-08-06T02:46:20Z', NULL
+                 );",
+            )
+            .unwrap();
+        drop(connection);
+
+        // 模拟进程在加列后、回填前中断；再次打开必须能修复未完成迁移。
+        let reopened = Repository::open_path(&temp_path).unwrap();
+        assert_eq!(
+            reopened.list_todo_tasks().unwrap()[0].updated_at,
+            "2026-07-11T00:00:00Z"
+        );
+        drop(reopened);
+        std::fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn repository_serializes_concurrent_schema_migrations() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "codex-kanban-todo-concurrent-migration-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp_path);
+        let legacy_schema =
+            include_str!("../db/001_init.sql").replace(",\n  activity_at TEXT NOT NULL", "");
+        let connection = rusqlite::Connection::open(&temp_path).unwrap();
+        connection.execute_batch(&legacy_schema).unwrap();
+        drop(connection);
+
+        let connection_count = 16;
+        let barrier = Arc::new(std::sync::Barrier::new(connection_count));
+        let openings = (0..connection_count)
+            .map(|_| {
+                let opening_path = temp_path.clone();
+                let opening_barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    opening_barrier.wait();
+                    Repository::open_path(&opening_path).is_ok()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        assert!(openings.into_iter().all(|opening| opening.join().unwrap()));
         std::fs::remove_file(temp_path).unwrap();
     }
 

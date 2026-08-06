@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS todo_tasks (
   process_tracking TEXT NOT NULL DEFAULT '',
   result_review TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  activity_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_codex_threads_project ON codex_threads(project_id);
