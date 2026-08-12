@@ -436,6 +436,37 @@ describe("TodoListView", () => {
     ).toHaveTextContent("结果复盘：复盘一 · 复盘二 · 新增结论");
   });
 
+  test("子任务横向树连接线固定在标题首行中心且不随折叠摘要改变", () => {
+    render(
+      <TodoListView
+        initialTasks={[
+          { ...initialTasks[0], processTracking: "" },
+          { ...initialTasks[1], processTracking: "子任务记录" },
+          {
+            ...initialTasks[1],
+            id: "plain-child",
+            position: 1,
+            title: "无摘要子任务"
+          }
+        ]}
+        persistTasks={vi.fn()}
+      />
+    );
+
+    const summaryRow = screen
+      .getByDisplayValue("子任务")
+      .closest<HTMLElement>("[data-task-row]");
+    const plainRow = screen
+      .getByDisplayValue("无摘要子任务")
+      .closest<HTMLElement>("[data-task-row]");
+    const summaryLine = summaryRow?.firstElementChild?.querySelector("span.border-t");
+    const plainLine = plainRow?.firstElementChild?.querySelector("span.border-t");
+
+    expect(summaryLine).toHaveClass("top-[18px]");
+    expect(summaryLine).not.toHaveClass("top-1/2");
+    expect(plainLine).toHaveClass("top-[18px]");
+  });
+
   test("展开扩展信息后可显示命名链接，并在分栏内提交 HTTP 链接", async () => {
     const user = userEvent.setup();
     const openLink = vi.fn();

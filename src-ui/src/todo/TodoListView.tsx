@@ -578,7 +578,8 @@ export function TodoListView({
                     {depth > 0 && (
                       <>
                         <span aria-hidden="true" className="pointer-events-none absolute bottom-0 top-0 border-l border-dashed border-border" style={{ left: `${depth * 28 - 14}px` }} />
-                        <span aria-hidden="true" className="pointer-events-none absolute top-1/2 w-3 border-t border-dashed border-border" style={{ left: `${depth * 28 - 14}px` }} />
+                        {/* 摘要会拉高整行，横向连接线必须固定在标题首行中心，不能使用整行 50%。 */}
+                        <span aria-hidden="true" className="pointer-events-none absolute top-[18px] w-3 border-t border-dashed border-border" style={{ left: `${depth * 28 - 14}px` }} />
                       </>
                     )}
                     <button
