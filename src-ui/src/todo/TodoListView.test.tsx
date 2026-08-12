@@ -384,6 +384,58 @@ describe("TodoListView", () => {
     expect(previousTitle).toHaveValue("上一任");
   });
 
+  test("收起态在标题下显示单行摘要，展开后隐藏并在再次收起时反映最新内容", async () => {
+    const user = userEvent.setup();
+    const openLink = vi.fn();
+    render(
+      <TodoListView
+        initialTasks={[
+          {
+            ...initialTasks[0],
+            processTracking: "记录一\n[排查记录](https://example.com/trace)",
+            resultReview: "复盘一\n复盘二"
+          }
+        ]}
+        persistTasks={vi.fn()}
+        openLink={openLink}
+      />
+    );
+
+    const row = screen
+      .getByDisplayValue("父任务")
+      .closest<HTMLElement>("[data-task-row]");
+    expect(row).not.toBeNull();
+    expect(row?.children).toHaveLength(5);
+
+    const summary = within(row as HTMLElement).getByRole("note", {
+      name: "父任务的折叠摘要"
+    });
+    expect(row?.firstElementChild).toContainElement(summary);
+    expect(summary).toHaveClass("truncate");
+    expect(summary).toHaveTextContent(
+      "过程跟踪：记录一 · 排查记录 ｜ 结果复盘：复盘一 · 复盘二"
+    );
+
+    await user.click(within(summary).getByRole("link", { name: "排查记录" }));
+    expect(openLink).toHaveBeenCalledWith("https://example.com/trace");
+    expect(screen.getByRole("button", { name: "展开 父任务" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "展开 父任务" }));
+    expect(
+      screen.queryByRole("note", { name: "父任务的折叠摘要" })
+    ).not.toBeInTheDocument();
+
+    const resultSection = screen.getByRole("region", { name: "父任务的结果复盘" });
+    await user.click(within(resultSection).getByRole("button", { name: "添加文本" }));
+    await user.type(within(resultSection).getByLabelText("结果复盘文本"), "新增结论");
+    await user.click(within(resultSection).getByRole("button", { name: "保存" }));
+
+    await user.click(screen.getByRole("button", { name: "收起 父任务" }));
+    expect(
+      screen.getByRole("note", { name: "父任务的折叠摘要" })
+    ).toHaveTextContent("结果复盘：复盘一 · 复盘二 · 新增结论");
+  });
+
   test("展开扩展信息后可显示命名链接，并在分栏内提交 HTTP 链接", async () => {
     const user = userEvent.setup();
     const openLink = vi.fn();
@@ -616,7 +668,9 @@ describe("TodoListView", () => {
       title: `任务 ${String(index + 1).padStart(3, "0")}`,
       position: index,
       parentId: undefined,
-      status: index === 200 ? "in_progress" : "todo"
+      status: index === 200 ? "in_progress" : "todo",
+      processTracking: "",
+      resultReview: ""
     }));
     render(<TodoListView initialTasks={manyTasks} persistTasks={vi.fn()} />);
 

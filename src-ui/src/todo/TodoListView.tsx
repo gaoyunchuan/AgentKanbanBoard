@@ -28,6 +28,7 @@ import type { ThreadItem } from "@/types";
 import type { ThreadTaskLink } from "@/associations/types";
 import { todoTargetPage } from "@/associations/associationModel";
 import { TaskThreadAssociationPanel } from "@/associations/TaskThreadAssociationPanel";
+import { TodoCollapsedExtensionSummary } from "./TodoCollapsedExtensionSummary";
 import { MarkdownText } from "./markdownLinks";
 import {
   flattenTodoTreeByCompletion,
@@ -573,7 +574,7 @@ export function TodoListView({
                     setDropTarget(undefined);
                   }}
                 >
-                  <div className="relative flex min-w-0 items-center" style={{ paddingLeft: `${depth * 28}px` }}>
+                  <div className="relative flex min-w-0 items-start py-1" style={{ paddingLeft: `${depth * 28}px` }}>
                     {depth > 0 && (
                       <>
                         <span aria-hidden="true" className="pointer-events-none absolute bottom-0 top-0 border-l border-dashed border-border" style={{ left: `${depth * 28 - 14}px` }} />
@@ -583,7 +584,7 @@ export function TodoListView({
                     <button
                       draggable
                       aria-label={`拖动 ${task.title || "未命名任务"}`}
-                      className="mr-0.5 cursor-grab p-0.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+                      className="mr-0.5 mt-1 cursor-grab p-0.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground"
                       onDragStart={() => setDraggedId(task.id)}
                       onDragEnd={() => {
                         setDraggedId(undefined);
@@ -594,7 +595,7 @@ export function TodoListView({
                     </button>
                     <button
                       aria-label={`${expandedId === task.id ? "收起" : "展开"} ${task.title || "未命名任务"}`}
-                      className="mr-1 rounded p-0.5 text-muted-foreground hover:bg-secondary"
+                      className="mr-1 mt-1 rounded p-0.5 text-muted-foreground hover:bg-secondary"
                       onClick={() => {
                         const willExpand = expandedId !== task.id;
                         setExpandedId((current) => (current === task.id ? undefined : task.id));
@@ -607,10 +608,10 @@ export function TodoListView({
                       <Pin
                         role="img"
                         aria-label={`已置顶 ${task.title || "未命名任务"}`}
-                        className="mr-1 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-300"
+                        className="mr-1 mt-1.5 h-3.5 w-3.5 shrink-0 text-emerald-700 dark:text-emerald-300"
                       />
                     )}
-                    <div className="relative mr-2">
+                    <div className="relative mr-2 mt-1">
                       <button
                         aria-label={`${task.status === "completed" ? "恢复" : "完成"} ${task.title || "未命名任务"}`}
                         title={`${statusLabels[task.status]}；单击完成，右键选择状态`}
@@ -633,44 +634,52 @@ export function TodoListView({
                         <StatusMenu task={task} onSelect={(status) => setStatus(task, status)} onTogglePinned={depth === 0 ? () => togglePinned(task) : undefined} onDelete={() => deleteTask(task)} onClose={() => setStatusMenuId(undefined)} />
                       )}
                     </div>
-                    <input
-                      ref={(node) => {
-                        if (node) titleRefs.current.set(task.id, node);
-                        else titleRefs.current.delete(task.id);
-                      }}
-                      value={task.title}
-                      aria-label="任务标题"
-                      placeholder="输入任务描述"
-                      className={cn(
-                        "h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1.5 text-[12px] font-medium outline-none transition-colors focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/10",
-                        task.status === "completed" && "text-muted-foreground line-through",
-                        task.status === "cancelled" && "text-muted-foreground line-through decoration-dashed"
+                    <div className="min-w-0 flex-1">
+                      <input
+                        ref={(node) => {
+                          if (node) titleRefs.current.set(task.id, node);
+                          else titleRefs.current.delete(task.id);
+                        }}
+                        value={task.title}
+                        aria-label="任务标题"
+                        placeholder="输入任务描述"
+                        className={cn(
+                          "h-7 w-full min-w-0 rounded border border-transparent bg-transparent px-1.5 text-[12px] font-medium outline-none transition-colors focus:border-primary focus:bg-card focus:ring-2 focus:ring-primary/10",
+                          task.status === "completed" && "text-muted-foreground line-through",
+                          task.status === "cancelled" && "text-muted-foreground line-through decoration-dashed"
+                        )}
+                        onChange={(event) => updateTask(task.id, { title: event.target.value }, false)}
+                        onBlur={() => void saveSnapshot(tasks)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && event.metaKey) {
+                            event.preventDefault();
+                            addSiblingTask(task.id, event.shiftKey ? "before" : "after");
+                          } else if (event.key === "Tab") {
+                            event.preventDefault();
+                            applyTasks(event.shiftKey ? outdentTask(tasks, task.id) : indentTask(tasks, task.id), { focusId: task.id });
+                          } else if (event.key === "Backspace" && !task.title && tasks.length > 1) {
+                            event.preventDefault();
+                            const index = visibleTasks.findIndex(
+                              ({ task: item }) => item.id === task.id
+                            );
+                            const nextFocus =
+                              visibleTasks[Math.max(0, index - 1)]?.task.id;
+                            applyTasks(removeTaskTree(tasks, task.id), {
+                              focusId: nextFocus,
+                              focusMode: "caret-end",
+                              focusPage:
+                                Math.floor(Math.max(0, index - 1) / todoPageSize) + 1
+                            });
+                          }
+                        }}
+                      />
+                      {expandedId !== task.id && (
+                        <TodoCollapsedExtensionSummary
+                          task={task}
+                          onOpenLink={openExternalLink}
+                        />
                       )}
-                      onChange={(event) => updateTask(task.id, { title: event.target.value }, false)}
-                      onBlur={() => void saveSnapshot(tasks)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && event.metaKey) {
-                          event.preventDefault();
-                          addSiblingTask(task.id, event.shiftKey ? "before" : "after");
-                        } else if (event.key === "Tab") {
-                          event.preventDefault();
-                          applyTasks(event.shiftKey ? outdentTask(tasks, task.id) : indentTask(tasks, task.id), { focusId: task.id });
-                        } else if (event.key === "Backspace" && !task.title && tasks.length > 1) {
-                          event.preventDefault();
-                          const index = visibleTasks.findIndex(
-                            ({ task: item }) => item.id === task.id
-                          );
-                          const nextFocus =
-                            visibleTasks[Math.max(0, index - 1)]?.task.id;
-                          applyTasks(removeTaskTree(tasks, task.id), {
-                            focusId: nextFocus,
-                            focusMode: "caret-end",
-                            focusPage:
-                              Math.floor(Math.max(0, index - 1) / todoPageSize) + 1
-                          });
-                        }
-                      }}
-                    />
+                    </div>
                   </div>
                   <TaskThreadTags
                     task={task}
