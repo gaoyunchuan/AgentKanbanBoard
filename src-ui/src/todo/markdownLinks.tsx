@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 const namedHttpLinkPattern = /\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g;
 
 export function MarkdownText({
   value,
-  onOpenLink
+  onOpenLink,
+  className
 }: {
   value: string;
   onOpenLink?: (url: string) => void;
+  className?: string;
 }) {
   const parts: ReactNode[] = [];
   let cursor = 0;
@@ -37,5 +40,5 @@ export function MarkdownText({
   }
 
   if (cursor < value.length) parts.push(value.slice(cursor));
-  return <span className="whitespace-pre-wrap break-words">{parts}</span>;
+  return <span className={cn("whitespace-pre-wrap break-words", className)}>{parts}</span>;
 }

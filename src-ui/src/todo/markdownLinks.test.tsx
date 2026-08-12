@@ -27,4 +27,18 @@ describe("MarkdownText", () => {
     await user.click(screen.getByRole("link", { name: "监控面板" }));
     expect(onOpenLink).toHaveBeenCalledWith("http://example.com/dashboard");
   });
+
+  test("允许调用方覆盖换行策略，同时保留默认换行样式", () => {
+    const { container, rerender } = render(<MarkdownText value="默认文本" />);
+    expect(container.firstElementChild).toHaveClass("whitespace-pre-wrap", "break-words");
+
+    rerender(
+      <MarkdownText
+        value="单行文本"
+        className="whitespace-nowrap break-normal"
+      />
+    );
+    expect(container.firstElementChild).toHaveClass("whitespace-nowrap", "break-normal");
+    expect(container.firstElementChild).not.toHaveClass("whitespace-pre-wrap", "break-words");
+  });
 });
