@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_todo_snapshot_updates_timestamp_only_for_changed_tasks() {
+    fn repository_todo_snapshot_updates_activity_only_for_business_changes() {
         let tick = Arc::new(AtomicUsize::new(0));
         let clock_tick = Arc::clone(&tick);
         let repo = Repository::open_in_memory_with_clock(Box::new(move || {
@@ -316,8 +316,10 @@ mod tests {
             .iter()
             .find(|task| task.id == "unchanged")
             .unwrap();
-        assert_ne!(reordered_changed.updated_at, changed.updated_at);
-        assert_ne!(reordered_unchanged.updated_at, unchanged.updated_at);
+        assert_eq!(reordered_changed.position, 1);
+        assert_eq!(reordered_unchanged.position, 0);
+        assert_eq!(reordered_changed.updated_at, changed.updated_at);
+        assert_eq!(reordered_unchanged.updated_at, unchanged.updated_at);
     }
 
     #[test]

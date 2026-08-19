@@ -1039,7 +1039,7 @@ describe("TodoListView", () => {
     ).toEqual(["未完成任务", "已完成任务"]);
   });
 
-  test("拖到任务行上半区或下半区会调整同级顺序并保存", async () => {
+  test("拖到任务行上半区或下半区会保存同级顺序且不刷新业务活动时间", async () => {
     const roots: TodoTask[] = [
       { ...initialTasks[0], id: "a", title: "任务 A", parentId: undefined, position: 0 },
       { ...initialTasks[0], id: "b", title: "任务 B", parentId: undefined, position: 1 },
@@ -1103,9 +1103,7 @@ describe("TodoListView", () => {
       "0"
     );
     await waitFor(() =>
-      expect(persistTasks).toHaveBeenLastCalledWith(
-        roots.map((task) => ({ ...task, updatedAt: "2026-08-06T12:00:00.000Z" }))
-      )
+      expect(persistTasks).toHaveBeenLastCalledWith(roots)
     );
   });
 

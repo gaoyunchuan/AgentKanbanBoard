@@ -2,10 +2,10 @@ import type { TodoTask } from "./types";
 
 export const TODO_RECENCY_WINDOW_MS = 168 * 60 * 60 * 1000;
 
-// 与后端 TodoTaskInput 保持一致，避免纯前端元数据变化被误判为业务任务变动。
-const persistedFields = [
+// 排序位置仍会持久化，但插入或删除任务可能连带重排大量兄弟任务；
+// 周视图只追踪任务本身的业务变化，因此 position 不参与活动时间判定。
+const activityFields = [
   "parentId",
-  "position",
   "title",
   "status",
   "pinned",
@@ -22,7 +22,7 @@ export function normalizeTodoTitleForPersistence(title: string) {
 
 function persistedFieldValue(
   task: TodoTask,
-  field: (typeof persistedFields)[number]
+  field: (typeof activityFields)[number]
 ) {
   // 标题保存前会去除首尾空白并填充默认值，变动判断必须使用相同语义。
   return field === "title"
@@ -47,7 +47,7 @@ export function stampChangedTodoTasks(
     const before = previousById.get(task.id);
     const changed =
       !before ||
-      persistedFields.some(
+      activityFields.some(
         (field) => persistedFieldValue(before, field) !== persistedFieldValue(task, field)
       );
     return changed

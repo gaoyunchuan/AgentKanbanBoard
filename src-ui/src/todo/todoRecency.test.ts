@@ -66,7 +66,6 @@ describe("todoRecency", () => {
 
   test.each<Partial<TodoTask>>([
     { parentId: "parent" },
-    { position: 1 },
     { title: "已修改" },
     { status: "in_progress" },
     { pinned: true },
@@ -82,5 +81,19 @@ describe("todoRecency", () => {
     const stamped = stampChangedTodoTasks(previous, [{ ...previous[0], ...patch }], nowIso);
 
     expect(stamped[0].updatedAt).toBe(nowIso);
+  });
+
+  test("仅排序位置变化时保留业务活动时间", () => {
+    const updatedAt = "2026-07-01T00:00:00Z";
+    const previous = [baseTask(updatedAt)];
+
+    const stamped = stampChangedTodoTasks(
+      previous,
+      [{ ...previous[0], position: 1 }],
+      "2026-08-06T12:00:00Z"
+    );
+
+    expect(stamped[0].position).toBe(1);
+    expect(stamped[0].updatedAt).toBe(updatedAt);
   });
 });

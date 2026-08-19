@@ -157,8 +157,8 @@ impl Repository {
         }
         let now = self.now_text();
         for task in tasks {
-            // 完整快照会重复提交未变化任务；只有字段实际变化时更新 activity_at，
-            // 才能表达单个任务的真实变动，而不是任意任务触发保存的时间。
+            // position 仍需保存，但插入或删除会连带重排大量兄弟任务；这种排序变化
+            // 不代表任务本身有业务进展，因此不能刷新供周视图使用的 activity_at。
             transaction.execute(
                 "INSERT INTO todo_tasks (
                    id, parent_id, position, title, status, pinned, start_date, expected_end_date,
@@ -176,7 +176,19 @@ impl Repository {
                    process_tracking = excluded.process_tracking,
                    result_review = excluded.result_review,
                    updated_at = excluded.updated_at,
-                   activity_at = excluded.activity_at
+                   activity_at = CASE
+                     WHEN todo_tasks.parent_id IS NOT excluded.parent_id
+                       OR todo_tasks.title IS NOT excluded.title
+                       OR todo_tasks.status IS NOT excluded.status
+                       OR todo_tasks.pinned IS NOT excluded.pinned
+                       OR todo_tasks.start_date IS NOT excluded.start_date
+                       OR todo_tasks.expected_end_date IS NOT excluded.expected_end_date
+                       OR todo_tasks.actual_end_date IS NOT excluded.actual_end_date
+                       OR todo_tasks.process_tracking IS NOT excluded.process_tracking
+                       OR todo_tasks.result_review IS NOT excluded.result_review
+                     THEN excluded.activity_at
+                     ELSE todo_tasks.activity_at
+                   END
                  WHERE todo_tasks.parent_id IS NOT excluded.parent_id
                     OR todo_tasks.position IS NOT excluded.position
                     OR todo_tasks.title IS NOT excluded.title
