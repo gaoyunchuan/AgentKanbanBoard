@@ -36,6 +36,8 @@ export function useThreadTaskLinks({
   invokeCommand = defaultInvoke
 }: UseThreadTaskLinksOptions) {
   const [linksByThread, setLinksByThread] = useState<Map<string, ThreadTaskLink>>(new Map());
+  // 空 Map 也可能表示尚未读取；筛选必须等成功加载后才能判定未绑定。
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string>();
   const [savingThreadIds, setSavingThreadIds] = useState<Set<string>>(new Set());
@@ -93,6 +95,7 @@ export function useThreadTaskLinks({
     async (force = false) => {
       if (!enabled) {
         loadedRef.current = true;
+        setLoaded(true);
         return;
       }
       if (loadedRef.current && !force) return;
@@ -109,6 +112,7 @@ export function useThreadTaskLinks({
           }))
         );
         loadedRef.current = true;
+        setLoaded(true);
       })()
         .catch((error) => {
           setLoadError("关联加载失败");
@@ -306,6 +310,7 @@ export function useThreadTaskLinks({
 
   return {
     linksByThread,
+    loaded,
     loading,
     loadError,
     savingThreadIds,

@@ -115,7 +115,8 @@ const defaultFilterStatuses: BoardStatus[] = ["review_pending", "suspended"];
 const defaultFilters: FilterState = {
   search: "",
   projectId: "all",
-  boardStatuses: defaultFilterStatuses
+  boardStatuses: defaultFilterStatuses,
+  onlyUnlinked: false
 };
 
 const foregroundSyncIntervalMs = 5_000;
@@ -262,11 +263,20 @@ function App() {
     [projects]
   );
 
+  const { loadLinks } = associations;
+  useEffect(() => {
+    if (filters.onlyUnlinked) void loadLinks().catch(() => undefined);
+  }, [filters.onlyUnlinked, loadLinks]);
+
+  const taskLinksUnavailable = filters.onlyUnlinked &&
+    (!associations.loaded || associations.loading || Boolean(associations.loadError));
+
   const visibleThreads = useMemo(() => {
-    return applyFilters(applyView(threads, view), filters, projectNames, view)
+    if (taskLinksUnavailable) return [];
+    return applyFilters(applyView(threads, view), filters, projectNames, view, associations.linksByThread)
       .slice()
       .sort((a, b) => rankThread(a, view) - rankThread(b, view));
-  }, [filters, projectNames, threads, view]);
+  }, [filters, projectNames, threads, view, associations.linksByThread, taskLinksUnavailable]);
 
   const counts = useMemo(
     () => ({
@@ -783,7 +793,22 @@ function App() {
                   />
                 )}
 
-                {layout === "list" ? (
+                {taskLinksUnavailable ? (
+                  <div role="status" className="flex flex-col items-center gap-2 p-8 text-[12px] text-muted-foreground">
+                    {associations.loadError ? (
+                      <>
+                        <span>任务绑定关系加载失败</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void loadLinks(true).catch(() => undefined)}
+                        >
+                          重试加载绑定关系
+                        </Button>
+                      </>
+                    ) : "正在加载任务绑定关系…"}
+                  </div>
+                ) : layout === "list" ? (
                   <ThreadList
                     threads={visibleThreads}
                     projectNames={projectNames}
@@ -907,7 +932,8 @@ function applyFilters(
   threads: ThreadItem[],
   filters: FilterState,
   projectNames: Map<string, string>,
-  view: ViewKey
+  view: ViewKey,
+  linksByThread: Map<string, ThreadTaskLink>
 ) {
   return threads.filter((thread) => {
     const searchText = [
@@ -927,10 +953,14 @@ function applyFilters(
       filters.boardStatuses.length === 0 ||
       filters.boardStatuses.includes(thread.boardStatus);
 
+    // 既有关联不随 Task 状态改变；绑定到已完成任务或子任务也属于已绑定。
+    const taskBindingMatched = !filters.onlyUnlinked || !linksByThread.has(thread.id);
+
     return (
       searchMatched &&
       (filters.projectId === "all" || thread.projectId === filters.projectId) &&
-      statusMatched
+      statusMatched &&
+      taskBindingMatched
     );
   });
 }
@@ -1125,7 +1155,7 @@ function FilterPanel({
   const statusOptions = Object.entries(statusLabels) as [BoardStatus, string][];
 
   return (
-    <div className="grid gap-2 border-b bg-secondary/30 px-3 py-2 md:grid-cols-[minmax(180px,240px)_1fr]">
+    <div className="grid gap-2 border-b bg-secondary/30 px-3 py-2 md:grid-cols-[minmax(180px,240px)_1fr_auto]">
       <FieldSelect
         label="项目"
         value={filters.projectId}
@@ -1161,6 +1191,18 @@ function FilterPanel({
             );
           })}
         </div>
+      </div>
+      <div>
+        <div className="mb-1 text-[11px] text-muted-foreground">任务绑定</div>
+        <label className="inline-flex min-h-8 cursor-pointer items-center gap-1.5 text-[12px]">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-primary"
+            checked={filters.onlyUnlinked}
+            onChange={(event) => set({ onlyUnlinked: event.target.checked })}
+          />
+          仅未绑定任务
+        </label>
       </div>
     </div>
   );

@@ -445,6 +445,160 @@ describe("Codex Kanban App", () => {
     expect(invokeMock).not.toHaveBeenCalledWith("load_thread_task_links", undefined);
   });
 
+  test("未绑定任务筛选组合搜索项目和状态，关闭或清空后恢复结果", async () => {
+    const user = userEvent.setup();
+    currentThreads = [
+      { ...backendThreads[1], project_id: "agent-kanban" },
+      { ...backendThreads[1], id: "unlinked-match", project_id: "agent-kanban", title: "Grafana 待处理" },
+      { ...backendThreads[1], id: "unlinked-other-project", title: "Grafana 其他项目" },
+      { ...backendThreads[1], id: "unlinked-suspended", project_id: "agent-kanban", title: "Grafana 挂起", board_status: "suspended" },
+      { ...backendThreads[1], id: "unlinked-other-search", project_id: "agent-kanban", title: "其他事项" }
+    ];
+    currentThreadTaskLinks = [backendLink(backendThreads[1].id, "child")];
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    await user.click(screen.getByRole("button", { name: "筛选" }));
+    expect(screen.getByRole("checkbox", { name: "仅未绑定任务" })).not.toBeChecked();
+    await user.type(screen.getByPlaceholderText("搜索 thread、项目、模块"), "Grafana");
+    await selectProjectFilterWithKeyboard(user, "AgentKanbanBoard");
+    await user.click(screen.getByRole("checkbox", { name: "挂起" }));
+    await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+
+    expect(await screen.findByText("Grafana 待处理")).toBeInTheDocument();
+    expect(screen.queryByText("修正 Grafana 日志 service 名称")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grafana 其他项目")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grafana 挂起")).not.toBeInTheDocument();
+    expect(screen.queryByText("其他事项")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    expect(screen.getByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
+    expect(screen.getByText("Grafana 待处理")).toBeInTheDocument();
+    expect(screen.queryByText("Grafana 其他项目")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grafana 挂起")).not.toBeInTheDocument();
+    expect(screen.queryByText("其他事项")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    await user.click(screen.getByRole("button", { name: "清空" }));
+    expect(screen.getByRole("checkbox", { name: "仅未绑定任务" })).not.toBeChecked();
+    expect(screen.getByPlaceholderText("搜索 thread、项目、模块")).toHaveValue("");
+    expect(screen.getByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
+    expect(screen.getByText("Grafana 其他项目")).toBeInTheDocument();
+    expect(screen.getByText("Grafana 挂起")).toBeInTheDocument();
+    expect(screen.getByText("其他事项")).toBeInTheDocument();
+  });
+
+  test("未绑定任务筛选首次开启才加载关联，重新开启和五秒轮询不重复加载", async () => {
+    vi.useFakeTimers();
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+    expect(invokeMock).not.toHaveBeenCalledWith("load_thread_task_links", undefined);
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "load_thread_task_links")
+    ).toHaveLength(1);
+    expect(invokeMock).not.toHaveBeenCalledWith("load_todo_tasks", undefined);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "load_thread_task_links")
+    ).toHaveLength(1);
+    expect(invokeMock).not.toHaveBeenCalledWith("load_todo_tasks", undefined);
+  });
+
+  test("未绑定任务筛选等待关联加载完成，不能把未知关系当成未绑定", async () => {
+    const user = userEvent.setup();
+    currentThreads.push({ ...backendThreads[1], id: "unlinked-loading", title: "确实未绑定的 Thread" });
+    let resolveLinks!: (links: BackendThreadTaskLink[]) => void;
+    const linksPromise = new Promise<BackendThreadTaskLink[]>((resolve) => {
+      resolveLinks = resolve;
+    });
+    const originalImplementation = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((command, args) =>
+      command === "load_thread_task_links" ? linksPromise : originalImplementation(command, args)
+    );
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    await user.click(screen.getByRole("button", { name: "筛选" }));
+    await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    expect(screen.getByText("正在加载任务绑定关系…")).toBeInTheDocument();
+    expect(screen.queryByText("修正 Grafana 日志 service 名称")).not.toBeInTheDocument();
+    expect(screen.queryByText("确实未绑定的 Thread")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveLinks([backendLink(backendThreads[1].id, "child")]);
+    });
+    expect(screen.queryByText("正在加载任务绑定关系…")).not.toBeInTheDocument();
+    expect(screen.queryByText("修正 Grafana 日志 service 名称")).not.toBeInTheDocument();
+    expect(screen.getByText("确实未绑定的 Thread")).toBeInTheDocument();
+  });
+
+  test("未绑定任务筛选加载失败后可重试并按真实绑定关系恢复结果", async () => {
+    const user = userEvent.setup();
+    currentThreads.push({ ...backendThreads[1], id: "unlinked-retry", title: "重试后未绑定的 Thread" });
+    currentThreadTaskLinks = [backendLink(backendThreads[1].id, "child")];
+    const originalImplementation = invokeMock.getMockImplementation()!;
+    let failed = false;
+    invokeMock.mockImplementation((command, args) => {
+      if (command === "load_thread_task_links" && !failed) {
+        failed = true;
+        return Promise.reject(new Error("读取关联失败"));
+      }
+      return originalImplementation(command, args);
+    });
+    render(<App />);
+
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    await user.click(screen.getByRole("button", { name: "筛选" }));
+    await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    expect(await screen.findByText("任务绑定关系加载失败")).toBeInTheDocument();
+    expect(screen.queryByText("修正 Grafana 日志 service 名称")).not.toBeInTheDocument();
+    expect(screen.queryByText("重试后未绑定的 Thread")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重试加载绑定关系" }));
+    expect(await screen.findByText("重试后未绑定的 Thread")).toBeInTheDocument();
+    expect(screen.queryByText("修正 Grafana 日志 service 名称")).not.toBeInTheDocument();
+    expect(screen.queryByText("任务绑定关系加载失败")).not.toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "load_thread_task_links")
+    ).toHaveLength(2);
+  });
+
+  test("未绑定任务筛选内绑定成功后立即移出，撤销后重新显示", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("修正 Grafana 日志 service 名称");
+    await user.click(screen.getByRole("button", { name: "筛选" }));
+    await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
+    await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
+    await user.click(await screen.findByRole("combobox", { name: "选择未完成 Task" }));
+    await user.type(screen.getByRole("searchbox"), "子任务");
+    await user.click(screen.getByRole("option", { name: /子任务/ }));
+
+    expect(await screen.findByText("关联已保存")).toBeInTheDocument();
+    expect(screen.queryByText("修正 Grafana 日志 service 名称")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "撤销" }));
+    expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
+    expect(invokeMock).toHaveBeenCalledWith("update_thread_task_link", {
+      threadId: backendThreads[1].id,
+      taskId: null,
+      origin: "restore"
+    });
+  });
+
   test("点击已关联 Task 切换 Todo 视图并发出定位请求", async () => {
     const user = userEvent.setup();
     currentThreadTaskLinks = [
@@ -1014,4 +1168,26 @@ function threadRowFor(element: HTMLElement) {
     current = current.parentElement;
   }
   return current;
+}
+
+async function selectProjectFilterWithKeyboard(
+  user: ReturnType<typeof userEvent.setup>,
+  projectName: string
+) {
+  // jsdom 没有滚动布局；临时补齐 Radix 键盘聚焦依赖，选择仍走真实组件事件。
+  const needsScrollShim = typeof HTMLElement.prototype.scrollIntoView !== "function";
+  if (needsScrollShim) {
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: () => {}
+    });
+  }
+  try {
+    screen.getByRole("combobox", { name: "项目" }).focus();
+    await user.keyboard("{Enter}");
+    screen.getByRole("option", { name: projectName }).focus();
+    await user.keyboard("{Enter}");
+  } finally {
+    if (needsScrollShim) Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  }
 }

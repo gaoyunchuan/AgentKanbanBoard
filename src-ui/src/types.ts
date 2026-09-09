@@ -55,6 +55,7 @@ export type FilterState = {
   search: string;
   projectId: string;
   boardStatuses: BoardStatus[];
+  onlyUnlinked: boolean;
 };
 
 export type BackendProject = {

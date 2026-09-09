@@ -155,6 +155,7 @@ test("普通浏览器模式只更新本地 demo 状态，不调用 Tauri", async
   await act(async () => {
     await result.current.loadLinks();
   });
+  expect(result.current.loaded).toBe(true);
   await act(async () => {
     await result.current.assign("demo-thread", "demo-task", "thread");
   });
@@ -203,11 +204,29 @@ test("关联加载失败后暴露错误并允许强制重试", async () => {
     await expect(result.current.loadLinks()).rejects.toThrow("读取失败");
   });
   expect(result.current.loading).toBe(false);
+  expect(result.current.loaded).toBe(false);
   expect(result.current.loadError).toBe("关联加载失败");
 
   await act(async () => {
     await result.current.loadLinks(true);
   });
   expect(result.current.loadError).toBeUndefined();
+  expect(result.current.loaded).toBe(true);
   expect(result.current.linksByThread.get("thread")?.taskId).toBe("task");
+});
+
+test("空关联结果只有读取成功后才算已加载", async () => {
+  const pending = deferred<BackendThreadTaskLink[]>();
+  const invokeCommand = vi.fn(() => pending.promise);
+  const { result } = renderHook(() => useThreadTaskLinks({ enabled: true, invokeCommand }));
+
+  expect(result.current.loaded).toBe(false);
+  act(() => { void result.current.loadLinks(); });
+  expect(result.current.loaded).toBe(false);
+  expect(result.current.loading).toBe(true);
+
+  await act(async () => { pending.resolve([]); });
+  expect(result.current.loaded).toBe(true);
+  expect(result.current.loading).toBe(false);
+  expect(result.current.linksByThread.size).toBe(0);
 });

@@ -10,7 +10,7 @@
 - Thread comments 必须继续懒加载，不应进入 `list_threads -> BoardData -> React state -> 周期刷新` 主链路；列表视图可对已渲染行异步调用 `load_thread_comments` 预取最新评论，展开评论时也按 thread id 加载完整评论。
 - `thread_comments` 查询使用 `WHERE thread_id = ? ORDER BY created_at DESC, id DESC`，数据库 schema 需要保持 `thread_comments(thread_id, created_at, id)` 方向的索引。
 - 前端自动刷新相关诊断开关（停止同步、停止刷新、停止解析、只读轮询、关闭评论）已从工具栏移除；定位刷新类问题时需要通过测试、日志或临时代码排查，不应把这些开关重新作为常驻 UI。
-- 筛选面板保留项目和状态；状态是多选，默认选中待审核和挂起；类型、Sprint、显示归档不应作为常驻筛选控件。
+- 筛选面板保留项目、状态和“仅未绑定任务”；状态是多选，默认选中待审核和挂起；类型、Sprint、显示归档不应作为常驻筛选控件。
 - Thread 行操作列包含打开 Codex、打开 VS Code、复制 session id、审核/归档等图标按钮；打开 VS Code 通过 Tauri command 先执行 `code <项目目录>`，macOS 上失败时 fallback 到 `open -a "Visual Studio Code" <项目目录>`；前端优先使用项目路径，没有项目路径时使用 thread cwd。
 - 左侧导航支持展开、图标栏、完全隐藏三态；窄窗口下可通过完全隐藏释放列表操作列宽度，隐藏后应在主标题栏保留展开导航入口。
 - 禅模式按钮位于同步按钮前；开启时临时隐藏左侧导航和“同步与队列概览”，退出后恢复原有显示状态。
@@ -29,6 +29,7 @@
 - 普通 Vite 浏览器预览没有 Tauri bridge，不应启动 BoardData 加载和周期同步；桌面壳与测试环境继续保留 Tauri 调用。
 - Thread 与 To Do Task 的关联使用独立 `thread_task_links` 表；`thread_id` 唯一，因此一个 Thread 最多关联一个 Task，一个 Task 可以关联多个 Thread，Task 删除时依靠外键级联清理关系。
 - 关联关系必须保持懒加载，不得进入 `BoardData` 或 5 秒轮询主链路；Thread/Task 状态变化只影响新增候选，不自动解除既有关联。
+- Thread 的“仅未绑定任务”默认关闭，以 `thread_task_links` 是否存在关联为准，与项目、状态、搜索取交集；开启时按需读取关联，加载中或失败时不得把空 Map 当成未绑定结果，失败需提供重试入口。
 - Thread 端候选仅包含未完成、进行中的 Task，并支持子 Task 粒度；Task 端候选仅包含待审核、挂起的 Thread，但所有状态的发起对象都允许操作。
 - Task 端选择已关联其他 Task 的 Thread 时直接迁移到当前 Task；前端按 Thread 串行提交、不同 Thread 可并行，失败后回滚并重新加载，成功反馈提供 5 秒撤销。
 - 普通 Vite 浏览器预览需要提供可交互的 Thread/Task demo 数据，但不得调用 Tauri command，便于在窄窗口完成双向关联视觉验收。
