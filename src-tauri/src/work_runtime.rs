@@ -1947,8 +1947,9 @@ for line in sys.stdin:
 
     fn stopping_child_fixture(acknowledge: bool) -> (CodexRuntime, mpsc::Receiver<RuntimeEvent>) {
         let script = r#"
-import sys, json, time
+import sys, json
 def emit(value): print(json.dumps(value), flush=True)
+child_stop_requested = False
 for line in sys.stdin:
     message = json.loads(line)
     method = message.get('method')
@@ -1966,10 +1967,15 @@ for line in sys.stdin:
         emit({'method':'turn/completed','params':{'threadId':'parent','turn':{'id':'parent-turn','status':'completed'}}})
     elif method == 'turn/interrupt':
         assert message['params']['threadId'] == 'child'
+        child_stop_requested = True
         emit({'id':message['id'],'result':{}})
-        if ACK_CHILD:
-            time.sleep(0.04)
-            emit({'method':'turn/completed','params':{'threadId':'child','turn':{'id':'child-turn','status':'interrupted'}}})
+        emit({'method':'fixture/child-stop-requested','params':{'threadId':'child'}})
+    elif method == 'model/list':
+        # The test releases this acknowledgement only after observing the stop
+        # request and checking that parent success is still withheld.
+        assert ACK_CHILD and child_stop_requested
+        emit({'id':message['id'],'result':{'data':[]}})
+        emit({'method':'turn/completed','params':{'threadId':'child','turn':{'id':'child-turn','status':'interrupted'}}})
 "#.replace("ACK_CHILD", if acknowledge { "True" } else { "False" });
         let mut command = std::process::Command::new("python3");
         command.args(["-u", "-c", &script]);
@@ -1983,10 +1989,14 @@ for line in sys.stdin:
             }),
         )
         .unwrap();
-        runtime
-            .shared
-            .child_stop_timeout_ms
-            .store(150, Ordering::Relaxed);
+        // Only the missing-confirmation case needs an accelerated watchdog.
+        // The success case checks event order, not a race against CI scheduling.
+        if !acknowledge {
+            runtime
+                .shared
+                .child_stop_timeout_ms
+                .store(150, Ordering::Relaxed);
+        }
         runtime
             .start_task(TaskExecutionConfig {
                 task_id: "task".into(),
@@ -2009,6 +2019,17 @@ for line in sys.stdin:
     fn parent_completion_waits_for_child_stop_confirmation() {
         let (runtime, receive) = stopping_child_fixture(true);
         receive_method(&receive, "runtime/children/stopping");
+        loop {
+            let event = receive.recv_timeout(Duration::from_secs(3)).unwrap();
+            assert_ne!(
+                event.method, "turn/completed",
+                "interrupt RPC acknowledgement must not release parent success"
+            );
+            if event.method == "fixture/child-stop-requested" {
+                break;
+            }
+        }
+        runtime.rpc_read("model/list", json!({})).unwrap();
         let first_terminal = receive_method(&receive, "turn/completed");
         assert_eq!(first_terminal.thread_id.as_deref(), Some("child"));
         let parent_terminal = receive_method(&receive, "turn/completed");
