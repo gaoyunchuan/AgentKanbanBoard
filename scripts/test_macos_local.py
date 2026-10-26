@@ -75,7 +75,9 @@ class MacosLocalTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # macOS temporary directories may pass through /var -> /private/var.
+        # Use the same canonical paths as verify_dmg before matching failures.
+        self.root = Path(self.temporary.name).resolve()
         (self.root / "src-tauri").mkdir()
         (self.root / "src-tauri/tauri.conf.json").write_text(json.dumps({
             "productName": "Local Test App", "identifier": "local.test.kanban", "version": "1.2.3"
