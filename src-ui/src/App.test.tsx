@@ -329,7 +329,7 @@ describe("Codex Kanban App", () => {
   });
 
   test("loads real Codex data through Tauri commands", async () => {
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
     expect(screen.queryByText("接入真实数据")).not.toBeInTheDocument();
@@ -338,7 +338,7 @@ describe("Codex Kanban App", () => {
   });
 
   test("does not show debug polling controls in the toolbar", async () => {
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "同步" })).toBeInTheDocument();
@@ -352,7 +352,7 @@ describe("Codex Kanban App", () => {
 
   test("opens the independent To Do List page from the sidebar", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: /To Do List/ }));
@@ -360,14 +360,14 @@ describe("Codex Kanban App", () => {
     expect(screen.getByRole("heading", { name: "To Do List" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新建任务" })).toBeInTheDocument();
     expect(
-      screen.getByText("用树形任务拆解工作，日期双击编辑，⌘⇧Enter 向上新建，⌘Enter 向后新建，Tab 调整层级。")
+      screen.getByText("用树形任务组织工作，委派给 Codex 自动推进，在工作台沟通、检查和验收。")
     ).toBeInTheDocument();
     expect(screen.queryByText("同步与队列概览")).not.toBeInTheDocument();
   });
 
   test("进入 To Do List 只独立加载一次关联，不加入周期刷新", async () => {
     vi.useFakeTimers();
-    render(<App />);
+    render(<App initialView="active" />);
     await act(async () => {
       await Promise.resolve();
     });
@@ -394,7 +394,7 @@ describe("Codex Kanban App", () => {
     currentThreadTaskLinks = [
       backendLink("019ef88b-6207-7122-9f6e-da4d6d52a9ba", "demo-1")
     ];
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: /To Do List/ }));
@@ -418,7 +418,7 @@ describe("Codex Kanban App", () => {
 
   test("Thread 展开后按需加载关联，并可选择子 Task", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
     expect(invokeMock).toHaveBeenCalledWith("load_thread_task_links", undefined);
@@ -436,7 +436,7 @@ describe("Codex Kanban App", () => {
 
   test("折叠 Thread 不显示关联信息且轮询不加载关联", async () => {
     vi.useFakeTimers();
-    render(<App />);
+    render(<App initialView="active" />);
     await act(async () => {
       await Promise.resolve();
       await vi.advanceTimersByTimeAsync(5000);
@@ -455,7 +455,7 @@ describe("Codex Kanban App", () => {
       { ...backendThreads[1], id: "unlinked-other-search", project_id: "agent-kanban", title: "其他事项" }
     ];
     currentThreadTaskLinks = [backendLink(backendThreads[1].id, "child")];
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: "筛选" }));
@@ -490,7 +490,7 @@ describe("Codex Kanban App", () => {
 
   test("未绑定任务筛选首次开启才加载关联，重新开启和五秒轮询不重复加载", async () => {
     vi.useFakeTimers();
-    render(<App />);
+    render(<App initialView="active" />);
     await act(async () => {
       await Promise.resolve();
     });
@@ -529,7 +529,7 @@ describe("Codex Kanban App", () => {
     invokeMock.mockImplementation((command, args) =>
       command === "load_thread_task_links" ? linksPromise : originalImplementation(command, args)
     );
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: "筛选" }));
@@ -559,7 +559,7 @@ describe("Codex Kanban App", () => {
       }
       return originalImplementation(command, args);
     });
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: "筛选" }));
@@ -579,7 +579,7 @@ describe("Codex Kanban App", () => {
 
   test("未绑定任务筛选内绑定成功后立即移出，撤销后重新显示", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: "筛选" }));
     await user.click(screen.getByRole("checkbox", { name: "仅未绑定任务" }));
@@ -604,7 +604,7 @@ describe("Codex Kanban App", () => {
     currentThreadTaskLinks = [
       backendLink("019ef88b-6207-7122-9f6e-da4d6d52a9ba", "child")
     ];
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
     await user.click(await screen.findByRole("button", { name: "打开 Task 子任务" }));
@@ -612,7 +612,7 @@ describe("Codex Kanban App", () => {
   });
 
   test("switches between active and To Do List with Cmd+1 and Cmd+2", async () => {
-    render(<App />);
+    render(<App initialView="active" />);
 
     const searchInput = await screen.findByPlaceholderText("搜索 thread、项目、模块");
     searchInput.focus();
@@ -632,7 +632,7 @@ describe("Codex Kanban App", () => {
   });
 
   test("ignores non-exact view shortcuts", async () => {
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
@@ -644,7 +644,7 @@ describe("Codex Kanban App", () => {
 
   test("keeps zen mode while shortcuts switch views", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     await user.click(screen.getByRole("button", { name: "禅模式" }));
@@ -666,7 +666,7 @@ describe("Codex Kanban App", () => {
 
   test("offers zen mode directly in To Do List without board actions", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await screen.findByText("修正 Grafana 日志 service 名称");
     fireEvent.keyDown(window, { key: "2", metaKey: true });
@@ -694,7 +694,7 @@ describe("Codex Kanban App", () => {
       }
     ];
 
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
     expect(screen.getByText("等待窗口期后继续处理")).toBeInTheDocument();
@@ -715,7 +715,7 @@ describe("Codex Kanban App", () => {
 
   test("can fully hide the sidebar to recover list width", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
     expect(screen.getByRole("navigation")).toBeInTheDocument();
@@ -732,7 +732,7 @@ describe("Codex Kanban App", () => {
 
   test("zen mode hides the menu and sync summary then restores them", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
     expect(screen.getByRole("navigation")).toBeInTheDocument();
@@ -757,7 +757,7 @@ describe("Codex Kanban App", () => {
   test("opens the thread project in VS Code and copies the session id from row actions", async () => {
     const user = userEvent.setup();
     const writeTextMock = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
-    render(<App />);
+    render(<App initialView="active" />);
 
     const row = threadRowFor(await screen.findByText("修正 Grafana 日志 service 名称"));
     expect(row).toBeTruthy();
@@ -791,7 +791,7 @@ describe("Codex Kanban App", () => {
 
   test("periodically syncs Codex threads while the page is open", async () => {
     vi.useFakeTimers();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await act(async () => {
       await Promise.resolve();
@@ -824,7 +824,7 @@ describe("Codex Kanban App", () => {
       configurable: true,
       value: "hidden"
     });
-    render(<App />);
+    render(<App initialView="active" />);
 
     await act(async () => {
       await Promise.resolve();
@@ -842,7 +842,7 @@ describe("Codex Kanban App", () => {
   test("virtualizes large thread lists instead of rendering every row", async () => {
     currentThreads = manyBackendThreads(250);
 
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("虚拟测试记录 001")).toBeInTheDocument();
     expect(screen.queryByText("虚拟测试记录 250")).not.toBeInTheDocument();
@@ -880,7 +880,7 @@ describe("Codex Kanban App", () => {
       return Promise.resolve(null);
     });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    render(<App />);
+    render(<App initialView="active" />);
 
     await act(async () => {
       await Promise.resolve();
@@ -924,7 +924,7 @@ describe("Codex Kanban App", () => {
       }
       return Promise.resolve(null);
     });
-    render(<App />);
+    render(<App initialView="active" />);
 
     expect(await screen.findByText("修正 Grafana 日志 service 名称")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "同步" }));
@@ -934,7 +934,7 @@ describe("Codex Kanban App", () => {
 
   test("switches focused views and shows running/review data", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(screen.getByRole("button", { name: /运行中/ }));
     expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
@@ -956,7 +956,7 @@ describe("Codex Kanban App", () => {
       }
     ];
 
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(screen.getByRole("button", { name: "筛选" }));
     await user.click(screen.getByRole("checkbox", { name: "已审核" }));
@@ -972,7 +972,7 @@ describe("Codex Kanban App", () => {
 
   test("hides running and untriaged columns in board view", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(await screen.findByRole("tab", { name: /看板/ }));
 
@@ -997,7 +997,7 @@ describe("Codex Kanban App", () => {
       }
     ];
 
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(within(screen.getByRole("navigation")).getByRole("button", { name: /^归档/ }));
     await user.click(await screen.findByRole("tab", { name: /看板/ }));
@@ -1007,7 +1007,7 @@ describe("Codex Kanban App", () => {
 
   test("edits fixed fields from an expanded row", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(screen.getByRole("button", { name: /运行中/ }));
     await user.click(await screen.findByText("接入真实数据"));
@@ -1065,7 +1065,7 @@ describe("Codex Kanban App", () => {
       return Promise.resolve(null);
     });
 
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(screen.getByRole("button", { name: /运行中/ }));
     expect(await screen.findByText("接入真实数据")).toBeInTheDocument();
@@ -1085,7 +1085,7 @@ describe("Codex Kanban App", () => {
 
   test("adds and edits comments from an expanded list row", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(screen.getByRole("button", { name: /运行中/ }));
     await user.click(await screen.findByText("接入真实数据"));
@@ -1119,7 +1119,7 @@ describe("Codex Kanban App", () => {
 
   test("suspends a thread when a comment is saved with wake time", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(await screen.findByText("修正 Grafana 日志 service 名称"));
     await user.type(screen.getByPlaceholderText("添加评论..."), "等明天日志补齐后再看");
@@ -1138,7 +1138,7 @@ describe("Codex Kanban App", () => {
 
   test("marks reviewed, archives, and restores a thread", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App initialView="active" />);
 
     await user.click(screen.getByRole("button", { name: "筛选" }));
     await user.click(screen.getByRole("checkbox", { name: "已审核" }));

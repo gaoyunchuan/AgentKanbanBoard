@@ -189,14 +189,14 @@ type ThreadAssociationBindings = {
   onNavigateTask: (taskId: string) => void;
 };
 
-function App() {
+function App({ initialView = "todos" }: { initialView?: ViewKey } = {}) {
   const { threads, setThreads, projects, setProjects, reloadBoardData } = useBoardData();
   const associationPersistenceEnabled = shouldInvokeTauri(
     typeof window === "undefined" || "__TAURI_INTERNALS__" in window,
     import.meta.env.MODE
   );
   const associations = useThreadTaskLinks({ enabled: associationPersistenceEnabled });
-  const [view, setView] = useState<ViewKey>("active");
+  const [view, setView] = useState<ViewKey>(initialView);
   const [layout, setLayout] = useState<LayoutMode>("list");
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("expanded");
@@ -555,7 +555,7 @@ function App() {
               {sidebarMode === "expanded" && (
                 <div className="min-w-0">
                   <div className="truncate text-[13px] font-semibold">Codex Kanban</div>
-                  <div className="truncate text-[11px] text-muted-foreground">只读 thread 工作台</div>
+                  <div className="truncate text-[11px] text-muted-foreground">个人 Agent 工作台</div>
                 </div>
               )}
             </div>
@@ -654,7 +654,7 @@ function App() {
                 </div>
                 <div className="truncate text-[11px] text-muted-foreground">
                   {view === "todos"
-                    ? "用树形任务拆解工作，日期双击编辑，⌘⇧Enter 向上新建，⌘Enter 向后新建，Tab 调整层级。"
+                    ? "用树形任务组织工作，委派给 Codex 自动推进，在工作台沟通、检查和验收。"
                     : "Codex Desktop 保持执行权威，此处只做同步、筛选、归档和跳转。"}
                 </div>
               </div>

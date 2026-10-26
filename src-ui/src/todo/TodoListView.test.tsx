@@ -71,7 +71,7 @@ describe("TodoListView", () => {
   test("列表卡片提供独立的响应式宽度容器", () => {
     render(<TodoListView initialTasks={initialTasks} persistTasks={vi.fn()} />);
 
-    expect(screen.getByText("关联 Thread").closest(".todo-list-container")).not.toBeNull();
+    expect(screen.getByText("Agent / 关联 Thread").closest(".todo-list-container")).not.toBeNull();
     expect(screen.getByText("任务").closest("[data-todo-grid-header]")).not.toBeNull();
   });
 
@@ -272,7 +272,7 @@ describe("TodoListView", () => {
 
     const user = userEvent.setup();
     render(<TodoListView initialTasks={[mapped]} persistTasks={vi.fn()} />);
-    expect(screen.getByText("关联 Thread")).toBeInTheDocument();
+    expect(screen.getByText("Agent / 关联 Thread")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "展开 后端任务" }));
 
     expect(screen.getByText("添加日期：2026-07-13")).toBeInTheDocument();
@@ -692,7 +692,6 @@ describe("TodoListView", () => {
   });
 
   test("列表使用紧凑行高并默认每页显示 200 条", async () => {
-    const user = userEvent.setup();
     const manyTasks: TodoTask[] = Array.from({ length: 201 }, (_, index) => ({
       ...initialTasks[0],
       id: `task-${index + 1}`,
@@ -703,28 +702,33 @@ describe("TodoListView", () => {
       processTracking: "",
       resultReview: ""
     }));
-    render(<TodoListView initialTasks={manyTasks} persistTasks={vi.fn()} />);
+    const { container } = render(<TodoListView initialTasks={manyTasks} persistTasks={vi.fn()} />);
+    // Large fixtures exercise pagination; scope queries so label traversal does not
+    // repeatedly scan every control in all 200 rows.
+    const titles = () => container.querySelectorAll<HTMLInputElement>('input[aria-label="任务标题"]');
+    const toolbar = within(screen.getByRole("toolbar", { name: "任务筛选与新建" }));
+    const pagination = within(screen.getByRole("group", { name: "任务分页" }));
 
-    expect(screen.getAllByLabelText("任务标题")).toHaveLength(200);
+    expect(titles()).toHaveLength(200);
     expect(screen.getByText("第 1 / 2 页 · 共 201 条")).toBeInTheDocument();
     expect(screen.getByDisplayValue("任务 001").closest("[data-task-row]")).toHaveClass("min-h-9");
     expect(screen.getByDisplayValue("任务 001")).toHaveClass("text-[12px]");
 
-    await user.click(screen.getByRole("button", { name: "下一页" }));
-    expect(screen.getAllByLabelText("任务标题")).toHaveLength(1);
+    fireEvent.click(pagination.getByRole("button", { name: "下一页" }));
+    expect(titles()).toHaveLength(1);
     expect(screen.getByDisplayValue("任务 201")).toBeInTheDocument();
     expect(screen.getByText("第 2 / 2 页 · 共 201 条")).toBeInTheDocument();
 
-    await user.type(screen.getByRole("textbox", { name: "搜索任务" }), "任务 001");
+    fireEvent.change(toolbar.getByLabelText("搜索任务"), { target: { value: "任务 001" } });
     expect(screen.getByText("第 1 / 1 页 · 共 1 条")).toBeInTheDocument();
-    expect(screen.getAllByLabelText("任务标题")).toHaveLength(1);
-    expect(screen.getAllByLabelText("任务标题")[0]).toHaveValue("任务 001");
+    expect(titles()).toHaveLength(1);
+    expect(titles()[0]).toHaveValue("任务 001");
 
-    await user.clear(screen.getByRole("textbox", { name: "搜索任务" }));
-    await user.click(screen.getByRole("button", { name: "下一页" }));
-    await user.selectOptions(screen.getByRole("combobox", { name: "状态筛选" }), "todo");
+    fireEvent.change(toolbar.getByLabelText("搜索任务"), { target: { value: "" } });
+    fireEvent.click(pagination.getByRole("button", { name: "下一页" }));
+    fireEvent.change(toolbar.getByLabelText("状态筛选"), { target: { value: "todo" } });
     expect(screen.getByText("第 1 / 1 页 · 共 200 条")).toBeInTheDocument();
-    expect(screen.getAllByLabelText("任务标题")).toHaveLength(200);
+    expect(titles()).toHaveLength(200);
   });
 
   test("周视图筛选过去 168 小时任务并只补齐祖先", async () => {
@@ -843,7 +847,6 @@ describe("TodoListView", () => {
   });
 
   test("周视图跨页删除空任务后按可见顺序定位分页并聚焦", async () => {
-    const user = userEvent.setup();
     const now = Date.parse("2026-08-06T12:00:00Z");
     const tasks: TodoTask[] = Array.from({ length: 601 }, (_, index) => [
       ...(
@@ -863,7 +866,7 @@ describe("TodoListView", () => {
         updatedAt: "2026-08-05T12:00:00Z"
       }
     ]).flat().map((task, position) => ({ ...task, position }));
-    render(
+    const { container } = render(
       <TodoListView
         initialTasks={tasks}
         persistTasks={vi.fn()}
@@ -871,15 +874,16 @@ describe("TodoListView", () => {
       />
     );
 
-    await user.click(screen.getByRole("button", { name: "周视图" }));
-    await user.click(screen.getByRole("button", { name: "下一页" }));
-    const emptyTitle = screen
-      .getAllByLabelText("任务标题")
-      .find((input) => (input as HTMLInputElement).value === "") as HTMLInputElement;
+    const toolbar = within(screen.getByRole("toolbar", { name: "任务筛选与新建" }));
+    const pagination = within(screen.getByRole("group", { name: "任务分页" }));
+    fireEvent.click(toolbar.getByRole("button", { name: "周视图" }));
+    fireEvent.click(pagination.getByRole("button", { name: "下一页" }));
+    const emptyTitle = Array.from(container.querySelectorAll<HTMLInputElement>('input[aria-label="任务标题"]'))
+      .find((input) => input.value === "") as HTMLInputElement;
     expect(emptyTitle).toHaveValue("");
 
     emptyTitle.focus();
-    await user.keyboard("{Backspace}");
+    fireEvent.keyDown(emptyTitle, { key: "Backspace" });
 
     const previousTitle = await screen.findByDisplayValue("近期任务 249");
     await waitFor(() => expect(previousTitle).toHaveFocus());

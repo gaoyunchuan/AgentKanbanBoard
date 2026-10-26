@@ -14,10 +14,11 @@ use crate::time::current_utc_text;
 
 const INIT_SQL: &str = include_str!("../db/001_init.sql");
 const THREAD_TASK_LINKS_SQL: &str = include_str!("../db/002_thread_task_links.sql");
+const TASK_WORKFLOW_SQL: &str = include_str!("../db/003_task_workflow.sql");
 const LEGACY_FIXED_NOW_TEXT: &str = "2026-06-24T00:00:00Z";
 
 pub struct Repository {
-    connection: Connection,
+    pub(crate) connection: Connection,
     clock: Box<dyn Fn() -> String>,
 }
 
@@ -142,9 +143,21 @@ impl Repository {
         &self,
         tasks: &[TodoTaskInput],
     ) -> rusqlite::Result<Vec<TodoTaskRecord>> {
+        // Legacy snapshot writes cannot safely coexist with autonomous tasks.
+        // The live UI uses fieldwise compare-and-swap through save_todo_task_changes.
+        let transaction = rusqlite::Transaction::new_unchecked(
+            &self.connection,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let managed: i64 =
+            transaction.query_row("SELECT COUNT(*) FROM work_tasks", [], |row| row.get(0))?;
+        if managed > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "已有自动执行任务，必须通过增量保存接口保存，避免覆盖后台进展".into(),
+            ));
+        }
         // 保存边界再次归一化，保证旧客户端或异常调用也只能把置顶状态落在当前 root 上。
         let pinned_root_ids = normalized_pinned_root_ids(tasks);
-        let transaction = self.connection.unchecked_transaction()?;
         let existing_ids = {
             let mut statement = transaction.prepare("SELECT id FROM todo_tasks")?;
             let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
@@ -945,7 +958,7 @@ impl Repository {
         rows.collect()
     }
 
-    fn now_text(&self) -> String {
+    pub(crate) fn now_text(&self) -> String {
         (self.clock)()
     }
 
@@ -1059,6 +1072,7 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
         [],
     )?;
     connection.execute_batch(THREAD_TASK_LINKS_SQL)?;
+    connection.execute_batch(TASK_WORKFLOW_SQL)?;
 
     Ok(())
 }

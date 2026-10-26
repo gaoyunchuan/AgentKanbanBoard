@@ -49,6 +49,11 @@ import {
   stampChangedTodoTasks
 } from "./todoRecency";
 import { useTodoGridLayout } from "./useTodoGridLayout";
+import { mergeTodoSnapshot, todoEditPayload, todoEdits } from "./todoPersistence";
+import { useWorkbench } from "@/workbench/useWorkbench";
+import { TaskExecutionPanel, WorkStatusBadge } from "@/workbench/TaskExecutionPanel";
+import { needsAttention, type WorkTask } from "@/workbench/types";
+import { RuntimeSettings } from "@/workbench/RuntimeSettings";
 
 type DateField = "expectedEndDate" | "actualEndDate";
 type ExtensionField = "processTracking" | "resultReview";
@@ -161,6 +166,13 @@ export function TodoListView({
     normalizeTodoPins(initialTasks ?? [])
   );
   const [tasksReady, setTasksReady] = useState(initialTasks !== undefined);
+  const [executionTaskId, setExecutionTaskId] = useState<string>();
+  const [saveError, setSaveError] = useState(false);
+  const workbenchEnabled = isTauriRuntime();
+  const workbench = useWorkbench(workbenchEnabled);
+  const workById = useMemo(() => new Map(workbench.data.tasks.map((task) => [task.task_id, task])), [workbench.data.tasks]);
+  const attentionTasks = workbench.data.tasks.filter(needsAttention);
+  const executionTask = tasks.find((task) => task.id === executionTaskId);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | TodoStatus>("all");
   const [weekViewEnabled, setWeekViewEnabled] = useState(false);
@@ -180,6 +192,11 @@ export function TodoListView({
   );
   const titleRefs = useRef(new Map<string, HTMLInputElement>());
   const saveQueue = useRef(Promise.resolve());
+  const acknowledgedTasks = useRef<TodoTask[]>(tasks);
+  const lastIntentTasks = useRef<TodoTask[]>(tasks);
+  const latestTasks = useRef<TodoTask[]>(tasks);
+  const saveEpoch = useRef(0);
+  const failedSaveEpoch = useRef(0);
   const handledNavigationRequest = useRef<number>();
   const pendingNavigationId = useRef<string>();
   const navigatingFilters = useRef(false);
@@ -197,6 +214,9 @@ export function TodoListView({
     if (!isTauriRuntime()) {
       const demo = demoTasks();
       setTasks(demo);
+      acknowledgedTasks.current = demo;
+      lastIntentTasks.current = demo;
+      latestTasks.current = demo;
       setTasksReady(true);
       onTasksChange?.(demo);
       return;
@@ -206,6 +226,9 @@ export function TodoListView({
         if (!cancelled) {
           const loaded = records.map(mapBackendTodoTask);
           setTasks(loaded);
+          acknowledgedTasks.current = loaded;
+          lastIntentTasks.current = loaded;
+          latestTasks.current = loaded;
           setTasksReady(true);
           onTasksChange?.(loaded);
         }
@@ -217,6 +240,31 @@ export function TodoListView({
       cancelled = true;
     };
   }, [initialTasks]);
+
+  const mergeServerTasks = (remote: TodoTask[], base = acknowledgedTasks.current) => {
+    const merged = mergeTodoSnapshot(base, latestTasks.current, remote);
+    lastIntentTasks.current = mergeTodoSnapshot(base, lastIntentTasks.current, remote);
+    acknowledgedTasks.current = remote;
+    latestTasks.current = merged;
+    setTasks(merged);
+    onTasksChange?.(merged);
+    onTasksPersisted?.(remote);
+  };
+
+  const refreshExecutionTasks = async () => {
+    await workbench.refresh();
+    if (!workbenchEnabled) return;
+    await saveQueue.current;
+    const epoch = saveEpoch.current;
+    const remote = await invoke<BackendTodoTask[]>("load_todo_tasks");
+    if (saveEpoch.current === epoch && Array.isArray(remote)) mergeServerTasks(remote.map(mapBackendTodoTask));
+  };
+
+  const workRevision = workbench.data.tasks.map((task) => `${task.task_id}:${task.revision}:${task.status}`).join("|");
+  useEffect(() => {
+    if (!workbenchEnabled || !tasksReady || !workRevision) return;
+    void refreshExecutionTasks().catch((error) => setMessage(`执行状态刷新失败：${String(error)}`));
+  }, [workRevision, tasksReady, workbenchEnabled]);
 
   useEffect(() => onCountChange?.(tasks.length), [onCountChange, tasks.length]);
 
@@ -312,19 +360,45 @@ export function TodoListView({
   }, [navigationTarget, onNavigationError, query, statusFilter, tasks, tasksReady, weekViewEnabled]);
 
   const saveSnapshot = (next: TodoTask[]) => {
+    const edits = todoEdits(lastIntentTasks.current, next);
+    lastIntentTasks.current = next;
+    if (!edits.length) return saveQueue.current;
+    const epoch = ++saveEpoch.current;
+    const failureAtEnqueue = failedSaveEpoch.current;
     saveQueue.current = saveQueue.current
       .catch(() => undefined)
       .then(async () => {
+        if (failureAtEnqueue !== failedSaveEpoch.current) return;
         if (persistTasks) {
           await persistTasks(next);
+          acknowledgedTasks.current = next;
+          onTasksPersisted?.(next);
         } else if (isTauriRuntime()) {
-          await invoke("save_todo_tasks", { tasks: next.map(mapTodoTaskInput) });
+          const payload = todoEditPayload(edits, acknowledgedTasks.current);
+          const remote = await invoke<BackendTodoTask[]>("save_todo_task_changes", {
+            before: payload.before.map(mapTodoTaskInput),
+            after: payload.after.map(mapTodoTaskInput)
+          });
+          if (!Array.isArray(remote)) throw new Error("任务保存没有返回有效的数据快照。");
+          mergeServerTasks(remote.map(mapBackendTodoTask), next);
+        } else {
+          acknowledgedTasks.current = next;
+          onTasksPersisted?.(next);
         }
-        onTasksPersisted?.(next);
+        setSaveError(false);
         setMessage("已保存");
       })
-      .catch((error) => {
-        setMessage(`保存失败：${String(error)}`);
+      .catch(async (error) => {
+        failedSaveEpoch.current = epoch;
+        if (isTauriRuntime()) {
+          try {
+            const remote = await invoke<BackendTodoTask[]>("load_todo_tasks");
+            if (Array.isArray(remote)) mergeServerTasks(remote.map(mapBackendTodoTask));
+          } catch { /* Keep the draft and the last acknowledged baseline for an explicit retry. */ }
+        }
+        lastIntentTasks.current = acknowledgedTasks.current;
+        setSaveError(true);
+        setMessage(`保存失败，本地修改仍保留：${String(error)}`);
       });
     return saveQueue.current;
   };
@@ -347,6 +421,7 @@ export function TodoListView({
       new Date(now()).toISOString()
     );
     setTasks(timestamped);
+    latestTasks.current = timestamped;
     onTasksChange?.(timestamped);
     if (options?.focusId) {
       if (options.focusPage) {
@@ -389,6 +464,7 @@ export function TodoListView({
   };
 
   const toggleCompleted = (task: TodoTask) => {
+    if (workById.has(task.id)) { setExecutionTaskId(task.id); return; }
     const completed = task.status !== "completed";
     updateTask(task.id, {
       status: completed ? "completed" : "todo",
@@ -397,6 +473,7 @@ export function TodoListView({
   };
 
   const setStatus = (task: TodoTask, status: TodoStatus) => {
+    if (workById.has(task.id)) { setStatusMenuId(undefined); setExecutionTaskId(task.id); return; }
     updateTask(task.id, {
       status,
       actualEndDate: status === "completed" ? task.actualEndDate ?? today() : undefined
@@ -421,22 +498,39 @@ export function TodoListView({
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const removableTree = (task: TodoTask) => {
+    const remaining = removeTaskTree(tasks, task.id);
+    const retainedIds = new Set(remaining.map((candidate) => candidate.id));
+    const active = workbench.data.tasks.find((managed) => !retainedIds.has(managed.task_id) && tasks.some((candidate) => candidate.id === managed.task_id) && !["completed", "cancelled"].includes(managed.status));
+    if (active) {
+      setExecutionTaskId(active.task_id);
+      setMessage("此任务树仍有执行中的任务，请先在工作台取消相关任务后再删除。");
+      return undefined;
+    }
+    return remaining;
+  };
+
   const deleteTask = (task: TodoTask) => {
-    const descendants = tasks.length - removeTaskTree(tasks, task.id).length - 1;
+    const remaining = removableTree(task);
+    if (!remaining) return;
+    const descendants = tasks.length - remaining.length - 1;
     if (descendants > 0 && !window.confirm(`删除“${task.title || "未命名任务"}”及其 ${descendants} 个子任务？`)) {
       return;
     }
-    applyTasks(removeTaskTree(tasks, task.id));
+    applyTasks(remaining);
     setExpandedId((current) => (current === task.id ? undefined : current));
   };
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col p-3">
+    <section className="flex min-h-0 min-w-0 flex-1 gap-3 p-3">
       <div
         ref={listContainerRef}
-        className="todo-list-container flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card shadow-sm"
+        className={cn("todo-list-container min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-card shadow-sm", executionTask ? "hidden xl:flex" : "flex")}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <RuntimeSettings enabled={workbenchEnabled} runtime={workbench.data.runtime} onChanged={workbench.refresh} />
+        {workbench.error && <div role="alert" className="flex items-center justify-between gap-2 border-b bg-red-50 px-3 py-2 text-[11px] text-red-800"><span className="break-all">执行服务不可用：{workbench.error}</span><Button size="sm" variant="ghost" onClick={() => void workbench.refresh()}>重试</Button></div>}
+        {attentionTasks.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b bg-amber-50 px-3 py-2"><span className="text-[11px] font-medium text-amber-900">需要我 · {attentionTasks.length}</span>{attentionTasks.map((managed) => <button key={managed.task_id} onClick={() => setExecutionTaskId(managed.task_id)} className="flex min-w-0 max-w-[240px] items-center gap-2 rounded border border-amber-200 bg-white px-2 py-1 text-[11px]"><span className="truncate">{managed.title}</span><WorkStatusBadge task={managed} /></button>)}</div>}
+        <div role="toolbar" aria-label="任务筛选与新建" className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={addRootTask}>
               <Plus className="h-3.5 w-3.5" />
@@ -492,7 +586,7 @@ export function TodoListView({
           className="todo-grid grid border-b bg-secondary/25 px-3 py-1.5 text-[10px] font-medium text-muted-foreground"
         >
           <div className="flex items-center gap-2 pl-1"><ListTodo className="h-3.5 w-3.5" />任务</div>
-          <div>关联 Thread</div>
+          <div>Agent / 关联 Thread</div>
           <div className="flex items-center gap-1">预期结束日期<span className="font-normal text-muted-foreground/70">· 双击编辑</span></div>
           <div>实际结束日期</div>
           <div aria-hidden="true" />
@@ -614,8 +708,8 @@ export function TodoListView({
                     )}
                     <div className="relative mr-2 mt-1">
                       <button
-                        aria-label={`${task.status === "completed" ? "恢复" : "完成"} ${task.title || "未命名任务"}`}
-                        title={`${statusLabels[task.status]}；单击完成，右键选择状态`}
+                        aria-label={`${workById.has(task.id) ? "验收或调整" : task.status === "completed" ? "恢复" : "完成"} ${task.title || "未命名任务"}`}
+                        title={workById.has(task.id) ? "在工作台验收、暂停或返工此 Agent 任务" : `${statusLabels[task.status]}；单击完成，右键选择状态`}
                         className={cn(
                           "flex h-5 w-5 items-center justify-center rounded-full transition-transform hover:scale-110",
                           task.status === "completed" && "bg-emerald-500 text-white",
@@ -632,7 +726,7 @@ export function TodoListView({
                         <StatusIcon status={task.status} />
                       </button>
                       {statusMenuId === task.id && (
-                        <StatusMenu task={task} onSelect={(status) => setStatus(task, status)} onTogglePinned={depth === 0 ? () => togglePinned(task) : undefined} onDelete={() => deleteTask(task)} onClose={() => setStatusMenuId(undefined)} />
+                        <StatusMenu task={task} onSelect={(status) => setStatus(task, status)} onOpenExecution={workById.has(task.id) ? () => { setStatusMenuId(undefined); setExecutionTaskId(task.id); } : undefined} onTogglePinned={depth === 0 ? () => togglePinned(task) : undefined} onDelete={() => deleteTask(task)} onClose={() => setStatusMenuId(undefined)} />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -660,12 +754,14 @@ export function TodoListView({
                             applyTasks(event.shiftKey ? outdentTask(tasks, task.id) : indentTask(tasks, task.id), { focusId: task.id });
                           } else if (event.key === "Backspace" && !task.title && tasks.length > 1) {
                             event.preventDefault();
+                            const remaining = removableTree(task);
+                            if (!remaining) return;
                             const index = visibleTasks.findIndex(
                               ({ task: item }) => item.id === task.id
                             );
                             const nextFocus =
                               visibleTasks[Math.max(0, index - 1)]?.task.id;
-                            applyTasks(removeTaskTree(tasks, task.id), {
+                            applyTasks(remaining, {
                               focusId: nextFocus,
                               focusMode: "caret-end",
                               focusPage:
@@ -684,6 +780,8 @@ export function TodoListView({
                   </div>
                   <TaskThreadTags
                     task={task}
+                    work={workById.get(task.id)}
+                    onExecute={() => { void saveQueue.current.then(() => setExecutionTaskId(task.id)); }}
                     threads={threads}
                     linksByThread={linksByThread}
                     loading={linksLoading}
@@ -735,15 +833,16 @@ export function TodoListView({
           )}
         </div>
 
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-t bg-card px-3 py-1.5 text-[10px] text-muted-foreground">
-          <span>第 {currentPage} / {pageCount} 页 · 共 {visibleTasks.length} 条</span>
-          <span className="truncate">{message}</span>
+        <div role="group" aria-label="任务分页" className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-t bg-card px-3 py-1.5 text-[10px] text-muted-foreground">
+          <span className="whitespace-nowrap">第 {currentPage} / {pageCount} 页 · 共 {visibleTasks.length} 条</span>
+          <span className="order-3 col-span-2 flex min-w-0 items-center gap-1"><span className="truncate" title={message}>{message}</span>{saveError && <button className="shrink-0 text-primary underline" onClick={() => void saveSnapshot(latestTasks.current)}>重试保存</button>}</span>
           <div className="flex justify-end gap-1">
             <Button size="sm" variant="ghost" aria-label="上一页" disabled={currentPage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>上一页</Button>
             <Button size="sm" variant="ghost" aria-label="下一页" disabled={currentPage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>下一页</Button>
           </div>
         </div>
       </div>
+      {executionTask && <TaskExecutionPanel key={executionTask.id} task={executionTask} tasks={tasks} work={workById.get(executionTask.id)} agents={workbench.data.agents} defaultWorkspace={threads.find((thread) => linksByThread.get(thread.id)?.taskId === executionTask.id)?.cwd ?? ""} enabled={workbenchEnabled} onClose={() => setExecutionTaskId(undefined)} onChanged={refreshExecutionTasks} />}
     </section>
   );
 }
@@ -788,6 +887,8 @@ function DateCell({ task, field, editing, onEdit, onChange }: {
 
 function TaskThreadTags({
   task,
+  work,
+  onExecute,
   threads,
   linksByThread,
   loading,
@@ -796,6 +897,8 @@ function TaskThreadTags({
   onOpenThread
 }: {
   task: TodoTask;
+  work?: WorkTask;
+  onExecute: () => void;
   threads: ThreadItem[];
   linksByThread: Map<string, ThreadTaskLink>;
   loading: boolean;
@@ -803,19 +906,20 @@ function TaskThreadTags({
   onRetry?: (force?: boolean) => Promise<void>;
   onOpenThread?: (thread: ThreadItem) => void;
 }) {
+  const execute = <button type="button" aria-label={`执行 ${task.title || "未命名任务"}`} title="在工作台委派与执行" onClick={onExecute} className="w-fit rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10">{work ? <WorkStatusBadge task={work} /> : "交给 Agent"}</button>;
   if (loading) {
-    return <span className="text-[10px] text-muted-foreground">加载中…</span>;
+    return <div className="flex flex-wrap items-center gap-1">{execute}<span className="text-[10px] text-muted-foreground">关联加载中…</span></div>;
   }
   if (loadError) {
     return (
-      <button
+      <div className="flex flex-wrap items-center gap-1">{execute}<button
         type="button"
         aria-label="重试关联加载"
         className="w-fit rounded px-1.5 py-0.5 text-[10px] text-destructive hover:bg-destructive/10"
         onClick={() => void onRetry?.(true).catch(() => undefined)}
       >
         加载失败 · 重试
-      </button>
+      </button></div>
     );
   }
 
@@ -823,10 +927,11 @@ function TaskThreadTags({
     (thread) => linksByThread.get(thread.id)?.taskId === task.id
   );
   if (linkedThreads.length === 0) {
-    return <span className="text-[11px] text-muted-foreground">—</span>;
+    return execute;
   }
   return (
     <div className="flex min-w-0 flex-wrap gap-1 py-1">
+      {execute}
       {linkedThreads.map((thread) => (
         <button
           key={thread.id}
@@ -882,9 +987,10 @@ function StatusIcon({ status }: { status: TodoStatus }) {
   return <Circle className="h-5 w-5" strokeWidth={1.8} />;
 }
 
-function StatusMenu({ task, onSelect, onTogglePinned, onDelete, onClose }: {
+function StatusMenu({ task, onSelect, onOpenExecution, onTogglePinned, onDelete, onClose }: {
   task: TodoTask;
   onSelect: (status: TodoStatus) => void;
+  onOpenExecution?: () => void;
   onTogglePinned?: () => void;
   onDelete?: () => void;
   onClose: () => void;
@@ -901,7 +1007,7 @@ function StatusMenu({ task, onSelect, onTogglePinned, onDelete, onClose }: {
 
   return (
     <div ref={menuRef} className="absolute left-0 top-7 z-30 w-36 rounded-md border bg-card p-1 shadow-lg" role="menu">
-      {(["todo", "in_progress", "completed", "cancelled"] as TodoStatus[]).map((status) => (
+      {onOpenExecution ? <button className="w-full rounded px-2 py-1.5 text-left text-[12px] text-primary hover:bg-accent" onClick={onOpenExecution} role="menuitem">验收、暂停或返工</button> : (["todo", "in_progress", "completed", "cancelled"] as TodoStatus[]).map((status) => (
         <button key={status} className={cn("flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover:bg-accent", task.status === status && "bg-accent font-medium")} onClick={() => onSelect(status)} role="menuitem">
           <StatusIcon status={status} />{statusLabels[status]}
         </button>

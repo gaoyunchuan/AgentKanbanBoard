@@ -2,6 +2,21 @@
 
 ## Current Knowledge
 
+### 任务工作台验证
+
+- 标准命令是仓库根目录 `make test`；前端还需 `npm --prefix src-ui run build`，Rust 需 `cargo fmt --manifest-path src-tauri/Cargo.toml --check` 和 `git diff --check`。后端依赖本机 Tauri 平台库，假 app-server 协议测试使用 Python 3。
+- SQLite 状态机覆盖 claim/revision/generation 隔离、Human/Auto 的提交和最终成功门槛、未交接的两轮续跑上限、循环/缺失依赖、前置完成后唤醒、子任务交付限制、业务问题跨 Turn、当前节点暂停取消、返工历史及异常恢复。
+- To Do 差异保存覆盖旧 UI 快照与后台 Agent 新建子任务/状态更新并发，避免覆盖或隐式删除；已委派任务不可绕过工作流直接改状态或删除活动记录。
+- app-server 测试应启动真实假子进程并经过 JSONL 管道，覆盖双向 request/response、EOF、超时、请求归属、重复或过期回应、早到/迟到事件、Thread 创建成功但 Turn 启动失败的恢复绑定。
+- 并发回归覆盖启动前取消、启动中未知 Turn ID 的停止、原生 child 跨 Run 复用、父完成等待子停止确认、子停止缺失时不能释放成功。Goal pause ACK 必须按事件队列顺序处理，隐藏 Turn 或 pause 失败不得被误判为业务成功。
+- 调度测试覆盖最多两个 Agent 执行、相同/互相包含/规范化别名目录串行，以及手动终端和 Agent 双向互斥；终端事件没有 run_id，不能触发业务完成。
+- 前端覆盖任务详情切换不串数据、当前审批/问题过滤、输入/权限/elicitation 回复形状、交付必须等执行结束才能验收、文本/文件/图片上下文、工具与图片输出、base64 文件和终端流的 UTF-8 边界。
+- 浏览器配置测试覆盖默认关闭、固定 Playwright MCP 版本与 required/isolated/chrome 参数、Thread 首次创建后启动配置不可修改，以及 MCP 较长启动时间不会阻塞调度 actor。
+- 视觉验证使用 1440 × 1024 与 1024 × 768，覆盖 To Do 与详情同时显示、需要我入口、配置、会话、审批、交付/返工与工作区；检查横向溢出和控制台错误。Vite 预览不得调用真实 Tauri。
+- 假服务测试、组件测试、截图和构建成功都不能证明真实 Codex 登录、模型执行、沙箱或 Chrome 工具可用。发布验收需另按 `docs/task-workbench.md` 的真实桌面验收步骤，用测试工作目录完成连接、审批、交付、依赖、终端互斥、返工、退出恢复和独立浏览器流程。
+
+### 既有功能回归
+
 - 修改 Thread 来源解析或列表过滤时，需要覆盖有标题的 subagent、空标题主 thread、无效来源 JSON、通用同步客户端、Codex state SQLite 只读客户端和历史项目库过滤。
 - 修改 Thread 名称同步时，需要覆盖索引名称覆盖 SQLite 标题、无名称不回退、重复记录最后一条生效、无效 JSONL 行容错，以及空名称主 Thread 与临时 subagent 的展示边界。
 - 修改 Thread Kanban 同步、刷新、评论加载或 Tauri command 时，至少运行 `npm test -- --run`、`npm run build`、`cargo test`、在 `src-tauri` 下运行 `cargo fmt --check`，并运行 `git diff --check`。
@@ -27,6 +42,7 @@
 
 ## Update Notes
 
+- 2026-10-26: 新增任务工作台状态机、假子进程协议、原生子 Agent/Goal、目录互斥、浏览器和真实桌面验收范围，不将模拟测试计为真实账户验收。
 - 2026-07-13: 新增 Codex Thread 名称索引覆盖、无回退和 JSONL 容错的回归范围。
 - 2026-07-13: 新增 subagent 结构化来源解析、同步入口和历史项目库过滤的回归测试范围。
 - 2026-07-04: 记录 Thread Kanban 同步/刷新问题修复后的回归测试范围。

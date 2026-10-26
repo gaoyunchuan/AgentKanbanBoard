@@ -1,52 +1,62 @@
-# Codex Thread Kanban
+# AgentKanbanBoard
 
 English | [简体中文](README_zh.md)
 
-Codex Thread Kanban is a local desktop board for Codex Desktop users. It brings Codex threads from different projects into one read-only workspace, making it easy to see which tasks are running, which ones need human review, and which historical conversations are ready to archive.
+AgentKanbanBoard is a personal task workbench built around a persistent To Do tree and **Codex app-server**. Define a goal, its working directory, acceptance criteria, and dependencies; delegate it to an Agent; then manage execution, questions, approvals, delivery, and rework from the same desktop application.
 
-The project does not replace Codex Desktop. Instead, it adds an attention-management layer for people working with many threads in parallel: Codex Desktop continues to create and run threads, handle approvals, and display thread details, while Codex Thread Kanban synchronizes, groups, filters, annotates, archives, and opens them.
+The workbench creates and resumes its own Codex sessions. Codex Desktop is not required for this task execution path. The existing read-only Codex Desktop thread board remains available for imported history and annotations. The packaged app currently retains the name **Codex Thread Kanban**.
 
-This project is open source under the [MIT License](LICENSE).
-
-![Codex Thread Kanban board](docs/images/app-kanban.png)
+This project is open source under the [MIT License](LICENSE). See the [task workbench guide](docs/task-workbench.md) for lifecycle rules, examples, and runtime limitations.
 
 ## Features
 
-- **Unified board**: Collects local Codex Desktop threads into views for all active work, review pending, running, untriaged, archived, and individual projects.
-- **Reliable read-only synchronization**: Reads local Codex Desktop thread snapshots and the thread name index, keeps names aligned with Codex, and automatically excludes subagent threads. Synchronization never executes, approves, or deletes Codex work.
-- **Local status management**: Maps threads to `untriaged`, `running`, `review_pending`, `reviewed`, `suspended`, and `archived` while preserving manual decisions locally.
-- **Review queue**: Collects completed or waiting threads in one place for focused review.
-- **Archive and restore**: Hides archived threads from active views without deleting local data or the corresponding Codex Desktop thread.
-- **Project classification**: Identifies a thread's project from its working directory, origin URL, and path aliases; unmatched threads are placed under Unknown.
-- **Structured annotations**: Adds `task_type`, `module`, `sprint`, and notes fields for filtering and retrospectives.
-- **List and board layouts**: Uses a list for fast scanning and batch processing, or a board for status-oriented tracking.
-- **Independent To Do List**: Provides a persistent tree of tasks with statuses, due dates, Markdown details, same-level drag-and-drop ordering, and keyboard-based insertion.
-- **Bidirectional Thread / Task links**: Associates one thread with one task and multiple threads with the same task, with migration, undo, and navigation in both directions.
-- **Efficient task organization**: Groups task trees by completion, displays 200 items per page by default, and opens linked threads directly in Codex Desktop.
-- **Responsive narrow-screen layout**: Gradually compresses or hides action and date columns while preserving task and linked-thread information for as long as possible.
-- **Keyboard and quick actions**: Uses `Cmd+1` / `Cmd+2` to switch between the board and To Do List, supports a navigation-free Zen mode, and can open Codex, open VS Code, or copy a session ID from a thread row.
-- **Comments and large-list performance**: Loads thread comments on demand and virtualizes long lists to keep periodic refreshes lightweight.
+- **Task tree with executable work**: Keep the existing To Do hierarchy, keyboard editing, dates, ordering, and notes. Delegate individual nodes without introducing a workflow canvas.
+- **Explicit task ownership and prerequisites**: Set the delegator, Agent profile, workspace, instructions, acceptance criteria, and `Blocked by` tasks. Dependencies control eligibility; tree structure keeps the work organized.
+- **Automatic dispatch**: Eligible tasks start Codex sessions. The scheduler permits up to two Agent executions and serializes overlapping workspaces. Explicit terminal commands reserve the same workspace, so they cannot race an Agent's writes.
+- **Task-scoped execution detail**: Read streamed messages and tool output, inspect changes, browse workspace files, attach local image paths, and run or stop explicit terminal commands through app-server.
+- **Human attention when needed**: The “需要我” area collects approvals, questions, review, and execution problems. Replies are bound to the exact task and execution; stale approvals cannot authorize a newer run.
+- **Delivery instead of a completion guess**: An ordinary final message or `turn/completed` does not complete a task. The Agent explicitly submits its result and evidence. Human review is the default; opt-in Auto acceptance applies only after a valid submission and successful execution end.
+- **Bounded continuation**: A normally ended turn without an accepted handoff can continue automatically at most twice. Real blockers wait for a dependency, user answer, or environment fix; the model is not repeatedly called to poll them.
+- **Delegation and durable communication**: Agents can create child tasks, wait on their results, and send context to other delegated tasks in the same tree. Messages are retained for a subsequent eligible turn and do not bypass a pause or blocker.
+- **Rework with history**: Return a delivery with specific feedback, keep earlier results and attempts, and start another execution of the same task.
+- **Optional browser work**: Enable a pinned Playwright MCP server for an isolated, visible Chrome window. This needs Node.js and Chrome and is configured before the task's first session.
+- **Legacy thread board**: Continue to import Codex Desktop threads, annotate, group, filter, archive locally, and follow existing Thread / Task links. This import path stays read-only.
 
-## Who It Is For
+## First Task
 
-If you regularly run several Codex Desktop tasks at once, this tool helps answer questions such as:
+1. Install [Codex CLI](https://github.com/openai/codex#installing-and-running-codex-cli), for example with `npm install -g @openai/codex`. Check that `codex --version` and `codex app-server --help` run. The installed app-server must support the task workbench's experimental dynamic tools.
+2. Start the Tauri desktop application using the development or build instructions below. A Vite browser preview is a UI preview and does not execute tasks.
+3. Open **To Do List** (`Cmd+2`), expand **Codex 连接与账户**, and click **连接**. If `codex` is not on the desktop application's PATH, enter the executable's absolute path. Sign in with the displayed ChatGPT login flow if needed, then refresh the account and model list.
+4. Create a task and choose **交给 Agent**. Set an existing absolute workspace directory, a concrete goal, acceptance criteria, and an Agent profile. Keep **提交结果后由我验收** for the first task, then choose **委派并启动**.
+5. Read the task's conversation and changes. Respond to any current approval or question. Once the Agent submits and its execution ends, choose **验收通过**, or provide specific feedback and choose **反馈并返工**.
 
-- Which threads are still running?
-- Which threads have finished and need review in Codex Desktop?
-- What Codex work has recently happened in a project?
-- Which old threads can be removed from active views?
-- Can I organize Codex work by module, sprint, or task type?
-- Which Codex threads belong to a product task, and what is its overall progress?
+For a first smoke test, use a disposable directory and ask the Agent to create a single `hello.md`, read it back, and provide the verification result. A second task blocked by the first should wait until that delivery is accepted.
 
-## Data Boundaries
+## Task Status and Execution Status
 
-Codex Thread Kanban is a local-first, read-only sidecar application.
+| Task status | Meaning |
+| --- | --- |
+| `queued` | Ready for dispatch when capacity and its workspace are available. |
+| `running` | An execution is advancing this task. |
+| `waiting` | Waiting for a dependency, approval, answer, or environment fix. |
+| `review` | A result was explicitly submitted; acceptance is still pending. |
+| `completed` | Human acceptance or the configured Auto policy accepted the delivery. |
+| `paused` | Work is suspended until explicitly resumed. |
+| `cancelled` | This task node was cancelled. |
+| `attention` | A failure, uncertain recovery, or continuation limit needs a decision. |
 
-- Codex data source: reads `~/.codex/state_5.sqlite` and the thread name index in the same directory.
-- Local board database: writes to `~/.codex-kanban/app.db` by default.
-- The application stores only its own board state, manual fields, archive state, project classification, To Do tasks, and Thread / Task links.
-- It does not start or resume threads, approve requests, execute shell commands, or delete Codex data.
-- Codex is opened through `codex://` deep links; all subsequent execution remains in Codex Desktop.
+Execution attempts have separate states such as running, waiting for approval, completed, failed, and interrupted. A **completed execution is not a completed task**. Auto acceptance checks the submission's structure, dependencies, and execution outcome; it is not an independent semantic verifier or an automatic Reviewer approval.
+
+Pause and cancel apply to the selected business task node. They do not cascade to its business child tasks. Rework does not roll back files or automatically reopen every downstream task. Inspect affected work and explicitly rework the tasks that need it.
+
+## Data and Runtime Boundaries
+
+- The local application database defaults to `~/.codex-kanban/app.db`. It stores the task tree, configuration, dependencies, execution history, interactions, results, and legacy board metadata.
+- Execution is owned by the app-server process this application starts. It uses the configured Codex account and workspace permissions. The default task settings are `on-request` approval and `workspace-write` sandboxing.
+- Legacy import reads `~/.codex/state_5.sqlite` and the local thread-name index. Importing, annotating, or linking an existing Desktop thread does not resume it, approve it, or give the scheduler ownership of it.
+- Existing Desktop thread links can still open `codex://` URLs. Workbench tasks use their own app-server sessions inside this application.
+- **There is no background daemon.** Closing a detail panel keeps work running; exiting the desktop application stops its owned runtime. Interrupted or uncertain executions require inspection and an explicit retry on the next launch; they are not silently replayed.
+- The first version is for one person and manually created work. It does not provide a team service, large-scale callback ingestion, or a visual workflow editor, and it does not claim full Codex Desktop feature parity.
 
 ## Technology Stack
 
@@ -64,6 +74,7 @@ Prerequisites:
 - Node.js 22 or a compatible version
 - npm
 - Rust stable
+- Python 3 for fake app-server subprocess tests
 - The system-provided `hdiutil` when building a dmg on macOS
 
 Install frontend dependencies:
@@ -97,6 +108,8 @@ This command runs:
 
 - `npm --prefix src-ui run test`
 - `cargo test --manifest-path src-tauri/Cargo.toml`
+
+Protocol tests use a fake app-server and do not sign in to Codex or call a real model. Real account, permissions, and browser checks are a separate [desktop acceptance pass](docs/task-workbench.md#真实桌面验收边界).
 
 ## Local Build
 
@@ -139,9 +152,9 @@ The workflow runs tests on a macOS runner, builds the dmg, and uploads it as the
 ```text
 .
 ├── src-ui/        # React and TypeScript frontend
-├── src-tauri/     # Tauri and Rust backend, local SQLite, deep links, and synchronization
+├── src-tauri/     # Tauri/Rust, task scheduler, app-server transport, SQLite, and legacy import
 ├── openspec/      # Feature designs and change specifications
-├── docs/images/   # README and documentation images
+├── docs/          # Task workbench guide, engineering notes, and images
 ├── Makefile       # Test and dmg build entry points
 ├── LICENSE        # MIT License
 ├── README.md      # English documentation
@@ -156,4 +169,4 @@ This project is available under the [MIT License](LICENSE). You may use, copy, m
 
 ## Project Status
 
-Codex Thread Kanban is under active development. It already supports real Codex thread synchronization, board and list views, filtering, editable metadata, review and suspension workflows, archive and restore, Codex navigation, a persistent To Do List, bidirectional Thread / Task links, and responsive narrow-screen layouts. Future work can continue to improve project configuration, synchronization compatibility, packaging, and releases.
+The personal task workbench and legacy thread board are under active development. The runtime uses experimental app-server dynamic tools, so compatibility must be checked against the installed Codex version. Automated state-machine and protocol tests do not replace a real-account desktop acceptance run. Browser automation is opt-in and requires a separately installed Chrome; the repository does not bundle Codex, an account, Chrome, or a background daemon.

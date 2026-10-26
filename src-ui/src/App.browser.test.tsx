@@ -18,9 +18,16 @@ afterEach(() => {
   invokeMock.mockReset();
 });
 
+test("默认打开树形任务工作台且浏览器预览不启动执行", async () => {
+  render(<App />);
+  expect(await screen.findByRole("button", { name: "新建任务" })).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: /^执行 / }).length).toBeGreaterThan(0);
+  expect(invokeMock).not.toHaveBeenCalled();
+});
+
 test("普通浏览器使用可交互 demo 数据且关联流程不调用 Tauri", async () => {
   const user = userEvent.setup();
-  render(<App />);
+  render(<App initialView="active" />);
 
   await user.click(screen.getByText("浏览器预览：待审核 Thread"));
   await user.click(screen.getByRole("combobox", { name: "选择未完成 Task" }));

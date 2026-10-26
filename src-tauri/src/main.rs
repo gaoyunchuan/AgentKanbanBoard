@@ -8,11 +8,227 @@ use codex_kanban::project_matcher::ProjectRule;
 use codex_kanban::repository::Repository;
 use codex_kanban::thread_sync::{CodexAppServerClient, ReadOnlyCodexClient, ThreadSync};
 use codex_kanban::time::current_utc_text;
+use codex_kanban::work_service::WorkService;
+use codex_kanban::workflow::{TaskAction, TaskConfig};
 use serde::Serialize;
+use serde_json::{json, Value};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex, OnceLock,
+    Arc, Mutex, OnceLock,
 };
+use tauri::{Emitter, Manager, State};
+
+async fn call_workbench(
+    service: WorkService,
+    method: &'static str,
+    params: Value,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || service.call(method, params))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn load_workbench(service: State<'_, WorkService>) -> Result<Value, String> {
+    call_workbench(service.inner().clone(), "list", json!({})).await
+}
+
+#[tauri::command]
+async fn load_task_execution(
+    service: State<'_, WorkService>,
+    task_id: String,
+) -> Result<Value, String> {
+    call_workbench(
+        service.inner().clone(),
+        "detail",
+        json!({"task_id":task_id}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn delegate_task(
+    service: State<'_, WorkService>,
+    task_id: String,
+    config: TaskConfig,
+) -> Result<Value, String> {
+    call_workbench(
+        service.inner().clone(),
+        "delegate",
+        json!({"task_id":task_id,"config":config}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn task_action(
+    service: State<'_, WorkService>,
+    task_id: String,
+    action: TaskAction,
+    expected_revision: i64,
+    feedback: Option<String>,
+) -> Result<Value, String> {
+    call_workbench(service.inner().clone(), "action",
+        json!({"task_id":task_id,"action":action,"expected_revision":expected_revision,"feedback":feedback})).await
+}
+
+#[tauri::command]
+async fn save_todo_task_changes(
+    service: State<'_, WorkService>,
+    before: Vec<TodoTaskInput>,
+    after: Vec<TodoTaskInput>,
+) -> Result<Value, String> {
+    call_workbench(
+        service.inner().clone(),
+        "save_todos",
+        json!({"before":before,"after":after}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn send_task_message(
+    service: State<'_, WorkService>,
+    task_id: String,
+    text: String,
+    expected_run_id: Option<String>,
+    attachments: Option<Vec<Value>>,
+) -> Result<Value, String> {
+    call_workbench(service.inner().clone(), "message",
+        json!({"task_id":task_id,"text":text,"expected_run_id":expected_run_id,"attachments":attachments.unwrap_or_default()})).await
+}
+
+#[tauri::command]
+async fn respond_task_interaction(
+    service: State<'_, WorkService>,
+    task_id: String,
+    interaction_id: String,
+    run_id: String,
+    response: Value,
+) -> Result<Value, String> {
+    call_workbench(service.inner().clone(), "respond",
+        json!({"task_id":task_id,"interaction_id":interaction_id,"run_id":run_id,"response":response})).await
+}
+
+#[tauri::command]
+async fn workbench_connect(
+    service: State<'_, WorkService>,
+    executable: Option<String>,
+) -> Result<Value, String> {
+    call_workbench(
+        service.inner().clone(),
+        "connect",
+        json!({"executable":executable}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn workbench_rpc(
+    service: State<'_, WorkService>,
+    method: String,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let runtime = service.runtime()?;
+        let params = params.unwrap_or_else(|| json!({}));
+        match method.as_str() {
+            "account/login/start" => runtime.login_start(),
+            "account/login/cancel" => runtime.login_cancel(
+                params
+                    .get("loginId")
+                    .and_then(Value::as_str)
+                    .ok_or("缺少登录请求")?,
+            ),
+            _ => runtime.rpc_read(&method, params),
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn workbench_read_file(
+    service: State<'_, WorkService>,
+    task_id: String,
+    path: String,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = service.task_config(&task_id)?;
+        service
+            .runtime()?
+            .read_workspace_file(&config.workspace, &path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn workbench_list_directory(
+    service: State<'_, WorkService>,
+    task_id: String,
+    path: String,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = service.task_config(&task_id)?;
+        service
+            .runtime()?
+            .list_workspace_directory(&config.workspace, &path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn workbench_execute_command(
+    service: State<'_, WorkService>,
+    task_id: String,
+    command: String,
+    timeout_ms: Option<u64>,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    // Explicit user terminal input runs on a separate worker. The scheduler remains
+    // responsive to stop/approval messages while a build or test command runs.
+    tauri::async_runtime::spawn_blocking(move || {
+        if command.trim().is_empty() {
+            return Err("终端命令不能为空".into());
+        }
+        let argv = if cfg!(target_os = "windows") {
+            vec![
+                "powershell.exe".into(),
+                "-NoProfile".into(),
+                "-Command".into(),
+                command,
+            ]
+        } else {
+            vec!["/bin/sh".into(), "-lc".into(), command]
+        };
+        service.execute_command(&task_id, argv, timeout_ms.unwrap_or(120_000))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn workbench_terminate_command(
+    service: State<'_, WorkService>,
+    task_id: String,
+    process_id: String,
+    run_id: Option<String>,
+) -> Result<(), String> {
+    let service = service.inner().clone();
+    let _ = run_id;
+    tauri::async_runtime::spawn_blocking(move || {
+        service
+            .runtime()?
+            .terminate_workspace_command(&task_id, &process_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
 
 #[derive(Debug, Serialize)]
 struct BoardData {
@@ -587,8 +803,30 @@ fn project_id_for_path(path: &str) -> String {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let service = WorkService::spawn(Arc::new(move || {
+                let _ = handle.emit("workbench/changed", ());
+            }))
+            .map_err(std::io::Error::other)?;
+            app.manage(service);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
+            load_workbench,
+            load_task_execution,
+            delegate_task,
+            task_action,
+            save_todo_task_changes,
+            send_task_message,
+            respond_task_interaction,
+            workbench_connect,
+            workbench_rpc,
+            workbench_read_file,
+            workbench_list_directory,
+            workbench_execute_command,
+            workbench_terminate_command,
             load_board_data,
             sync_codex_threads,
             start_codex_sync,
@@ -610,6 +848,11 @@ fn main() {
             open_external_link,
             open_project_in_vscode
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("启动 Codex Thread Kanban 失败");
+    app.run(|handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            handle.state::<WorkService>().shutdown();
+        }
+    });
 }

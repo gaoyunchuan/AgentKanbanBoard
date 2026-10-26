@@ -1,8 +1,12 @@
+pub mod app_server;
 pub mod config;
 pub mod deeplink;
 pub mod domain;
 pub mod repository;
 pub mod time;
+pub mod work_runtime;
+pub mod work_service;
+pub mod workflow;
 
 #[path = "../services/BoardStatusMapper.rs"]
 pub mod board_status_mapper;
@@ -1283,9 +1287,24 @@ mod tests {
 
     #[test]
     fn thread_sync_allows_only_read_methods_and_handles_unavailable_client() {
-        let client = ReadOnlyCodexClient::new();
+        // CI and a clean workstation must not require the developer's Codex DB.
+        let temp_dir =
+            std::env::temp_dir().join(format!("codex-read-policy-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let path = temp_dir.join("state_5.sqlite");
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS threads(id TEXT,preview TEXT,cwd TEXT,source TEXT,
+             archived INTEGER,git_branch TEXT,git_origin_url TEXT,created_at INTEGER,
+             updated_at INTEGER,recency_at_ms INTEGER);",
+            )
+            .unwrap();
+        drop(connection);
+        let client = ReadOnlyCodexClient::with_state_db_path(path);
         assert!(client.call("thread/list").is_ok());
         assert!(client.call("turn/start").is_err());
+        std::fs::remove_dir_all(temp_dir).unwrap();
 
         struct UnavailableClient;
 
