@@ -2,6 +2,7 @@
 .superpowers/
 .DS_Store
 *.log
+__pycache__/
 
 src-ui/node_modules/
 src-ui/dist/

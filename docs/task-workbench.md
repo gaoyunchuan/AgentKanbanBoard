@@ -26,7 +26,9 @@ cd src-ui
 npm exec tauri dev
 ```
 
-开发需要 Node.js、npm、Rust stable 与平台的 Tauri 构建依赖；测试假 app-server 子进程还需要 Python 3。`npm --prefix src-ui run dev` 只启动界面预览，不能连接本地运行时或执行任务。macOS 安装包构建方法见 [README](../README_zh.md#本地构建)。
+开发需要 Node.js、npm、Rust stable 与平台的 Tauri 构建依赖；macOS 构建/安装助手和测试假 app-server 子进程还需要 Python 3。`npm --prefix src-ui run dev` 只启动界面预览，不能连接本地运行时或执行任务。macOS 安装包构建方法见 [README](../README_zh.md#本地构建)。
+
+只在自己的 Mac 上使用时，先退出已经运行的 **Codex Thread Kanban**，再在已克隆的仓库根目录执行 `git pull --ff-only && make run-local`，即可编译、ad-hoc 签名、安装到用户 Applications 并启动；已有副本会保留独立备份。只安装不启动可用 `make install-local`。本机入口不需要 DMG 或 Apple Developer 账号；遇到“已损坏”或无法验证提示时，先按[本机运行与启动检查](macos-local.md)区分包完整性和设备策略问题。
 
 ### 2. 连接账户
 
@@ -189,6 +191,8 @@ MCP 被配置为 required，启动失败会明确失败；MCP 启动成功仍不
 ## 真实桌面验收边界
 
 自动化测试分别验证 SQLite 状态机、前端交互、审批归属、文件边界和假 app-server 子进程协议。假服务测试可以复现乱序、断连、超时、子 Agent 停止确认、Goal 与任务调度竞争等边界，但不会登录真实账户、调用模型或打开 Chrome。
+
+macOS 构建另行验证 ad-hoc 签名及最终 DMG 内应用的完整性。这项检查不包含 Apple 公证，也不代表受管理设备已允许该应用；先确认目标 Mac 能正常启动应用，再进行下面的任务验收。
 
 发布或升级 Codex 兼容版本前，应在目标桌面环境用临时项目完成一轮实际验收：
 

@@ -74,8 +74,8 @@ Prerequisites:
 - Node.js 22 or a compatible version
 - npm
 - Rust stable
-- Python 3 for fake app-server subprocess tests
-- The system-provided `hdiutil` when building a dmg on macOS
+- Python 3 for the macOS build/install helper and fake app-server subprocess tests
+- Xcode Command Line Tools on macOS; DMG creation also uses the system-provided `hdiutil`
 
 Install frontend dependencies:
 
@@ -106,6 +106,7 @@ make test
 
 This command runs:
 
+- `make test-local-tools` (Python build/install helper tests)
 - `npm --prefix src-ui run test`
 - `cargo test --manifest-path src-tauri/Cargo.toml`
 
@@ -113,23 +114,23 @@ Protocol tests use a fake app-server and do not sign in to Codex or call a real 
 
 ## Local Build
 
-Run from the repository root:
+For personal use on your Mac, first quit any running **Codex Thread Kanban**, then run from an existing repository checkout:
+
+```bash
+git pull --ff-only && make run-local
+```
+
+`make run-local` builds with an explicit **ad-hoc signature**, installs with `ditto` into `~/Applications/Codex Thread Kanban.app`, and opens that installed copy. An existing copy is preserved at a uniquely named backup path printed by the installer. This path does not build a DMG or require an Apple Developer account. Use `make install-local` to build and install without opening the app.
+
+To create a portable development DMG instead:
 
 ```bash
 make build
 ```
 
-The command installs frontend dependencies, builds the Tauri application, and creates a macOS dmg at:
+`make build-dmg` is the equivalent packaging entry point. The checked DMG is written to `src-tauri/target/release/bundle/dmg/Codex Thread Kanban_0.1.0_<arch>_development.dmg`, with `.sha256` and `.verification.json` files alongside it.
 
-```text
-src-tauri/target/release/bundle/dmg/
-```
-
-You can also run:
-
-```bash
-make build-dmg
-```
+These are development builds without Apple notarization. Ad-hoc signing checks bundle integrity; it does not grant a trusted developer identity or override a managed Mac's application policy. See [local macOS use and startup checks](docs/macos-local.md) if macOS blocks opening the app.
 
 ## GitHub Actions Build
 
@@ -145,7 +146,9 @@ It runs when:
 - A pull request is created or updated
 - `Build Artifacts` is started manually from GitHub Actions
 
-The workflow runs tests on a macOS runner, builds the dmg, and uploads it as the `codex-thread-kanban-dmg` artifact.
+The workflow runs tests on a macOS runner, builds with ad-hoc signing, validates the finished DMG and its contained app, then uploads the **`codex-thread-kanban-development`** artifact. It is a development artifact without Apple notarization; CI success does not guarantee that a downloaded app is allowed by every Mac's policy.
+
+For use on your own machine, the local build command above is the primary path. No Developer ID certificate, Apple account, or notarization setup is required by this repository's current build workflow.
 
 ## Project Structure
 
@@ -155,7 +158,7 @@ The workflow runs tests on a macOS runner, builds the dmg, and uploads it as the
 ├── src-tauri/     # Tauri/Rust, task scheduler, app-server transport, SQLite, and legacy import
 ├── openspec/      # Feature designs and change specifications
 ├── docs/          # Task workbench guide, engineering notes, and images
-├── Makefile       # Test and dmg build entry points
+├── Makefile       # Tests, local installation, and DMG build entry points
 ├── LICENSE        # MIT License
 ├── README.md      # English documentation
 └── README_zh.md   # Simplified Chinese documentation

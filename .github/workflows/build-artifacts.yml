@@ -9,7 +9,7 @@ on:
 
 jobs:
   macos-dmg:
-    name: macOS dmg
+    name: macOS local development app
     runs-on: macos-latest
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
@@ -42,12 +42,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Test and build dmg
+      - name: Test, build and verify development dmg
         run: make test build-dmg
 
-      - name: Upload dmg
+      - name: Upload verified development dmg
         uses: actions/upload-artifact@v4
         with:
-          name: codex-thread-kanban-dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          name: codex-thread-kanban-development
+          path: |
+            src-tauri/target/release/bundle/dmg/*_development.dmg
+            src-tauri/target/release/bundle/dmg/*_development.dmg.sha256
+            src-tauri/target/release/bundle/dmg/*_development.dmg.verification.json
           if-no-files-found: error

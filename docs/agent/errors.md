@@ -2,6 +2,14 @@
 
 ## Current Knowledge
 
+### macOS 提示应用已损坏，CI 打包却成功
+
+- 场景：从浏览器下载 CI 的 DMG，打开应用时被系统阻止；旧 `8c9b3e9` 构建脚本带有 `--no-sign`，CI 只验证编译和打包。
+- 判断：该链路没有完整的 app bundle 签名校验。截图中的“已损坏”不能单独区分签名问题、包内容变化和设备策略，需检查实际文件。
+- 处理：本机个人使用通过 `make run-local` 编译、ad-hoc 签名、安装到用户 Applications 并启动，旧副本保留独立备份，不要求 Apple Developer 账号。需要 DMG 时另用 `make build`，校验 app、镜像和只读挂载后的 app；CI 名称标明 `development`，保留未公证说明。
+- 边界：ad-hoc 不等于 Developer ID 或 Apple 公证。若安全设置显示由描述文件管理，设备是否允许本机开发应用由组织策略决定；不能以改签名、清隔离标记、关闭 Gatekeeper 或移除管理配置冒充解决方案。
+- 经验：代码测试、签名完整性、下载后的启动校验和真实任务执行应分别记录结果。检查步骤见 `docs/macos-local.md`。
+
 ### 会话结束被误当成任务完成
 
 - 场景：把 Codex 的 `turn/completed`、最终消息或未读标记直接映射为业务任务已完成。
@@ -80,6 +88,7 @@
 
 ## Update Notes
 
+- 2026-10-26: 记录 macOS 开发包跳过 bundle 签名导致的交付验证缺口，补本机 ad-hoc 构建与管理策略边界。
 - 2026-10-26: 记录 npm 10 对 Vitest 嵌套 Vite 8 的 esbuild 可选 peer 缺失导致 ci 失败的修复边界。
 - 2026-10-26: 记录执行结束与任务完成混淆、UI 旧快照覆盖后台数据、已有 Thread 启动配置不能即时更改的问题边界。
 - 2026-07-04: 沉淀 Thread Kanban 间歇性消失问题的症状、定位边界和最终修复约束。

@@ -74,8 +74,8 @@ AgentKanbanBoard 是一个基于现有 To Do 任务树和 **Codex app-server** �
 - Node.js 22 或兼容版本
 - npm
 - Rust stable
-- Python 3，用于假 app-server 子进程协议测试
-- macOS 上构建 dmg 需要系统自带 `hdiutil`
+- Python 3，用于 macOS 构建/安装助手和假 app-server 子进程协议测试
+- macOS 的 Xcode Command Line Tools；构建 DMG 还会使用系统自带的 `hdiutil`
 
 安装前端依赖：
 
@@ -106,6 +106,7 @@ make test
 
 该命令会运行：
 
+- `make test-local-tools`（Python 构建/安装助手测试）
 - `npm --prefix src-ui run test`
 - `cargo test --manifest-path src-tauri/Cargo.toml`
 
@@ -113,23 +114,23 @@ make test
 
 ## 本地构建
 
-在仓库根目录执行：
+只在自己的 Mac 上使用时，先退出已经运行的 **Codex Thread Kanban**，再进入已克隆的仓库根目录执行：
+
+```bash
+git pull --ff-only && make run-local
+```
+
+`make run-local` 会编译并做 **ad-hoc 签名**，使用 `ditto` 安装到 `~/Applications/Codex Thread Kanban.app`，然后打开安装好的副本。已有副本会先保存在独立命名的备份位置，安装命令会显示该路径。这个入口不需要生成 DMG，也不需要 Apple Developer 账号；只构建和安装、不启动时使用 `make install-local`。
+
+需要可拷贝的开发 DMG 时再执行：
 
 ```bash
 make build
 ```
 
-该命令会安装前端依赖、构建 Tauri 应用，并生成 macOS dmg 安装包。生成路径：
+`make build-dmg` 是等价的打包入口。校验后的文件位于 `src-tauri/target/release/bundle/dmg/Codex Thread Kanban_0.1.0_<arch>_development.dmg`，旁边附有 `.sha256` 和 `.verification.json` 文件。
 
-```text
-src-tauri/target/release/bundle/dmg/
-```
-
-也可以直接执行：
-
-```bash
-make build-dmg
-```
+这些是未经 Apple 公证的开发版本。Ad-hoc 签名用于保证应用包完整性，不提供受信任开发者身份，也不改变受管理 Mac 的应用策略。若系统阻止打开，见[本机 macOS 运行与启动检查](docs/macos-local.md)。
 
 ## GitHub 自动构建
 
@@ -145,7 +146,9 @@ make build-dmg
 - 创建或更新 Pull Request
 - 在 GitHub Actions 页面手动执行 `Build Artifacts`
 
-workflow 会在 macOS runner 上运行测试，构建 dmg，并上传名为 `codex-thread-kanban-dmg` 的构建制品。
+workflow 会在 macOS runner 上运行测试，以 ad-hoc 签名构建，校验最终 DMG 和其中的应用，再上传 **`codex-thread-kanban-development`**。该制品是未经 Apple 公证的开发版本；CI 通过不代表下载后一定符合每台 Mac 的应用策略。
+
+本机使用优先按上文从源码构建。当前构建流程不要求配置 Developer ID 证书、Apple 账号或公证服务。
 
 ## 项目结构
 
@@ -155,7 +158,7 @@ workflow 会在 macOS runner 上运行测试，构建 dmg，并上传名为 `cod
 ├── src-tauri/     # Tauri / Rust、任务调度、app-server、本地 SQLite 与旧导入
 ├── openspec/      # 功能设计与变更规格
 ├── docs/          # 工作台指南、工程约束与文档截图
-├── Makefile       # 测试与 dmg 构建入口
+├── Makefile       # 测试、本机安装与 DMG 构建入口
 ├── LICENSE        # MIT License
 ├── README.md      # 英文文档
 └── README_zh.md   # 简体中文文档

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
-    "build:app": "cd .. && src-ui/node_modules/.bin/tauri build --ci --bundles app --no-sign",
+    "build:app": "python3 ../scripts/macos_local.py build-app",
     "build:dmg": "cd .. && make build-dmg",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run"
@@ -43,3 +43,4 @@
     "vitest": "^4.1.9"
   }
 }
+

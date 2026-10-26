@@ -2,6 +2,14 @@
 
 ## Current Knowledge
 
+### macOS 本机构建验证
+
+- `make test` 包含 `make test-local-tools`，运行 Python 构建/安装助手回归；应覆盖 `run-local` 只在安装成功后启动、`install-local` 不启动、安装前保存旧副本的独立备份，以及本机 app 路径不依赖生成 DMG。用户安装与验证都应针对同一副本。
+- `make build` / `make build-dmg` 使用显式 ad-hoc 签名。验证 `codesign --verify --deep --strict` 与签名详情；开发制品应明确记录 `Signature=adhoc`，不能仅凭签名校验退出码描述为受信任开发者发布包。
+- 对最终交付的 DMG 执行镜像完整性校验，并只读挂载后验证其中 app 的签名；挂载后的副本才是用户实际取得的内容。脚本退出时必须卸载测试挂载点。
+- CI artifact 为 `codex-thread-kanban-development`，未公证属性需进入制品说明。开发包不以 `spctl` 返回接受作为成功门槛，也不得在测试中关闭 Gatekeeper、清除 quarantine 或修改设备管理策略来制造通过结果。
+- macOS 的“已损坏”对话框只提供故障线索；需要分别记录镜像校验、签名完整性及设备是否受管理。真实启动验收只在允许此类开发应用的目标 Mac 上进行。
+
 ### 任务工作台验证
 
 - 标准命令是仓库根目录 `make test`；前端还需 `npm --prefix src-ui run build`，Rust 需 `cargo fmt --manifest-path src-tauri/Cargo.toml --check` 和 `git diff --check`。后端依赖本机 Tauri 平台库，假 app-server 协议测试使用 Python 3。
@@ -42,6 +50,7 @@
 
 ## Update Notes
 
+- 2026-10-26: 增加 Python 本机构建/安装助手回归，以及 ad-hoc 签名、最终 DMG 内 app 完整性与未公证/设备策略的独立验证要求。
 - 2026-10-26: 新增任务工作台状态机、假子进程协议、原生子 Agent/Goal、目录互斥、浏览器和真实桌面验收范围，不将模拟测试计为真实账户验收。
 - 2026-07-13: 新增 Codex Thread 名称索引覆盖、无回退和 JSONL 容错的回归范围。
 - 2026-07-13: 新增 subagent 结构化来源解析、同步入口和历史项目库过滤的回归测试范围。
