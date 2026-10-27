@@ -269,11 +269,16 @@ fn require_run(connection: &Connection, task_id: &str, run_id: &str) -> Result<(
     }
 }
 
-fn unresolved_dependencies(connection: &Connection, task_id: &str) -> Result<Vec<String>, String> {
+pub(crate) fn unresolved_dependencies(
+    connection: &Connection,
+    task_id: &str,
+) -> Result<Vec<String>, String> {
     let mut statement = connection
         .prepare(
             "SELECT d.blocked_by FROM work_dependencies d JOIN todo_tasks t ON t.id=d.blocked_by
-         WHERE d.task_id=?1 AND t.status<>'completed' ORDER BY d.blocked_by",
+         WHERE d.task_id=?1 AND (t.status<>'completed' OR NOT (
+           EXISTS(SELECT 1 FROM task_results r WHERE r.task_id=t.id AND r.status='ready' AND r.usable=1)
+           OR (NOT EXISTS(SELECT 1 FROM chat_conversations c WHERE c.task_id=t.id) AND trim(t.result_review)<>''))) ORDER BY d.blocked_by",
         )
         .map_err(db)?;
     let result = statement
@@ -284,7 +289,7 @@ fn unresolved_dependencies(connection: &Connection, task_id: &str) -> Result<Vec
     Ok(result)
 }
 
-fn replace_dependencies(
+pub(crate) fn replace_dependencies(
     connection: &Connection,
     task_id: &str,
     blockers: &[String],
@@ -758,6 +763,7 @@ impl Repository {
             &json!({"config":config}),
             &now,
         )?;
+        crate::chat_store::ensure_main(&tx, task_id, &now)?;
         tx.commit().map_err(db)?;
         required_task(&self.connection, task_id)
     }
@@ -821,6 +827,11 @@ impl Repository {
         tx.execute(
             "UPDATE work_tasks SET thread_id=?2 WHERE task_id=?1",
             params![task_id, thread_id],
+        )
+        .map_err(db)?;
+        tx.execute(
+            "UPDATE chat_conversations SET thread_id=?2,updated_at=?3 WHERE id=?1",
+            params![format!("main:{task_id}"), thread_id, self.now_text()],
         )
         .map_err(db)?;
         tx.commit().map_err(db)?;
@@ -911,6 +922,13 @@ impl Repository {
             }
         }
         tx.execute("UPDATE work_tasks SET status=?2,current_run_id=NULL,wait_reason=?3,last_error=?4,continuation_count=?5,revision=revision+1,updated_at=?6 WHERE task_id=?1", params![task_id,status.as_str(),reason,last_error,continuations,now]).map_err(db)?;
+        crate::chat_store::finalize_handoff(
+            &tx,
+            task_id,
+            run_id,
+            outcome == "completed" && error.is_none(),
+            status == WorkflowStatus::Completed,
+        )?;
         project_business_status(&tx, task_id, status, &now)?;
         event(
             &tx,
@@ -956,6 +974,15 @@ impl Repository {
         {
             return Err("自动验收需要提交验收证据".into());
         }
+        crate::chat_store::record_handoff(
+            &tx,
+            task_id,
+            run_id,
+            summary,
+            evidence,
+            "delivery",
+            &self.now_text(),
+        )?;
         // A tool response is not the end of a turn: later writes or a crash can
         // still invalidate this delivery. Auto acceptance runs at successful end.
         let status = WorkflowStatus::Review;
@@ -985,6 +1012,7 @@ impl Repository {
         let now = self.now_text();
         let changed=tx.execute("UPDATE work_tasks SET status='running',result_summary=NULL,revision=revision+1,updated_at=?2 WHERE task_id=?1 AND status='review'",params![task_id,now]).map_err(db)?;
         if changed > 0 {
+            tx.execute("UPDATE task_results SET status='failed',usable=0,error=?3 WHERE task_id=?1 AND source_run_id=?2 AND status='pending'",params![task_id,run_id,reason]).map_err(db)?;
             event(
                 &tx,
                 task_id,
@@ -1092,6 +1120,12 @@ impl Repository {
             }
             _ => return Err("当前任务状态不支持这个操作".into()),
         };
+        if action == TaskAction::Accept {
+            crate::chat_store::accept_results(&tx, task_id)?;
+        }
+        if action == TaskAction::Rework {
+            tx.execute("UPDATE task_results SET usable=0,error=COALESCE(error,'此结果对应返工前版本，仅保留历史') WHERE task_id=?1",[task_id]).map_err(db)?;
+        }
         invalidate_run(&tx, task_id, &now)?;
         tx.execute("UPDATE work_tasks SET status=?2,wait_reason=?3,last_error=NULL,continuation_count=0,revision=revision+1,updated_at=?4,result_summary=CASE WHEN ?5 THEN NULL ELSE result_summary END WHERE task_id=?1", params![task_id,status.as_str(),reason,now,action==TaskAction::Rework]).map_err(db)?;
         project_business_status(&tx, task_id, status, &now)?;
@@ -1378,6 +1412,12 @@ impl Repository {
             &json!({"child_task_id":id,"title":title}),
             &now,
         )?;
+        tx.execute(
+            "UPDATE todo_tasks SET process_tracking=?2 WHERE id=?1",
+            params![id, child_config.prompt],
+        )
+        .map_err(db)?;
+        crate::chat_store::ensure_main(&tx, &id, &now)?;
         tx.commit().map_err(db)?;
         required_task(&self.connection, &id)
     }
@@ -2134,7 +2174,7 @@ for line in sys.stdin:
         pass
     elif method == 'thread/start':
         thread = 'thread-' + str(len(threads) + 1)
-        threads[thread] = {'turns':0}
+        threads[thread] = {'turns':0, 'manual': not bool(params.get('dynamicTools')), 'summary': bool(params.get('ephemeral'))}
         emit({'id':request,'result':{'thread':{'id':thread}}})
     elif method == 'thread/resume':
         emit({'id':request,'result':{'thread':{'id':params['threadId']}}})
@@ -2149,7 +2189,14 @@ for line in sys.stdin:
         task=text.split('\n',1)[0].removeprefix('Task ID: ')
         emit({'id':request,'result':{'turn':{'id':turn,'status':'inProgress'}}})
         emit({'method':'turn/started','params':{'threadId':thread,'turn':{'id':turn,'status':'inProgress'}}})
-        if task == 'e2e-parent' and state['turns'] == 1:
+        if state['manual']:
+            # The new chat path has no durable-task tools. Summary extraction uses
+            # a separate ephemeral readonly thread, never the source conversation.
+            content = 'Summary: a plan, not implemented.' if state['summary'] else 'We discussed a plan; no files were changed.'
+            emit({'method':'item/agentMessage/delta','params':{'threadId':thread,'turnId':turn,'itemId':'reply','delta':content}})
+            emit({'method':'item/completed','params':{'threadId':thread,'turnId':turn,'item':{'id':'reply','type':'agentMessage','text':content}}})
+            complete(thread,turn)
+        elif task == 'e2e-parent' and state['turns'] == 1:
             call_tool(thread,turn,'task_delegate',{'title':'Delegated verification','prompt':'Verify the child deliverable','acceptance':'Provide test evidence'},'delegate')
         elif task == 'e2e-question' and state['turns'] == 1:
             call_tool(thread,turn,'task_wait',{'reason':'Need user input','question':'Which color?'},'question')
@@ -2350,5 +2397,105 @@ for line in sys.stdin:
         assert_eq!(inspected.task.status, WorkflowStatus::Completed);
         assert_eq!(inspected.task.revision, completed.task.revision);
         assert_eq!(inspected.runs.len(), completed.runs.len());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn service_manual_chats_and_extraction_keep_task_and_source_identity() {
+        let fixture = ServiceFixture::new();
+        let project = fixture
+            .service
+            .call(
+                "chat/project",
+                json!({
+                    "name":"Fixture project","path":fixture.directory.to_string_lossy()
+                }),
+            )
+            .unwrap();
+        let task = fixture
+            .service
+            .call(
+                "chat/create_task",
+                json!({
+                    "title":"Discuss a plan","project_id":project["id"]
+                }),
+            )
+            .unwrap();
+        let tid = task["task_id"].as_str().unwrap();
+        let first = fixture
+            .service
+            .call("chat/create_conversation", json!({"task_id":tid}))
+            .unwrap();
+        let second = fixture
+            .service
+            .call("chat/create_conversation", json!({"task_id":tid}))
+            .unwrap();
+        let cid = first["id"].as_str().unwrap();
+        fixture.service.call("chat/send", json!({
+            "conversation_id":cid,"text":"Discuss only, do not change files","attachments":[],"include_context":true
+        })).unwrap();
+        let started = std::time::Instant::now();
+        let source_thread = loop {
+            let detail = fixture
+                .service
+                .call("chat/detail", json!({"conversation_id":cid}))
+                .unwrap();
+            if detail["conversation"]["runtime_status"] == "idle"
+                && detail["runs"]
+                    .as_array()
+                    .is_some_and(|runs| !runs.is_empty())
+            {
+                break detail["conversation"]["thread_id"].clone();
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "manual chat did not finish: {detail}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        let extraction = fixture
+            .service
+            .call("chat/extract", json!({"conversation_id":cid}))
+            .unwrap();
+        let result_id = extraction["result_id"].as_str().unwrap();
+        let started = std::time::Instant::now();
+        loop {
+            let snapshot = fixture.service.call("chat/snapshot", json!({})).unwrap();
+            let task = &snapshot["tasks"][0];
+            if let Some(result) = task["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == result_id && r["status"] == "ready")
+            {
+                assert_eq!(result["conversation_id"], cid);
+                assert_eq!(result["method"], "manual");
+                assert_eq!(result["usable"], false);
+                assert!(result["markdown"].as_str().unwrap().contains("plan"));
+                assert_ne!(task["status"], "completed");
+                assert_eq!(snapshot["tasks"].as_array().unwrap().len(), 1);
+                assert_eq!(snapshot["conversations"].as_array().unwrap().len(), 2);
+                break;
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "summary did not finish: {snapshot}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let first = fixture
+            .service
+            .call("chat/detail", json!({"conversation_id":cid}))
+            .unwrap();
+        assert_eq!(first["conversation"]["thread_id"], source_thread);
+        let untouched = fixture
+            .service
+            .call("chat/detail", json!({"conversation_id":second["id"]}))
+            .unwrap();
+        assert!(untouched["conversation"]["thread_id"].is_null());
+        assert!(fixture
+            .service
+            .call("chat/extract", json!({"conversation_id":cid}))
+            .is_err());
     }
 }

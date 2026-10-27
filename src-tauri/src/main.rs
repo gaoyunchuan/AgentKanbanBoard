@@ -29,6 +29,57 @@ async fn call_workbench(
 }
 
 #[tauri::command]
+async fn chat_command(
+    service: State<'_, WorkService>,
+    method: String,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        service.call(
+            &format!("chat/{method}"),
+            params.unwrap_or_else(|| json!({})),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn chat_browser(
+    service: State<'_, WorkService>,
+    conversation_id: String,
+    method: String,
+    params: Option<Value>,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let owner = service.call(
+            "chat/browser_owner",
+            json!({"conversation_id":conversation_id}),
+        )?;
+        let key = owner["key"].as_str().ok_or("会话不存在")?;
+        codex_kanban::browser_bridge::call(key, &method, params.unwrap_or_else(|| json!({})))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn chat_pick_directory() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os="macos")]
+        {
+            let output=std::process::Command::new("osascript").args(["-e","try\nPOSIX path of (choose folder with prompt \"选择项目工作目录\")\non error number -128\nreturn \"\"\nend try"]).output().map_err(|e|e.to_string())?;
+            if !output.status.success(){return Err("目录选择器启动失败；可直接输入项目路径".into())}
+            let path=String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Ok(if path.is_empty(){None}else{Some(path)})
+        }
+        #[cfg(not(target_os="macos"))]
+        { Err("当前平台请直接输入工作目录绝对路径".into()) }
+    }).await.map_err(|e|e.to_string())?
+}
+
+#[tauri::command]
 async fn load_workbench(service: State<'_, WorkService>) -> Result<Value, String> {
     call_workbench(service.inner().clone(), "list", json!({})).await
 }
@@ -814,6 +865,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            chat_command,
+            chat_browser,
+            chat_pick_directory,
             load_workbench,
             load_task_execution,
             delegate_task,
@@ -853,6 +907,7 @@ fn main() {
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<WorkService>().shutdown();
+            codex_kanban::browser_bridge::shutdown_all();
         }
     });
 }

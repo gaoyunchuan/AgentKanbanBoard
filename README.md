@@ -1,3 +1,5 @@
+> **Chat-first workspace**: the default UI now provides conversations, tasks, and projects. See [workspace acceptance guide](docs/chat-workspace.md) for task dependencies, multi-conversation results, and local verification limits. The legacy board remains available in Settings.
+
 # AgentKanbanBoard
 
 English | [简体中文](README_zh.md)

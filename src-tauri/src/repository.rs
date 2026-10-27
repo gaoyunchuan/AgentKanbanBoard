@@ -1073,6 +1073,7 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     )?;
     connection.execute_batch(THREAD_TASK_LINKS_SQL)?;
     connection.execute_batch(TASK_WORKFLOW_SQL)?;
+    connection.execute_batch(include_str!("../db/004_chat_workspace.sql"))?;
 
     Ok(())
 }

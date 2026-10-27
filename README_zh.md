@@ -1,3 +1,5 @@
+> **聊天优先工作区**：默认入口已改为会话 / 任务 / 项目。多会话、依赖入口和结果来源验收见 [聊天工作区说明](docs/chat-workspace.md)。旧版看板保留在设置中。
+
 # AgentKanbanBoard
 
 [English](README.md) | 简体中文

@@ -2,6 +2,18 @@
 
 ## Current Knowledge
 
+### 聊天优先工作区（2026-10-27）
+
+- 默认入口 `src-ui/src/studio/ChatApp.tsx`；旧 App 只经设置打开。生产调用失败不得回退演示数据。
+- `chat_conversations` 不得冒充 `todo_tasks` 子节点；自动主会话使用原 task_id，人工会话运行键为 `chat:<conversation_id>`，隔离总结键为 `extract:<run_id>`。
+- 任务行依赖菜单、等待标签与属性面板共用同树选择器；写入后端校验自身、祖先、缺失、跨树和隐式父子等待环。运行中改依赖通过 pending change 先停止再应用。
+- 自动结果只来自明确交接工具；人工总结使用固定来源快照与独立只读 Thread。结果追加保存，来源任务/会话/执行/消息范围固定，不跟随当前选中项。
+- 任务状态与会话管理状态、运行状态分开；任务置顶与会话置顶 OR；取消任务置顶不覆盖独立会话设置。
+- Markdown 先作为纯文本存储，渲染禁止原生 HTML 与 javascript URL。删除是软删除，迁移不重写旧历史；设置提供旧看板入口。
+- 浏览器使用独立 Chrome 与 loopback CDP；UI 和 Playwright MCP 共用 endpoint，不给远程页面 Tauri IPC。禁止使用日常用户 Chrome profile；Linux 容器测试标志不得传入桌面启动。
+- 参考 `docs/chat-workspace.md` 做本机验收。自动验收只核对交付/执行条件，不声称能独立证明所有业务事实。
+
+
 ### 个人任务工作台
 
 - 产品执行路径是个人 To Do 任务树 + 自有调度器 + Codex app-server；原有 Desktop thread 导入仍是只读边界。两条路径不得混用会话所有权，导入或关联旧 thread 不得隐式启动它。

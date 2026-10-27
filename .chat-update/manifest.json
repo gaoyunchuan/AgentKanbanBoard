@@ -1,6 +1,0 @@
-{
-  "base": "c295f20e1892389d5aa63ddadaa8710cd5dbd32f",
-  "sha256": "07122ee865a69e4f74c7c7302d2ed5e343b2c535e63a3819ce4fea40722f7f32",
-  "parts": 6,
-  "allowed": ["README.md","README_zh.md","docs/agent/coding.md","docs/agent/testing.md","docs/chat-workspace.md","docs/product/interaction-v1.md","scripts/browser_bridge.mjs","src-tauri/db/004_chat_workspace.sql","src-tauri/src/browser_bridge.rs","src-tauri/src/chat_service.rs","src-tauri/src/chat_store.rs","src-tauri/src/lib.rs","src-tauri/src/main.rs","src-tauri/src/repository.rs","src-tauri/src/work_runtime.rs","src-tauri/src/work_service.rs","src-tauri/src/workflow.rs","src-tauri/tauri.conf.json","src-ui/src/index.css","src-ui/src/main.tsx","src-ui/src/studio/BrowserPane.tsx","src-ui/src/studio/ChatApp.test.tsx","src-ui/src/studio/ChatApp.tsx","src-ui/src/studio/ChatSurface.tsx","src-ui/src/studio/Dialogs.tsx","src-ui/src/studio/Inspector.tsx","src-ui/src/studio/api.ts","src-ui/src/studio/components.tsx","src-ui/src/studio/context.tsx","src-ui/src/studio/demo.ts","src-ui/src/studio/model.test.ts","src-ui/src/studio/model.ts","src-ui/src/studio/studio.css","src-ui/src/workbench/TaskExecutionPanel.tsx"]
-}

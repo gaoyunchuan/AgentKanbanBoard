@@ -219,7 +219,7 @@ function TaskConfiguration({ task, tasks, existing, browserLocked, agents, defau
   </form>;
 }
 
-function InteractionCard({ interaction, disabled, onRespond }: { interaction: TaskInteraction; disabled: boolean; onRespond: (response: unknown) => void }) {
+export function InteractionCard({ interaction, disabled, onRespond }: { interaction: TaskInteraction; disabled: boolean; onRespond: (response: unknown) => void }) {
   const payload = record(interaction.payload);
   const params = Object.keys(record(payload.params)).length ? record(payload.params) : payload;
   const [answers, setAnswers] = useState<Record<string, string>>({});

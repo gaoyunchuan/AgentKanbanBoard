@@ -1,4 +1,6 @@
 pub mod app_server;
+pub mod browser_bridge;
+pub mod chat_store;
 pub mod config;
 pub mod deeplink;
 pub mod domain;

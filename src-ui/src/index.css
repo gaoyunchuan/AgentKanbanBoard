@@ -84,3 +84,5 @@
     border-radius: 4px;
   }
 }
+
+.legacy-return{position:fixed;right:18px;bottom:14px;z-index:9999;border:1px solid #cbd8ec;background:white;color:#4671a9;padding:8px 12px;border-radius:8px;box-shadow:0 3px 16px #0011;font-size:12px}

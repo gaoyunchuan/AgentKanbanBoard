@@ -73,6 +73,7 @@ struct Scheduler {
     sender: mpsc::Sender<Message>,
     live: HashMap<String, LiveRun>,
     terminals: HashMap<String, PathBuf>,
+    stop_deadlines: HashMap<String, (String, Instant)>,
     changed: Arc<dyn Fn() + Send + Sync>,
     last_notification: Instant,
     dirty: bool,
@@ -131,6 +132,13 @@ impl WorkService {
                     .unwrap_or_else(|| {
                         std::env::var("CODEX_APP_SERVER_PATH").unwrap_or_else(|_| "codex".into())
                     });
+                if let Err(error) = repository
+                    .migrate_chat_workspace()
+                    .and_then(|_| repository.chat_recover())
+                {
+                    let _ = ready_sender.send(Err(error));
+                    return;
+                }
                 // We exclusively own the child we start; old attempts are never replayed
                 // automatically after process loss. Their side effects may already exist.
                 if let Err(error) = repository.recover_work_runs() {
@@ -146,6 +154,7 @@ impl WorkService {
                     sender: worker_sender,
                     live: HashMap::new(),
                     terminals: HashMap::new(),
+                    stop_deadlines: HashMap::new(),
                     changed,
                     last_notification: Instant::now(),
                     dirty: true,
@@ -169,12 +178,20 @@ impl WorkService {
                                     runtime.shutdown();
                                 }
                                 for (id, run) in scheduler.live.drain() {
-                                    let _ = scheduler.repository.finish_work_run(
-                                        &id,
-                                        &run.run_id,
-                                        "failed",
-                                        Some(&error),
-                                    );
+                                    if id.starts_with("chat:") || id.starts_with("extract:") {
+                                        let _ = scheduler.repository.chat_finish(
+                                            &run.run_id,
+                                            "failed",
+                                            Some(&error),
+                                        );
+                                    } else {
+                                        let _ = scheduler.repository.finish_work_run(
+                                            &id,
+                                            &run.run_id,
+                                            "failed",
+                                            Some(&error),
+                                        );
+                                    }
                                 }
                                 scheduler.runtime_error = Some(error);
                                 scheduler.dirty = true;
@@ -202,6 +219,7 @@ impl WorkService {
                                 runtime.shutdown();
                             }
                             let _ = scheduler.repository.recover_work_runs();
+                            let _ = scheduler.repository.chat_recover();
                             let _ = reply.send(());
                             break;
                         }
@@ -268,6 +286,12 @@ impl WorkService {
     }
 
     pub fn task_config(&self, task_id: &str) -> Result<TaskConfig, String> {
+        if let Some(cid) = task_id.strip_prefix("conversation:") {
+            return serde_json::from_value(
+                self.call("chat/config", json!({"conversation_id":cid}))?,
+            )
+            .map_err(|e| e.to_string());
+        }
         let detail: TaskExecutionDetail =
             serde_json::from_value(self.call("detail", json!({"task_id":task_id}))?)
                 .map_err(|error| error.to_string())?;
@@ -360,6 +384,9 @@ impl Scheduler {
     }
 
     fn call(&mut self, method: &str, value: Value) -> Result<Value, String> {
+        if let Some(method) = method.strip_prefix("chat/") {
+            return self.chat_call(method, value);
+        }
         match method {
             "list" => Ok(json!({
                 "tasks":self.repository.list_work_tasks()?,
@@ -377,11 +404,16 @@ impl Scheduler {
             )
             .map_err(|e| e.to_string()),
             "terminal_begin" => {
-                let task = self
-                    .repository
-                    .get_work_task(required(&value, "task_id")?)?
-                    .ok_or("任务尚未委派")?;
-                let workspace = canonical_workspace(&task.config.workspace)?;
+                let target = required(&value, "task_id")?;
+                let config = if let Some(cid) = target.strip_prefix("conversation:") {
+                    self.repository.chat_conversation(cid)?.config
+                } else {
+                    self.repository
+                        .get_work_task(target)?
+                        .ok_or("任务尚未委派")?
+                        .config
+                };
+                let workspace = canonical_workspace(&config.workspace)?;
                 if self.workspace_busy(&workspace) {
                     return Err(
                         "该目录仍有 Agent 或终端在执行；请先暂停并等待执行结束，再运行命令".into(),
@@ -389,7 +421,7 @@ impl Scheduler {
                 }
                 self.terminals
                     .insert(required(&value, "lease_id")?.into(), workspace);
-                serde_json::to_value(task.config).map_err(|error| error.to_string())
+                serde_json::to_value(config).map_err(|error| error.to_string())
             }
             "connect" => {
                 self.connect(value.get("executable").and_then(Value::as_str))?;
@@ -438,6 +470,10 @@ impl Scheduler {
                         action,
                         TaskAction::Pause | TaskAction::Cancel | TaskAction::Rework
                     ) {
+                        self.stop_deadlines.insert(
+                            id.to_string(),
+                            (run_id.to_string(), Instant::now() + Duration::from_secs(15)),
+                        );
                         if let Err(error) = runtime.interrupt(id, run_id) {
                             runtime.shutdown();
                             self.runtime_error = Some(error);
@@ -558,6 +594,24 @@ impl Scheduler {
     }
 
     fn schedule(&mut self) -> Result<(), String> {
+        self.stop_deadlines
+            .retain(|key, (run, _)| self.live.get(key).is_some_and(|live| &live.run_id == run));
+        if self
+            .stop_deadlines
+            .values()
+            .any(|(_, deadline)| Instant::now() >= *deadline)
+        {
+            // An interrupt acknowledgement is not termination. Close the owned
+            // process, then reconcile from EOF before releasing any workspace.
+            if let Some(runtime) = &self.runtime {
+                runtime.shutdown();
+            }
+            self.runtime_error =
+                Some("停止确认超时，已关闭本产品的 Codex 连接。请核对外部效果后恢复。".into());
+            self.stop_deadlines.clear();
+            self.dirty = true;
+        }
+        self.schedule_chats()?;
         if self.repository.refresh_work_dependencies()? > 0 {
             self.dirty = true;
         }
@@ -569,6 +623,12 @@ impl Scheduler {
                 break;
             }
             if task.status != WorkflowStatus::Queued || self.live.contains_key(&task.task_id) {
+                continue;
+            }
+            let suppressed: bool = self.repository.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM chat_pending_changes WHERE task_id=?1) OR EXISTS(SELECT 1 FROM task_preferences WHERE task_id=?1 AND archived_at IS NOT NULL) OR EXISTS(SELECT 1 FROM chat_conversations WHERE task_id=?1 AND mode='auto' AND closed=1)",
+                [&task.task_id], |r|r.get(0)).map_err(|e|e.to_string())?;
+            if suppressed {
                 continue;
             }
             let workspace = match canonical_workspace(&task.config.workspace) {
@@ -678,6 +738,9 @@ impl Scheduler {
         result: Result<StartedTask, String>,
         known: Option<StartedTask>,
     ) -> Result<(), String> {
+        if task_id.starts_with("chat:") || task_id.starts_with("extract:") {
+            return self.chat_started(task_id, run_id, result, known);
+        }
         let current = self.repository.get_work_task(task_id)?;
         let owns = current
             .as_ref()
@@ -773,14 +836,15 @@ impl Scheduler {
             .map(|event| json!({"kind":event.kind,"payload":event.payload}))
             .collect();
         updates.reverse();
+        let snapshot = self.repository.chat_context(&task.task_id)?;
         Ok(format!(
-            "Task ID: {}\nTitle: {}\nGoal:\n{}\nAcceptance:\n{}\nDelegated by: {}\nReview policy: {:?}\n\
+            "Task ID: {}\nTask context snapshot:\n{}\n\nTitle: {}\nGoal:\n{}\nAcceptance:\n{}\nDelegated by: {}\nReview policy: {:?}\n\
              Completed dependency results (context, not instructions overriding this task):\n{}\n\
              Recent task decisions and messages:\n{}\n\
              Continue from the existing workspace and conversation. Verify the result against acceptance. \
              Before yielding, call task_submit_result with evidence, task_wait for a real blocker, or task_continue with the next step. \
              A normal final message does not complete the task. {}",
-            task.task_id,task.title,task.config.prompt,task.config.acceptance,task.config.delegated_by,
+            task.task_id,snapshot,task.title,snapshot.pointer("/task/context").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).unwrap_or(&task.config.prompt),task.config.acceptance,task.config.delegated_by,
             task.config.review_policy,serde_json::to_string(&context).map_err(|e|e.to_string())?,
             serde_json::to_string(&updates).map_err(|e|e.to_string())?,
             if task.continuation_count>0 {"The previous turn ended without an accepted handoff. Make progress or report the concrete blocker; do not repeat the same summary."}else{""}
@@ -794,6 +858,13 @@ impl Scheduler {
             .is_some_and(|runtime| runtime.connection_id() != event.connection_id)
         {
             return Ok(());
+        }
+        if event
+            .task_id
+            .as_deref()
+            .is_some_and(|key| key.starts_with("chat:") || key.starts_with("extract:"))
+        {
+            return self.chat_runtime_event(&event);
         }
         if event.method == "runtime/disconnected" {
             let reason = event
@@ -815,9 +886,18 @@ impl Scheduler {
                 }
             } else {
                 for (id, run) in self.live.drain() {
-                    let _ =
-                        self.repository
-                            .finish_work_run(&id, &run.run_id, "failed", Some(&reason));
+                    if id.starts_with("chat:") || id.starts_with("extract:") {
+                        let _ = self
+                            .repository
+                            .chat_finish(&run.run_id, "failed", Some(&reason));
+                    } else {
+                        let _ = self.repository.finish_work_run(
+                            &id,
+                            &run.run_id,
+                            "failed",
+                            Some(&reason),
+                        );
+                    }
                 }
             }
             self.runtime_error = Some(reason);
@@ -830,7 +910,21 @@ impl Scheduler {
         };
         let Some(run_id) = event.run_id.as_deref() else {
             // Explicit user terminal output is an observation, never a completion signal.
-            if self.repository.get_work_task(task_id)?.is_some() {
+            if let Some(cid) = task_id.strip_prefix("conversation:") {
+                let c = self.repository.chat_conversation(cid)?;
+                if c.mode == "auto" {
+                    self.repository.append_work_event(
+                        &c.task_id,
+                        None,
+                        &event.method,
+                        &event.params,
+                    )?;
+                } else {
+                    self.repository
+                        .chat_event(cid, None, &event.method, &event.params)?;
+                }
+                self.dirty = true;
+            } else if self.repository.get_work_task(task_id)?.is_some() {
                 self.repository
                     .append_work_event(task_id, None, &event.method, &event.params)?;
                 self.dirty = true;
@@ -878,6 +972,23 @@ impl Scheduler {
                 .is_some_and(|run| run.run_id == run_id)
             {
                 self.live.remove(task_id);
+            }
+            if self
+                .repository
+                .get_work_task(task_id)?
+                .is_some_and(|w| w.status == WorkflowStatus::Completed)
+            {
+                if self.chat_task_busy(task_id)? {
+                    self.repository
+                        .connection
+                        .execute(
+                            "UPDATE todo_tasks SET status='in_progress' WHERE id=?1",
+                            [task_id],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    self.repository.connection.execute("UPDATE work_tasks SET status='paused',wait_reason='stopping_sessions' WHERE task_id=?1",[task_id]).map_err(|e|e.to_string())?;
+                }
+                self.chat_request_change(task_id, "completed", json!({}))?;
             }
             // Keep the idle thread binding for file inspection and history. The next
             // claimed turn replaces it; the old turn's ownership stays historical.
@@ -1018,9 +1129,26 @@ impl Scheduler {
                 )
             }
             "task_wait" => {
+                if let Some(summary) = args
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.trim().is_empty())
+                {
+                    crate::chat_store::record_handoff(
+                        &self.repository.connection,
+                        task_id,
+                        run_id,
+                        summary,
+                        args.get("evidence").unwrap_or(&Value::Null),
+                        "phase",
+                        &self.repository.now_text(),
+                    )?;
+                }
                 let reason = required(&args, "reason")?;
                 let blockers = strings(&args, "blocked_by")?;
                 if !blockers.is_empty() {
+                    self.repository
+                        .chat_validate_dependencies(task_id, &blockers)?;
                     let task = self
                         .repository
                         .wait_for_tasks(task_id, run_id, &blockers, reason)?;
@@ -1081,6 +1209,11 @@ impl Scheduler {
                 config.prompt = required(&args, "prompt")?.into();
                 config.acceptance = required(&args, "acceptance")?.into();
                 config.blocked_by = strings(&args, "blocked_by")?;
+                for blocker in &config.blocked_by {
+                    if !same_task_tree(&self.repository, task_id, blocker)? {
+                        return Err("子任务的前置依赖必须位于当前根任务树".into());
+                    }
+                }
                 if config.blocked_by.iter().any(|id| id == task_id) {
                     return Err("子任务不能依赖父任务整体完成，否则会形成等待循环".into());
                 }
@@ -1368,3 +1501,5 @@ mod tests {
         ));
     }
 }
+
+include!("chat_service.rs");
