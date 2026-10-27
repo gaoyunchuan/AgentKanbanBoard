@@ -83,7 +83,10 @@ jobs:
           python3 - <<'PY'
           import json,pathlib,subprocess
           m=json.loads(pathlib.Path('.review-update/manifest.json').read_text())
-          subprocess.run(['git','add','--',*m['allowed']],check=True)
+          # Removed legacy paths are already staged by git rm during restoration.
+          existing=[p for p in m['allowed'] if pathlib.Path(p).exists()]
+          if existing:
+              subprocess.run(['git','add','--',*existing],check=True)
           changed=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
           if set(changed)-set(m['allowed']): raise SystemExit('Unexpected staged source')
           PY
