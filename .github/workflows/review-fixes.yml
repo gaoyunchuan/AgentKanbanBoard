@@ -1,0 +1,117 @@
+name: Verify and apply task review fixes
+on:
+  push:
+    branches: [main]
+    paths: ['.review-update/**', '.github/workflows/review-fixes.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: task-review-promotion
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_REPLACE_REGISTRY_HOST: always
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src-ui/package-lock.json
+      - name: Restore checksum-verified source
+        run: |
+          mkdir -p "$RUNNER_TEMP/task-review"
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import crypto from 'node:crypto';
+          import {brotliDecompressSync} from 'node:zlib';
+          import {execFileSync} from 'node:child_process';
+          const m=JSON.parse(fs.readFileSync('.review-update/manifest.json','utf8'));
+          execFileSync('git',['merge-base','--is-ancestor',m.base,'HEAD']);
+          const safe=p=>!path.isAbsolute(p)&&!p.split('/').includes('..')&&!p.startsWith('-');
+          if(!m.allowed.every(safe)||!m.delete.every(p=>m.allowed.includes(p))) throw Error('Invalid paths');
+          const chunks=m.parts.map(p=>fs.readFileSync(`.review-update/${p}`,'utf8'));
+          // Correct the single identified connector transport transcription. The
+          // full decoded patch must still match the independently computed SHA-256.
+          const bad='TEUUwsE1RjF1adBC',good='TEUUwsE1RjF1BC';
+          if(chunks[1].split(bad).length!==2) throw Error('Unexpected transport content');
+          chunks[1]=chunks[1].replace(bad,good);
+          const patch=brotliDecompressSync(Buffer.from(chunks.join(''),'base64'));
+          if(crypto.createHash('sha256').update(patch).digest('hex')!==m.sha256) throw Error('Patch checksum mismatch');
+          const target=path.join(process.env.RUNNER_TEMP,'task-review/source.patch');fs.writeFileSync(target,patch);
+          execFileSync('git',['apply','--unidiff-zero','--check',target]);
+          execFileSync('git',['apply','--unidiff-zero','--index',target]);
+          execFileSync('git',['rm','--',...m.delete]);
+          for(const p of fs.readdirSync('.review-update').filter(p=>/^fix-.*\.patch$/.test(p)).sort()) execFileSync('git',['apply','--index',`.review-update/${p}`]);
+          const changed=execFileSync('git',['diff','--cached','--name-only'],{encoding:'utf8'}).trim().split('\n');
+          if(changed.some(p=>!m.allowed.includes(p))) throw Error('Unexpected source changes');
+          JS
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-review-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-chat-cargo-
+            ${{ runner.os }}-cargo-
+      - name: Format test build and verify macOS package
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          git diff --check
+          node --check scripts/browser_bridge.mjs
+          make test build-dmg 2>&1 | tee "$RUNNER_TEMP/task-review/test-build.log"
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Promote tested implementation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,pathlib,subprocess
+          m=json.loads(pathlib.Path('.review-update/manifest.json').read_text())
+          subprocess.run(['git','add','--',*m['allowed']],check=True)
+          changed=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
+          if set(changed)-set(m['allowed']): raise SystemExit('Unexpected staged source')
+          PY
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA" || { echo 'Main changed; refusing to overwrite newer work'; exit 1; }
+          git rm -r .review-update .github/workflows/review-fixes.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: task-first navigation, project resolution, native Codex discovery and tabbed tools'
+          git push origin HEAD:main
+          git rev-parse HEAD | tee "$RUNNER_TEMP/task-review/implementation-commit.txt"
+      - name: Collect source and diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/task-review"
+          tar -czf "$RUNNER_TEMP/task-review/source.tar.gz" --exclude=target --exclude=node_modules --exclude=dist src-tauri src-ui scripts docs Makefile
+          git status --short > "$RUNNER_TEMP/task-review/git-status.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: task-review-verification
+          path: ${{ runner.temp }}/task-review
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: codex-thread-kanban-task-review
+          path: src-tauri/target/release/bundle/dmg/*_development.dmg*
+          if-no-files-found: error
