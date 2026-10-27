@@ -1074,6 +1074,20 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     connection.execute_batch(THREAD_TASK_LINKS_SQL)?;
     connection.execute_batch(TASK_WORKFLOW_SQL)?;
     connection.execute_batch(include_str!("../db/004_chat_workspace.sql"))?;
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS studio_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
+    )?;
+    // Older UI versions allowed child pins. Preserve their intent on the root
+    // and enforce the root-only invariant without changing task activity dates.
+    connection.execute_batch(
+        "WITH RECURSIVE pin_ancestors(id,parent_id) AS (
+           SELECT id,parent_id FROM todo_tasks WHERE pinned=1
+           UNION
+           SELECT t.id,t.parent_id FROM todo_tasks t JOIN pin_ancestors p ON t.id=p.parent_id
+         )
+         UPDATE todo_tasks SET pinned=1 WHERE id IN (SELECT id FROM pin_ancestors WHERE parent_id IS NULL);
+         UPDATE todo_tasks SET pinned=0 WHERE parent_id IS NOT NULL AND pinned=1;"
+    )?;
 
     Ok(())
 }

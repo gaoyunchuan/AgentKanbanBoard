@@ -327,8 +327,12 @@ impl WorkService {
 impl Scheduler {
     fn connect(&mut self, executable: Option<&str>) -> Result<CodexRuntime, String> {
         if let Some(value) = executable {
-            let value = value.trim();
-            if value.is_empty() || value.chars().any(char::is_control) {
+            let value = if value.trim().is_empty() {
+                "codex"
+            } else {
+                value.trim()
+            };
+            if value.chars().any(char::is_control) {
                 return Err("请填写 Codex 可执行文件路径，不包含命令参数".into());
             }
             if value != self.executable {
@@ -350,17 +354,33 @@ impl Scheduler {
                 return Ok(runtime.clone());
             }
             for (id, run) in self.live.drain() {
-                self.repository.finish_work_run(
-                    &id,
-                    &run.run_id,
-                    "failed",
-                    Some("原 Codex 连接已失效，请核验执行结果后重试"),
-                )?;
+                if id.starts_with("chat:") || id.starts_with("extract:") {
+                    self.repository.chat_finish(
+                        &run.run_id,
+                        "failed",
+                        Some("原 Codex 连接已失效，请核验执行结果后重试"),
+                    )?;
+                } else {
+                    self.repository.finish_work_run(
+                        &id,
+                        &run.run_id,
+                        "failed",
+                        Some("原 Codex 连接已失效，请核验执行结果后重试"),
+                    )?;
+                }
             }
         }
+        let resolved = match crate::local_environment::resolve_codex(&self.executable) {
+            Ok(path) => path,
+            Err(error) => {
+                self.runtime_error = Some(error.clone());
+                self.dirty = true;
+                return Err(error);
+            }
+        };
         let sender = self.sender.clone();
         match CodexRuntime::connect(
-            Path::new(&self.executable),
+            &resolved,
             Arc::new(move |event| {
                 let _ = sender.send(Message::Runtime(event));
             }),
@@ -394,7 +414,8 @@ impl Scheduler {
                 "runtime":{
                     "connected":self.runtime.as_ref().is_some_and(CodexRuntime::is_alive),
                     "status":if self.runtime.as_ref().is_some_and(CodexRuntime::is_alive) {"connected"} else {"disconnected"},
-                    "executable":self.executable,"last_error":self.runtime_error,
+                    "executable":crate::local_environment::resolve_codex(&self.executable).ok().map(|p|p.to_string_lossy().into_owned()),
+                    "configured_executable":self.executable,"last_error":self.runtime_error,
                     "max_concurrent_tasks":MAX_CONCURRENT_TASKS
                 }
             })),
@@ -406,7 +427,7 @@ impl Scheduler {
             "terminal_begin" => {
                 let target = required(&value, "task_id")?;
                 let config = if let Some(cid) = target.strip_prefix("conversation:") {
-                    self.repository.chat_conversation(cid)?.config
+                    self.repository.prepare_chat_workspace(cid)?.config
                 } else {
                     self.repository
                         .get_work_task(target)?
@@ -631,6 +652,22 @@ impl Scheduler {
             if suppressed {
                 continue;
             }
+            let task = match self.repository.prepare_work_workspace(&task.task_id) {
+                Ok(task) => task,
+                Err(error) => {
+                    let run = self
+                        .repository
+                        .claim_work_task(&task.task_id, &task.config.prompt)?;
+                    self.repository.finish_work_run(
+                        &task.task_id,
+                        &run.id,
+                        "failed",
+                        Some(&error),
+                    )?;
+                    self.dirty = true;
+                    continue;
+                }
+            };
             let workspace = match canonical_workspace(&task.config.workspace) {
                 Ok(workspace) => workspace,
                 Err(error) => {
@@ -1310,18 +1347,9 @@ fn strings(value: &Value, key: &str) -> Result<Vec<String>, String> {
     }
 }
 fn canonical_workspace(value: &str) -> Result<PathBuf, String> {
-    let path = Path::new(value);
-    if !path.is_absolute() {
-        return Err("工作目录必须是绝对路径".into());
-    }
-    let path = path
-        .canonicalize()
-        .map_err(|e| format!("工作目录无法访问: {e}"))?;
-    if !path.is_dir() {
-        return Err("工作目录不是文件夹".into());
-    }
-    Ok(path)
+    crate::local_environment::workspace_directory(value)
 }
+
 fn workspaces_overlap(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }

@@ -338,7 +338,7 @@ impl Repository {
             tasks.push(t);
         }
         Ok(
-            json!({"tasks":tasks,"conversations":self.chat_conversations()?,"work_tasks":self.list_work_tasks()?,"projects":self.list_projects(true).map_err(db)?}),
+            json!({"tasks":tasks,"conversations":self.chat_conversations()?,"work_tasks":self.list_work_tasks()?,"projects":self.visible_chat_projects()?,"settings":self.studio_settings()?}),
         )
     }
     pub fn chat_effective_project(&self, task_id: &str) -> Result<Option<String>, String> {
@@ -378,9 +378,7 @@ impl Repository {
         let pid = self
             .chat_effective_project(task_id)?
             .ok_or("请先选择此任务的默认项目")?;
-        self.connection
-            .query_row("SELECT path FROM projects WHERE id=?1", [pid], |r| r.get(0))
-            .map_err(db)
+        self.selectable_project_path(&pid)
     }
     pub fn chat_dependencies(&self, task_id: &str) -> Result<Vec<String>, String> {
         let mut s = self
@@ -483,6 +481,9 @@ impl Repository {
         let now = self.now_text();
         let parent = v.get("parent_id").and_then(Value::as_str);
         let project = v.get("project_id").and_then(Value::as_str);
+        if let Some(pid) = project {
+            self.selectable_project_path(pid)?;
+        }
         let transaction = tx(&self.connection)?;
         if let Some(parent) = parent {
             let valid:bool=transaction.query_row("SELECT EXISTS(SELECT 1 FROM todo_tasks t LEFT JOIN task_preferences p ON p.task_id=t.id WHERE t.id=?1 AND p.archived_at IS NULL)",[parent],|r|r.get(0)).map_err(db)?;
@@ -492,6 +493,25 @@ impl Repository {
         }
         transaction.execute("INSERT INTO todo_tasks(id,parent_id,position,title,status,pinned,process_tracking,result_review,expected_end_date,created_at,updated_at,activity_at)
             VALUES(?1,?2,(SELECT COALESCE(MAX(position),-1)+1 FROM todo_tasks WHERE parent_id IS ?2),?3,'todo',0,'','',date(?4,'localtime','+1 day'),?4,?4,?4)",params![tid,parent,title,now]).map_err(db)?;
+        if let Some(after) = v.get("after_id").and_then(Value::as_str) {
+            let (after_parent, position): (Option<String>, i64) = transaction
+                .query_row(
+                    "SELECT parent_id,position FROM todo_tasks WHERE id=?1",
+                    [after],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(db)?;
+            if after_parent.as_deref() != parent {
+                return Err("同级任务的父级已变化，请刷新重试".into());
+            }
+            transaction.execute("UPDATE todo_tasks SET position=position+1 WHERE parent_id IS ?1 AND position>?2 AND id<>?3",params![parent,position,tid]).map_err(db)?;
+            transaction
+                .execute(
+                    "UPDATE todo_tasks SET position=?2 WHERE id=?1",
+                    params![tid, position + 1],
+                )
+                .map_err(db)?;
+        }
         transaction
             .execute(
                 "INSERT INTO task_preferences(task_id,project_id) VALUES(?1,?2)",
@@ -540,9 +560,20 @@ impl Repository {
                 if !next.is_null() && !next.is_string() {
                     return Err("无效项目".into());
                 }
+                if let Some(pid) = next.as_str() {
+                    self.selectable_project_path(pid)?;
+                }
                 transaction.execute("INSERT INTO task_preferences(task_id,project_id) VALUES(?1,?2) ON CONFLICT(task_id) DO UPDATE SET project_id=excluded.project_id,revision=revision+1",params![tid,next.as_str()]).map_err(db)?;
             } else if key == "pinned" {
                 let b = next.as_bool().ok_or("置顶必须是布尔值")?;
+                let parent: Option<String> = transaction
+                    .query_row("SELECT parent_id FROM todo_tasks WHERE id=?1", [tid], |r| {
+                        r.get(0)
+                    })
+                    .map_err(db)?;
+                if b && parent.is_some() {
+                    return Err("只有根任务支持置顶".into());
+                }
                 transaction
                     .execute(
                         "UPDATE todo_tasks SET pinned=?2,updated_at=?3 WHERE id=?1",
@@ -583,13 +614,7 @@ impl Repository {
             .or(self.chat_effective_project(task_id)?);
         let workspace = project_id
             .as_ref()
-            .map(|p| {
-                self.connection
-                    .query_row("SELECT path FROM projects WHERE id=?1", [p], |r| {
-                        r.get::<_, String>(0)
-                    })
-                    .map_err(db)
-            })
+            .map(|p| self.selectable_project_path(p))
             .transpose()?
             .unwrap_or_default();
         let config = TaskConfig {
@@ -671,10 +696,7 @@ impl Repository {
                 return Err("已有会话的项目已固定；默认项目只影响新会话".into());
             }
             let pid = p.as_str().ok_or("请先选择项目")?;
-            config.workspace = self
-                .connection
-                .query_row("SELECT path FROM projects WHERE id=?1", [pid], |r| r.get(0))
-                .map_err(db)?;
+            config.workspace = self.selectable_project_path(pid)?;
             Some(pid.to_string())
         } else {
             c.project_id
@@ -824,7 +846,7 @@ impl Repository {
         attachments: &[Value],
         import_context: bool,
     ) -> Result<ChatRun, String> {
-        let c = self.chat_conversation(cid)?;
+        let c = self.prepare_chat_workspace(cid)?;
         self.chat_require_task(&c.task_id)?;
         if c.mode != "manual" {
             return Err("自动会话由任务调度器管理".into());
@@ -1088,13 +1110,20 @@ mod tests {
             &json!({"project_id":"p"}),
         )
         .unwrap();
-        assert_eq!(r.chat_conversation(&c.id).unwrap().config.workspace, "/tmp");
+        assert_eq!(
+            r.chat_conversation(&c.id).unwrap().config.workspace,
+            crate::local_environment::absolute_path("/tmp")
+                .unwrap()
+                .to_string_lossy()
+        );
         assert_eq!(
             r.chat_create_conversation(&child, None)
                 .unwrap()
                 .config
                 .workspace,
-            "/var/tmp"
+            crate::local_environment::absolute_path("/var/tmp")
+                .unwrap()
+                .to_string_lossy()
         );
     }
     #[test]

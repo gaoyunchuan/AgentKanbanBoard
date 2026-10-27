@@ -1,41 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, ListTree, Folder, Settings2, Bell, Plus, Search, ChevronDown, ChevronRight, Pin, Clock, Circle, CircleCheck, LoaderCircle, AlertCircle, Ellipsis, ArrowLeft, PanelLeft, ArrowUpRight, Check, X, Link, Pencil, Trash2 } from "lucide-react";
-import { StudioContext, type DialogState, type Draft, type Panel } from "./context";
+import { invoke } from "@tauri-apps/api/core";
+import { MessageSquare, ListTree, Folder, Settings2, Bell, Plus, PanelLeft, AlertCircle, X } from "lucide-react";
+import { StudioContext, type DialogState, type Draft, type Panel, type View } from "./context";
 import { nativeApi, type StudioApi } from "./api";
 import { createDemoApi } from "./demo";
-import { emptyWorkspace, groups, conversationGroup, runtimeLabel, taskLabel, ancestors, flattenedTasks, taskConversations, preferredConversation, type Workspace, type Conversation, type ConversationDetail, type StudioTask, type Group } from "./model";
-import { HoverInfo } from "./components";
-import { Inspector } from "./Inspector";
-import { ConversationHeader, ChatSurface, UtilityPanel } from "./ChatSurface";
+import { emptyWorkspace, preferredConversation, isBusy, needsUser, type Workspace, type Conversation, type ConversationDetail, type StudioTask } from "./model";
+import { ConversationHeader, ChatSurface } from "./ChatSurface";
+import { Sidebar } from "./Sidebar";
+import { TaskTree } from "./TaskTree";
+import { RightDock } from "./RightDock";
+import { AttentionPage, ProjectsPage, SettingsPage } from "./Pages";
 import { Dialogs } from "./Dialogs";
 import "./studio.css";
 
 const blankDraft = (): Draft => ({ text: '', attachments: [], importContext: false });
 const native = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-const stamp = (s: string) => { const t = Date.parse(s); return Number.isFinite(t) ? t : 0; };
-export default function ChatApp({ api: supplied, onLegacy = () => {} }: { api?: StudioApi; onLegacy?: () => void }) {
+let autoConnection: Promise<unknown> | undefined;
+export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const api = useMemo(() => supplied ?? (native() ? nativeApi : createDemoApi()), [supplied]);
   const [data, setData] = useState<Workspace>(emptyWorkspace);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
-  const [view, setViewState] = useState<'chat' | 'tasks' | 'projects'>('chat');
+  const [view, setViewState] = useState<View>('chat');
+  const [taskScreen, setTaskScreen] = useState<'tree'|'conversation'>('tree');
   const [selection, setSelection] = useState<{ task?: string; conversation?: string }>({});
-  const [panel, setPanel] = useState<Panel>(null);
+  const [panel, setPanelState] = useState<Panel>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
-  const [query, setQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [projectId, setProjectId] = useState('');
-  const [expanded, setExpanded] = useState<Record<Group, boolean>>({ pinned: true, active: true, blocked: false, completed: false });
-  const [collapsed, setCollapsed] = useState(new Set<string>());
-  const [page, setPage] = useState(0);
-  const [menu, setMenu] = useState<{ kind: 'task' | 'conversation'; id: string } | null>(null);
-  const [notice, setNotice] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [busyCount, setBusyCount] = useState(0);
+  const [notice, setNotice] = useState(''), [error, setError] = useState('');
+  const [loading, setLoading] = useState(true), [busyCount, setBusyCount] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [showSidebar, setShowSidebar] = useState(true);
   const latest = useRef(data); latest.current = data;
+  const viewRef=useRef(view); viewRef.current=view;
   const currentSelection = useRef(selection); currentSelection.current = selection;
   const snapshotSequence = useRef(0), detailSequence = useRef(0), mounted = useRef(true), locks = useRef(new Set<string>());
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -51,69 +48,112 @@ export default function ChatApp({ api: supplied, onLegacy = () => {} }: { api?: 
     const value = await api.call<ConversationDetail>('detail', { conversation_id: cid });
     if (mounted.current && n === detailSequence.current && cid === currentSelection.current.conversation) setDetail(value);
   }, [api]);
-  useEffect(() => { mounted.current = true; let stopped = false; const poll = async () => { try { await refresh(); } catch (e) { if (!stopped) { setError(String(e)); setLoading(false); } } }; void poll(); const id = setInterval(() => void poll(), 2500); return () => { stopped = true; mounted.current = false; clearInterval(id); }; }, [refresh]);
-  useEffect(() => { setDetail(null); void refreshDetail().catch(e => setError(String(e))); const id = setInterval(() => void refreshDetail().catch(e => setError(String(e))), 1200); return () => { clearInterval(id); detailSequence.current++; }; }, [selection.conversation, refreshDetail]);
-  const notify = useCallback((text: string) => { setNotice(text); clearTimeout(timer.current); timer.current = setTimeout(() => setNotice(''), 5500); }, []);
-  const command = useCallback(async <T,>(method: string, params: Record<string, unknown> = {}, success?: string): Promise<T> => {
-    const key = `${method}:${params.conversation_id || params.task_id || params.result_id || ''}`;
-    if (locks.current.has(key)) throw new Error('该操作正在处理中');
-    locks.current.add(key); setBusyCount(x => x + 1);
-    try { const result = await api.call<T>(method, params); await refresh(); await refreshDetail(); if (success) notify(success); return result; }
-    catch (e) { notify(String(e)); throw e; }
-    finally { locks.current.delete(key); if (mounted.current) setBusyCount(x => Math.max(0, x - 1)); }
-  }, [api, refresh, refreshDetail, notify]);
-  const openConversation = useCallback((id: string) => {
-    const c = latest.current.conversations.find(x => x.id === id); if (!c) { notify('来源会话暂不可见，请刷新或恢复对应任务'); return; }
-    const t = latest.current.tasks.find(x => x.id === c.task_id); if (!t) return;
-    setSelection({ task: c.task_id, conversation: id }); setViewState('chat'); setMenu(null); setQuery('');
-    setExpanded(x => ({ ...x, [conversationGroup(c, t)]: true }));
-    void api.call('visit', { conversation_id: id }).catch(e => notify(String(e)));
-  }, [api, notify]);
-  const openTask = useCallback((id: string) => {
-    const t = latest.current.tasks.find(x => x.id === id); if (!t) return;
-    const c = preferredConversation(latest.current, t);
-    if (c) openConversation(c.id); else { setSelection({ task: id }); setViewState('chat'); setMenu(null); }
-  }, [openConversation]);
-  const locateTask = useCallback((id: string) => { setSelection(current => ({ ...current, task: id })); setViewState('tasks'); setQuery(''); setProjectFilter(''); setStatusFilter('all'); setPanel(null); setCollapsed(current => { const next = new Set(current); ancestors(latest.current.tasks, id).forEach(p => next.delete(p.id)); return next; }); const index = flattenedTasks(latest.current.tasks).findIndex(x => x.task.id === id); setPage(Math.max(0, Math.floor(index / 200))); setTimeout(() => document.querySelector(`[data-task-row="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' }), 50); }, []);
-  const inspectTask = useCallback((id: string, nextPanel: Panel = 'properties') => { const t = latest.current.tasks.find(x => x.id === id); if (!t) return; const c = preferredConversation(latest.current, t); setSelection({ task: id, conversation: c?.id }); setPanel(nextPanel); setMenu(null); }, []);
-  const newConversation = useCallback(async (taskId: string) => { try { const c = await command<Conversation>('create_conversation', { task_id: taskId }); setSelection({ task: taskId, conversation: c.id }); setViewState('chat'); setMenu(null); setPanel(null); } catch { /* command displays errors without changing selection */ } }, [command]);
-  const setView = (next: 'chat' | 'tasks' | 'projects') => { setViewState(next); setPanel(null); setQuery(''); setProjectFilter(''); setStatusFilter('all'); setMenu(null); setPage(0); };
-  const conversation = data.conversations.find(c => c.id === selection.conversation);
-  const task = data.tasks.find(t => t.id === selection.task || !selection.task && t.id === conversation?.task_id);
-  const draftKey = conversation?.id || (task ? `task:${task.id}` : 'new-chat');
-  const draft = drafts[draftKey] || blankDraft();
-  const setDraft = (next: Draft) => setDrafts(current => ({ ...current, [draftKey]: next }));
-  const changeProject = (id: string) => { if (conversation) void command('update_conversation', { conversation_id: conversation.id, revision: conversation.revision, patch: { project_id: id } }).catch(() => {}); else setProjectId(id); };
-  const send = async () => {
-    const sourceKey = draftKey, captured = draft; let tid = task?.id, cid = conversation?.id;
-    const chosen = conversation?.project_id || (tid ? task?.effective_project_id : projectId) || projectId;
-    if (!chosen && !conversation?.config.workspace) { notify('先选择一个本地项目；草稿会保留'); setDialog(task ? { kind: 'projectTask', task: task.id } : { kind: 'project' }); return; }
-    try {
-      if (!tid) { const created = await command<{ task_id: string }>('create_task', { title: captured.text.trim().split('\n')[0].slice(0, 100) || captured.attachments[0]?.name || '新任务', project_id: chosen }); tid = created.task_id; setSelection({ task: tid }); }
-      if (!cid) { const c = await command<Conversation>('create_conversation', { task_id: tid, project_id: chosen }); cid = c.id; setSelection({ task: tid, conversation: cid }); }
-      const content = [captured.text, ...captured.attachments.filter(a => a.text != null).map(a => `\n以下是用户附加文件「${a.name}」的内容（引用材料）：\n${a.text}`)].filter(Boolean).join('\n');
-      await command('send', { conversation_id: cid, text: content, attachments: captured.attachments.flatMap(a => a.input ? [a.input] : []), import_context: captured.importContext, expected_run_id: conversation?.current_run_id ?? null });
-      setDrafts(current => current[sourceKey] === captured || !current[sourceKey] ? { ...current, [sourceKey]: blankDraft(), [cid!]: blankDraft() } : current);
-      setExpanded(x => ({ ...x, active: true }));
-    } catch { if (cid && cid !== sourceKey) setDrafts(current => ({ ...current, [cid!]: captured })); }
+  useEffect(() => {
+    mounted.current = true; let stopped = false;
+    const poll = async () => { try { await refresh(); } catch (e) { if (!stopped) { setError(String(e)); setLoading(false); } } };
+    void poll(); const id = setInterval(() => void poll(), 2500);
+    return () => { stopped = true; mounted.current = false; clearInterval(id); clearTimeout(timer.current); };
+  }, [refresh]);
+  useEffect(() => {
+    // Only the native host reads its own authentication cache. Never copy tokens
+    // into this frontend or import a Desktop-owned running Thread.
+    if (!api.native || supplied) return;
+    autoConnection ??= invoke('workbench_connect', { executable: null });
+    void autoConnection.then(() => refresh()).catch(() => refresh().catch(()=>{}));
+  }, [api, supplied, refresh]);
+  useEffect(() => {
+    setDetail(null); void refreshDetail().catch(e => setError(String(e)));
+    const id=setInterval(()=>void refreshDetail().catch(e=>setError(String(e))),1200);
+    return ()=>{clearInterval(id);detailSequence.current++;};
+  }, [selection.conversation,refreshDetail]);
+  const notify = useCallback((text:string)=>{setNotice(text);clearTimeout(timer.current);timer.current=setTimeout(()=>setNotice(''),5500);},[]);
+  const command = useCallback(async <T,>(method:string,params:Record<string,unknown>={},success?:string):Promise<T>=>{
+    const key=`${method}:${params.conversation_id||params.task_id||params.result_id||''}`;
+    if(locks.current.has(key))throw new Error('该操作正在处理中');
+    locks.current.add(key);setBusyCount(x=>x+1);
+    try{const result=await api.call<T>(method,params);await refresh();await refreshDetail();if(success)notify(success);return result;}
+    catch(e){notify(String(e));throw e;}
+    finally{locks.current.delete(key);if(mounted.current)setBusyCount(x=>Math.max(0,x-1));}
+  },[api,refresh,refreshDetail,notify]);
+  const setPanel=useCallback((next:Panel)=>setPanelState(next==='context'||next==='results'?'content':next),[]);
+  const openConversation=useCallback((id:string)=>{
+    const c=latest.current.conversations.find(x=>x.id===id);
+    if(!c){notify('来源会话暂不可见，请恢复对应任务');return;}
+    setSelection({task:c.task_id,conversation:id});
+    if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');
+    void api.call('visit',{conversation_id:id}).catch(e=>notify(String(e)));
+  },[api,notify]);
+  const openTask=useCallback((id:string)=>{
+    const t=latest.current.tasks.find(x=>x.id===id);if(!t)return;
+    const c=preferredConversation(latest.current,t);
+    if(c)openConversation(c.id);else{
+      setSelection({task:id});if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');
+    }
+  },[openConversation]);
+  const inspectTask=useCallback((id:string,nextPanel?:Panel)=>{
+    const t=latest.current.tasks.find(x=>x.id===id);if(!t)return;
+    setSelection({task:id,conversation:preferredConversation(latest.current,t)?.id});
+    // Selecting another task must not reset the inspector tab chosen by the user.
+    if(nextPanel)setPanel(nextPanel);
+  },[setPanel]);
+  const locateTask=useCallback((id:string)=>{
+    const t=latest.current.tasks.find(x=>x.id===id);if(!t)return;
+    setSelection({task:id,conversation:preferredConversation(latest.current,t)?.id});
+    setViewState('tasks');setTaskScreen('tree');setProjectFilter('');
+  },[]);
+  const newConversation=useCallback(async(taskId:string)=>{
+    try{const c=await command<Conversation>('create_conversation',{task_id:taskId});setSelection({task:taskId,conversation:c.id});if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');}catch{/* command displays error */}
+  },[command]);
+  const changeTaskState=useCallback((t:StudioTask,state:StudioTask['status'])=>{
+    if(t.status===state)return;
+    if(latest.current.conversations.some(c=>c.task_id===t.id&&isBusy(c))||latest.current.work_tasks.some(w=>w.task_id===t.id&&w.current_run_id)){
+      setDialog({kind:'taskState',task:t.id,state});return;
+    }
+    void command('task_state',{task_id:t.id,state,confirm_stop:false},'任务状态已更新').catch(()=>{});
+  },[command]);
+  const setView=useCallback((next:View)=>{setViewState(next);if(next==='tasks'){setTaskScreen('tree');setProjectFilter('');}},[]);
+  // The tree has a stable selection and persistent inspector even before opening a chat.
+  useEffect(()=>{if(view==='tasks'&&!latest.current.tasks.some(t=>t.id===currentSelection.current.task)&&data.tasks.length)inspectTask(data.tasks[0].id);},[view,data.tasks,inspectTask]);
+  const conversation=data.conversations.find(c=>c.id===selection.conversation);
+  const task=data.tasks.find(t=>t.id===selection.task||!selection.task&&t.id===conversation?.task_id);
+  const draftKey=conversation?.id||(task?`task:${task.id}`:'new-chat');
+  const draft=drafts[draftKey]||blankDraft();
+  const setDraft=(next:Draft)=>setDrafts(current=>({...current,[draftKey]:next}));
+  const changeProject=(id:string)=>{
+    if(conversation)void command('update_conversation',{conversation_id:conversation.id,revision:conversation.revision,patch:{project_id:id}}).catch(()=>{});
+    else if(task)setDraft({...draft,projectId:id});else setProjectId(id);
   };
-  useEffect(() => { const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setMenu(null); if (!dialog) setPanel(null); } if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); setView('chat'); } if ((e.metaKey || e.ctrlKey) && e.key === '2') { e.preventDefault(); setView('tasks'); } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); setSelection({}); setView('chat'); } }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey); }, [dialog]);
-  useEffect(() => { setPage(0); }, [query, projectFilter, statusFilter]);
-  useEffect(() => { const hide = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.menu-anchor')) setMenu(null); }; document.addEventListener('click', hide); return () => document.removeEventListener('click', hide); }, []);
-  const rows = flattenedTasks(data.tasks, query, projectFilter).filter(({ task: t }) => (query || !ancestors(data.tasks, t.id).some(p => collapsed.has(p.id))));
-  const filteredRows = statusFilter === 'all' ? rows : rows.filter(({ task: t }) => t.status === statusFilter || data.tasks.some(x => x.status === statusFilter && ancestors(data.tasks, x.id).some(p => p.id === t.id)));
-  const lastPage = Math.max(0, Math.ceil(filteredRows.length / 200) - 1), currentPage = Math.min(page, lastPage);
-  const attentionCount = data.conversations.filter(c => c.runtime_status === 'needs_input' || c.runtime_status === 'failed' || c.mode === 'auto' && data.work_tasks.some(w => w.task_id === c.task_id && w.status === 'review')).length;
-  const context = { api, data, detail, task, conversation, view, panel, setPanel, openDialog: setDialog, setView, openTask, openConversation, locateTask, inspectTask, newConversation, refresh, command, notify, busy: busyCount > 0 };
-  return <StudioContext.Provider value={context}><div className={`studio ${!showSidebar ? 'sidebar-hidden' : ''}`}>
-    <div className="titlebar" data-tauri-drag-region><button className="iconbtn" aria-label="显示或隐藏侧栏" onClick={() => setShowSidebar(!showSidebar)}><PanelLeft size={14}/></button><span className="title-name" data-tauri-drag-region>AgentKanban</span>{!api.native && <span className="prototype-badge">交互演示 · 不调用模型</span>}</div>
-    <div className="frame"><nav className="rail" aria-label="主导航">{([{ id: 'chat', title: '会话', Icon: MessageSquare }, { id: 'tasks', title: '任务', Icon: ListTree }, { id: 'projects', title: '项目', Icon: Folder }] as const).map(({ id, title, Icon }) => <button key={id} className={`rbtn ${view === id ? 'active' : ''}`} aria-label={title} title={title} onClick={() => setView(id)}><Icon size={18}/></button>)}<div className="sep"/><button className="rbtn" aria-label="需要你" title={`需要你 ${attentionCount}`} onClick={() => setDialog({ kind: 'inbox' })}><Bell size={18}/>{attentionCount > 0 && <span className="tiny-dot"/>}</button><div className="spacer"/><button className="rbtn" aria-label="设置" onClick={() => setDialog({ kind: 'settings' })}><Settings2 size={18}/></button><div className="avatar" title="个人工作区">我</div></nav>
-    {showSidebar && <aside className="sidebar"><div className="sb-head"><strong>Codex <ChevronDown size={11}/></strong><button className="iconbtn" aria-label="搜索" onClick={() => document.querySelector<HTMLInputElement>('.sb-search input')?.focus()}><Search size={14}/></button></div><div className="sb-top"><button className="nav-item" onClick={() => { setSelection({}); setView('chat'); }}><Pencil size={14}/>新聊天</button><button className="nav-item" onClick={() => setDialog({ kind: 'createTask' })}><Plus size={15}/>新任务</button></div><div className="sb-search"><Search size={13}/><input aria-label="搜索会话或任务" placeholder={view === 'chat' ? '搜索会话' : '搜索任务'} value={query} onChange={e => setQuery(e.target.value)}/></div><div className="sb-scroll">{view === 'chat' ? groups.map(g => { const convs = data.conversations.filter(c => { const t = data.tasks.find(t => t.id === c.task_id); return t && conversationGroup(c, t) === g.id && (!query || `${c.title} ${t.title}`.toLowerCase().includes(query.toLowerCase())); }).sort((a, b) => stamp(b.updated_at) - stamp(a.updated_at)); return <section className="group" key={g.id}><button className="group-head" aria-expanded={expanded[g.id]} onClick={() => setExpanded(x => ({ ...x, [g.id]: !x[g.id] }))}>{expanded[g.id] ? <ChevronDown size={11}/> : <ChevronRight size={11}/>}<span>{g.label}</span><span className="count">{convs.length}</span></button>{expanded[g.id] && convs.map(c => <div className={`conv-row ${c.id === conversation?.id ? 'selected' : ''}`} key={c.id}>
-      <StateIcon status={c.runtime_status}/><HoverInfo data={data} conversation={c} task={data.tasks.find(t => t.id === c.task_id)!} onOpen={() => locateTask(c.task_id)} onResults={() => inspectTask(c.task_id, 'results')}><button className="row-title" onClick={() => openConversation(c.id)}>{c.title}</button></HoverInfo>{data.tasks.find(t => t.id === c.task_id)?.pinned || c.pinned ? <Pin size={11} className="pin-mark"/> : null}<span className="submark" title={runtimeLabel(c)}>{c.thread_id ? '' : '占位'}</span><div className="menu-anchor"><button className="rowmenu" aria-label={`${c.title} 会话菜单`} onClick={() => setMenu(menu?.kind === 'conversation' && menu.id === c.id ? null : { kind: 'conversation', id: c.id })}><Ellipsis size={14}/></button>{menu?.kind === 'conversation' && menu.id === c.id && <div className="inline-menu"><button className="popitem" onClick={() => { locateTask(c.task_id); setMenu(null); }}><ListTree size={13}/>在任务树中定位</button><button className="popitem" onClick={() => { void newConversation(c.task_id); setMenu(null); }}><Plus size={13}/>新建同任务会话</button><button className="popitem" onClick={() => { void command('update_conversation', { conversation_id: c.id, revision: c.revision, patch: { pinned: !c.pinned } }).catch(() => {}); setMenu(null); }}><Pin size={13}/>{c.pinned ? '取消单独置顶' : '单独置顶会话'}</button><button className="popitem" onClick={() => { setDialog({ kind: 'renameConversation', conversation: c.id }); setMenu(null); }}>重命名会话</button><button className="popitem" onClick={() => { void command(c.closed ? 'reopen_conversation' : 'close_conversation', { conversation_id: c.id }, c.closed ? '已恢复会话' : '会话已收起，任务不受影响').catch(() => {}); setMenu(null); }}>{c.closed ? '恢复会话' : '停止并收起为完成'}</button></div>}</div></div>)}</section>; }) : <><button className="nav-item" onClick={() => { setProjectFilter(''); setViewState('tasks'); }}><ListTree size={14}/>全部任务 <span className="grow"/>{data.tasks.length}</button><div className="group-head">项目</div>{data.projects.map(p => <button className={`nav-item ${projectFilter === p.id ? 'selected' : ''}`} key={p.id} onClick={() => { setProjectFilter(p.id); setViewState('tasks'); setQuery(''); }}><Folder size={13}/><span className="truncate">{p.name}</span></button>)}</>}{loading && <div className="empty-search">正在读取本地工作区…</div>}</div><div className="sb-footer"><span className={`dot ${data.runtime?.connected ? '' : 'offline'}`}/>{api.native ? data.runtime?.connected ? '本机 Codex 已连接' : '本机工作区 · 点击设置连接' : '浏览器演示 · 与本机数据隔离'}</div></aside>}
-    <main className="main">{error && <div className="workspace-error" role="alert"><AlertCircle size={15}/><span>{error}</span><button className="textbtn" onClick={() => void refresh().catch(e => setError(String(e)))}>重试</button></div>}
-    {view === 'chat' ? <><ConversationHeader/><div className="content-split"><ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={projectId} setProject={changeProject}/>{panel && (['browser', 'diff', 'workspace'].includes(panel) ? <UtilityPanel/> : <Inspector/>)}</div></> : view === 'tasks' ? <><header className="main-head"><h1>任务</h1><span className="grow"/><button className="textbtn" onClick={() => setDialog({ kind: 'deleted' })}>已删除</button><button className="textbtn primary" onClick={() => setDialog({ kind: 'createTask' })}><Plus size={14}/>新建任务</button></header><div className="content-split"><section className="page task-page"><div className="page-header"><div><h2>{projectFilter ? data.projects.find(p => p.id === projectFilter)?.name : '全部任务'}</h2><p>点任务进入聊天；会话不作为子任务。前置交付就绪后自动推进。</p></div></div><div className="toolbar"><div className="searchbox"><Search size={13}/><input aria-label="搜索全局任务" placeholder="搜索标题或上下文" value={query} onChange={e => setQuery(e.target.value)}/></div><span className="grow"/><select aria-label="筛选任务状态" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="all">全部状态</option><option value="todo">待办</option><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></div><div className="table-head"><span>任务</span><span>关联会话</span><span className="col-project">默认项目</span><span>状态</span><span>操作</span></div>
-    {filteredRows.slice(currentPage * 200, (currentPage + 1) * 200).map(({ task: t, depth }) => <div key={t.id} data-task-row={t.id} className={`task-row ${depth ? 'child' : ''} ${t.id === task?.id ? 'highlight' : ''}`}><div className="task-title" style={{ paddingLeft: depth * 19 }}><button className="collapse" aria-label={`${collapsed.has(t.id) ? '展开' : '折叠'} ${t.title}`} disabled={!data.tasks.some(x => x.parent_id === t.id)} onClick={() => setCollapsed(x => { const next = new Set(x); if (next.has(t.id)) next.delete(t.id); else next.add(t.id); return next; })}>{data.tasks.some(x => x.parent_id === t.id) ? collapsed.has(t.id) ? <ChevronRight size={12}/> : <ChevronDown size={12}/> : <span className="tree-spacer"/>}</button>{t.status === 'completed' ? <CircleCheck size={14} className="green"/> : t.missing_dependencies.length ? <Clock size={14} className="orange"/> : <Circle size={14} className="muted"/>}<div className="task-name-stack"><HoverInfo data={data} task={t} onOpen={() => inspectTask(t.id, 'context')} onResults={() => inspectTask(t.id, 'results')}><button className="task-title-btn" onClick={() => openTask(t.id)}>{t.title}</button></HoverInfo>{t.blocked_by.length > 0 && <button className={`dependency-tag ${t.missing_dependencies.length ? 'waiting' : 'ready'}`} onClick={() => setDialog({ kind: 'dependencies', task: t.id })}><Link size={10}/>{t.missing_dependencies.length === 1 ? `等待：${data.tasks.find(x => x.id === t.missing_dependencies[0])?.title || '前置交付'}` : t.missing_dependencies.length ? `等待 ${t.missing_dependencies.length} 项` : `${t.blocked_by.length} 项前置已就绪`}</button>}</div>{t.pinned && <Pin size={11} className="pin-mark"/>}</div><div className="sessions-cell">{taskConversations(data, t.id).slice(0, 3).map(c => <button className="session-chip" key={c.id} title={c.title} onClick={() => openConversation(c.id)}><MessageSquare size={11}/><span className="truncate">{c.title}</span></button>)}{taskConversations(data, t.id).length > 3 && <button className="session-chip" onClick={() => openTask(t.id)}>+{taskConversations(data, t.id).length - 3}</button>}{!taskConversations(data, t.id).length && <span className="muted">尚无会话</span>}</div><div className="project-cell col-project"><Folder size={12}/><button onClick={() => setDialog({ kind: 'projectTask', task: t.id })}>{data.projects.find(p => p.id === t.effective_project_id)?.name || '选择项目'}</button></div><span className={`table-status ${t.missing_dependencies.length ? 'waiting' : t.status === 'completed' ? 'done' : ''}`}>{taskLabel(t)}</span><div className="task-actions"><button className="iconbtn" aria-label={`为 ${t.title} 新建会话`} title="新建同任务会话，不产生子任务" disabled={['completed', 'cancelled'].includes(t.status) || busyCount > 0} onClick={() => void newConversation(t.id)}><Plus size={15}/></button><div className="menu-anchor"><button className="iconbtn" aria-label={`${t.title} 任务菜单`} onClick={() => setMenu(menu?.kind === 'task' && menu.id === t.id ? null : { kind: 'task', id: t.id })}><Ellipsis size={16}/></button>{menu?.kind === 'task' && menu.id === t.id && <div className="inline-menu align-right"><button className="popitem" onClick={() => { setDialog({ kind: 'dependencies', task: t.id }); setMenu(null); }}><Link size={14}/>设置前置任务</button><button className="popitem" onClick={() => { setDialog({ kind: 'createTask', parent: t.id }); setMenu(null); }}><ListTree size={14}/>添加子任务</button><button className="popitem" onClick={() => { setDialog({ kind: 'renameTask', task: t.id }); setMenu(null); }}><Pencil size={14}/>重命名任务</button><button className="popitem" onClick={() => inspectTask(t.id)}><Settings2 size={14}/>任务属性</button><button className="popitem" onClick={() => { void command('update_task', { task_id: t.id, patch: { pinned: !t.pinned }, before: { pinned: t.pinned } }).catch(() => {}); setMenu(null); }}><Pin size={14}/>{t.pinned ? '取消置顶任务' : '置顶任务'}</button><button className="popitem" onClick={() => { setDialog({ kind: 'completeTask', task: t.id }); setMenu(null); }}><Check size={14}/>完成任务</button><div className="popline"/><button className="popitem danger" onClick={() => { setDialog({ kind: 'deleteTask', task: t.id }); setMenu(null); }}><Trash2 size={14}/>删除任务</button></div>}</div></div></div>)}{!filteredRows.length && <div className="empty-search">{loading ? '正在加载…' : query ? '没有匹配的任务' : '创建一个标题，开始你的第一项工作。'}</div>}
-    <div className="tree-foot"><span>共 {filteredRows.length} 项 · 保留完整父子结构</span><div className="flex gap"><button className="textbtn" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>上一页</button><span>{currentPage + 1} / {lastPage + 1}</span><button className="textbtn" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>下一页</button></div></div></section>{panel && <Inspector/>}</div></> : <><header className="main-head"><h1>项目</h1><span className="grow"/><button className="textbtn primary" onClick={() => setDialog({ kind: 'project' })}><Plus size={14}/>添加本地项目</button></header><section className="page"><div className="page-header"><div><h2>全部项目</h2><p>项目绑定工作目录，任务和子任务为新会话提供默认项目。</p></div></div><div className="project-grid">{data.projects.map(p => <article key={p.id} className="project-card"><button className="project-card-main" onClick={() => { setViewState('tasks'); setProjectFilter(p.id); setQuery(''); }}><div className="picon"><Folder size={20}/></div><h3>{p.name}</h3><p>{p.path}</p><div className="project-stats"><span><b>{data.tasks.filter(t => t.effective_project_id === p.id && !['completed', 'cancelled'].includes(t.status)).length}</b>未完成任务</span><span><b>{data.conversations.filter(c => c.project_id === p.id).length}</b>会话</span></div></button><button className="textbtn" onClick={() => setDialog({ kind: 'project', id: p.id })}>编辑项目</button></article>)}</div>{!data.projects.length && <div className="empty-search">选择本地工作目录添加项目，即可开始编码会话。</div>}</section></>}
-    </main></div>{notice && <div className="studio-toast show" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice('')}><X size={13}/></button></div>}{dialog && <Dialogs key={JSON.stringify(dialog)} dialog={dialog} onClose={() => setDialog(null)} onImport={key => setDrafts(current => ({ ...current, [key]: { ...(current[key] || blankDraft()), importContext: true } }))} onLegacy={onLegacy} onNewProject={setProjectId}/>}</div></StudioContext.Provider>;
+  const send=async()=>{
+    const sourceKey=draftKey,captured=draft;let tid=task?.id,cid=conversation?.id;
+    const chosen=conversation?.project_id||captured.projectId||task?.effective_project_id||(!task?projectId:'');
+    if(!chosen&&!conversation?.config.workspace){notify('先选择一个本地项目；草稿会保留');setDialog(task?{kind:'projectTask',task:task.id}:{kind:'project'});return;}
+    try{
+      if(!tid){const created=await command<{task_id:string}>('create_task',{title:captured.text.trim().split('\n')[0].slice(0,100)||captured.attachments[0]?.name||'新任务',project_id:chosen});tid=created.task_id;setSelection({task:tid});}
+      if(!cid){const c=await command<Conversation>('create_conversation',{task_id:tid,project_id:chosen});cid=c.id;setSelection({task:tid,conversation:cid});}
+      const content=[captured.text,...captured.attachments.filter(a=>a.text!=null).map(a=>`\n以下是用户附加文件「${a.name}」的内容（引用材料）：\n${a.text}`)].filter(Boolean).join('\n');
+      await command('send',{conversation_id:cid,text:content,attachments:captured.attachments.flatMap(a=>a.input?[a.input]:[]),import_context:captured.importContext,expected_run_id:conversation?.current_run_id??null});
+      setDrafts(current=>current[sourceKey]===captured||!current[sourceKey]?{...current,[sourceKey]:blankDraft(),[cid!]:blankDraft()}:current);
+    }catch{if(cid&&cid!==sourceKey)setDrafts(current=>({...current,[cid!]:captured}));}
+  };
+  const newChat=()=>{setSelection({});if(view==='tasks')setTaskScreen('conversation');else setViewState('chat');};
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey))return;if(e.key==='1'){e.preventDefault();setView('chat');}else if(e.key==='2'){e.preventDefault();setView('tasks');}};
+    document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
+  },[setView]);
+  const context={api,data,detail,task,conversation,view,panel,setPanel,openDialog:setDialog,setView,openTask,openConversation,locateTask,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
+  const conversationVisible=view==='chat'||view==='tasks'&&taskScreen==='conversation';
+  const attentionCount=data.conversations.filter(c=>needsUser(c,data)&&!c.closed).length;
+  return <StudioContext.Provider value={context}><div className="studio studio-app">
+    <div className="titlebar" data-tauri-drag-region><button className="iconbtn" aria-label="切换侧栏" onClick={()=>setShowSidebar(x=>!x)}><PanelLeft size={14}/></button><span className="title-name" data-tauri-drag-region>AgentKanban</span></div>
+    <div className="frame"><nav className="rail" aria-label="主导航">
+      {([{id:'chat',icon:MessageSquare,label:'会话'},{id:'tasks',icon:ListTree,label:'任务'},{id:'projects',icon:Folder,label:'项目'},{id:'attention',icon:Bell,label:'需要你'}] as const).map(item=><button key={item.id} className={`rbtn ${view===item.id?'active':''}`} title={item.label} aria-label={item.label} aria-current={view===item.id?'page':undefined} onClick={()=>setView(item.id)}><item.icon size={19}/>{item.id==='attention'&&attentionCount>0&&<span className="tiny-dot"/>}</button>)}
+      <div className="spacer"/><button className={`rbtn ${view==='settings'?'active':''}`} title="设置" aria-label="设置" aria-current={view==='settings'?'page':undefined} onClick={()=>setView('settings')}><Settings2 size={19}/></button><div className="avatar" title="个人工作区">我</div>
+    </nav>
+    {showSidebar&&<Sidebar loading={loading} onNewChat={newChat} onAllTasks={()=>{setTaskScreen('tree');setProjectFilter('');}}/>}
+    <main className="main">{error&&<div className="workspace-error" role="alert"><AlertCircle size={15}/><span>{error}</span><button className="textbtn" onClick={()=>void refresh().catch(e=>setError(String(e)))}>重试</button></div>}
+      {conversationVisible?<><ConversationHeader/><div className="content-split"><ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={draft.projectId||task?.effective_project_id||projectId} setProject={changeProject}/><RightDock persistent={view==='tasks'}/></div></>:view==='tasks'?<><header className="main-head"><h1>任务</h1><span className="grow"/><button className="textbtn" onClick={()=>setDialog({kind:'deleted'})}>已删除</button><button className="textbtn primary" onClick={()=>setDialog({kind:'createTask'})}><Plus size={14}/>新建任务</button></header><div className="content-split"><TaskTree projectFilter={projectFilter}/><RightDock persistent/></div></>:view==='projects'?<ProjectsPage onSelect={id=>{setProjectFilter(id);setTaskScreen('tree');setViewState('tasks');}}/>:view==='attention'?<AttentionPage/>:<SettingsPage/>}
+    </main></div>
+    {notice&&<div className="studio-toast show" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={()=>setNotice('')}><X size={13}/></button></div>}
+    {dialog&&<Dialogs key={JSON.stringify(dialog)} dialog={dialog} onClose={()=>setDialog(null)} onImport={key=>setDrafts(current=>({...current,[key]:{...(current[key]||blankDraft()),importContext:true}}))} onNewProject={id=>{setProjectId(id);if(task&&!conversation)setDraft({...draft,projectId:id});}}/>}
+  </div></StudioContext.Provider>;
 }
-export function StateIcon({ status }: { status: string }) { const Icon = status === 'running' ? LoaderCircle : status === 'needs_input' || status === 'failed' ? AlertCircle : ['waiting', 'paused', 'queued', 'stopping'].includes(status) ? Clock : status === 'idle' ? CircleCheck : Circle; return <span className={`state-icon ${status}`}><Icon size={14} className={status === 'running' ? 'spin' : ''}/></span>; }

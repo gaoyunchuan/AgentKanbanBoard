@@ -17,17 +17,40 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<Browser>>> {
     BROWSERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 fn node_command() -> Command {
-    for candidate in [
-        "/opt/homebrew/bin/node",
-        "/usr/local/bin/node",
-        "/usr/bin/node",
-    ] {
-        if std::path::Path::new(candidate).is_file() {
-            return Command::new(candidate);
+    let mut candidates = Vec::new();
+    if let Ok(codex) = crate::local_environment::resolve_codex("codex") {
+        if let Some(parent) = codex.parent() {
+            candidates.push(parent.join("node"));
+        }
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        candidates.extend(
+            std::env::split_paths(&path)
+                .filter(|p| p.is_absolute())
+                .map(|p| p.join("node")),
+        );
+    }
+    candidates.extend(
+        [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            "/usr/bin/node",
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::from),
+    );
+    for path in candidates {
+        if path.is_file() {
+            let mut command = Command::new(&path);
+            if let Some(path) = crate::local_environment::child_path(&path) {
+                command.env("PATH", path);
+            }
+            return command;
         }
     }
     Command::new("node")
 }
+
 impl Browser {
     fn start() -> Result<Arc<Self>, String> {
         let mut child = node_command()
@@ -155,7 +178,19 @@ pub fn endpoint(key: &str) -> Option<String> {
 }
 pub fn call(key: &str, method: &str, params: Value) -> Result<Value, String> {
     if ![
-        "status", "frame", "navigate", "reload", "back", "forward", "click", "wheel", "text", "key",
+        "status",
+        "new_page",
+        "close_page",
+        "activate_page",
+        "frame",
+        "navigate",
+        "reload",
+        "back",
+        "forward",
+        "click",
+        "wheel",
+        "text",
+        "key",
     ]
     .contains(&method)
     {

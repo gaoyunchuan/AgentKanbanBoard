@@ -8,6 +8,14 @@ impl Scheduler {
                 snapshot["runtime"]=self.call("list",json!({}))?["runtime"].clone();
                 Ok(snapshot)
             }
+            "settings" => self.repository.studio_settings(),
+            "save_settings" => {
+                let paths = strings(&value,"excluded_project_dirs")?;
+                if let Some(expected)=value.get("expected_excluded_project_dirs") {
+                    if expected != &json!(self.repository.project_exclusions()?) { return Err("设置已改变，请刷新后重试".into()); }
+                }
+                self.repository.save_project_exclusions(&paths)?;self.dirty=true;self.repository.studio_settings()
+            }
             "detail" => self.repository.chat_detail(req(&value,"conversation_id")?),
             "browser_owner" => {
                 let c=self.repository.chat_conversation(req(&value,"conversation_id")?)?;
@@ -31,18 +39,27 @@ impl Scheduler {
                 self.repository.chat_update_task(req(&value,"task_id")?,&value["patch"],&value["before"])?;
                 self.dirty=true;Ok(json!({"saved":true}))
             }
+            "move_task" => {
+                let tid=req(&value,"task_id")?;
+                let parent=value.get("parent_id").and_then(Value::as_str);
+                let tasks=self.repository.list_todo_tasks().map_err(|e|e.to_string())?;
+                let mut subtree=HashSet::from([tid.to_string()]);loop{let n=subtree.len();for t in &tasks{if t.parent_id.as_ref().is_some_and(|p|subtree.contains(p)){subtree.insert(t.id.clone());}}if n==subtree.len(){break}}
+                if subtree.iter().any(|id|self.chat_task_busy(id).unwrap_or(true)){return Err("请先暂停该任务及子任务的执行，再修改层级".into())}
+                self.repository.chat_move_task(tid,parent,&value["expected_parent_id"])?;self.dirty=true;Ok(json!({"saved":true}))
+            }
             "create_conversation" => {
                 let result=self.repository.chat_create_conversation(req(&value,"task_id")?,value.get("project_id").and_then(Value::as_str))?;
                 self.dirty=true;Ok(json!(result))
             }
             "visit" => {self.repository.chat_visit(req(&value,"conversation_id")?)?;Ok(json!({"saved":true}))}
-            "config" => Ok(json!(self.repository.chat_conversation(req(&value,"conversation_id")?)?.config)),
+            "config" => Ok(json!(self.repository.prepare_chat_workspace(req(&value,"conversation_id")?)?.config)),
             "update_conversation" => {
                 self.repository.chat_update_conversation(req(&value,"conversation_id")?,&value["patch"],value["revision"].as_i64().ok_or("缺少会话版本")?)?;
                 self.dirty=true;Ok(json!({"saved":true}))
             }
             "project" => {
-                let path=canonical_workspace(req(&value,"path")?)?;
+                let path=crate::local_environment::workspace_directory(req(&value,"path")?)?;
+                if crate::local_environment::is_excluded(&path,&self.repository.project_exclusions()?) { return Err("此目录已被排除，请先在设置中移除排除规则".into()); }
                 let project=crate::domain::ProjectInput {
                     id:value.get("id").and_then(Value::as_str).map(str::to_string).unwrap_or_else(||crate::chat_store::id("project")),
                     name:req(&value,"name")?.trim().to_string(), path:path.to_string_lossy().into_owned(),
@@ -78,7 +95,7 @@ impl Scheduler {
             }
             "task_state" => {
                 let task_id=req(&value,"task_id")?;let state=req(&value,"state")?;
-                if !["completed","cancelled","reopen"].contains(&state){return Err("不支持的任务操作".into())}
+                if !["todo","in_progress","completed","cancelled","reopen"].contains(&state){return Err("不支持的任务操作".into())}
                 if self.chat_task_busy(task_id)?&&value["confirm_stop"]!=true{return Err("请确认停止本任务正在运行的会话".into())}
                 self.chat_request_change(task_id,state,json!({}))?;Ok(json!({"saved":true}))
             }
@@ -230,10 +247,11 @@ impl Scheduler {
             } else {
                 let now=current_chat_time(&self.repository);
                 let transaction=rusqlite::Transaction::new_unchecked(&self.repository.connection,rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
-                if kind=="reopen" {
-                    transaction.execute("UPDATE todo_tasks SET status='todo',actual_end_date=NULL,updated_at=?2,activity_at=?2 WHERE id=?1",rusqlite::params![tid,now]).map_err(|e|e.to_string())?;
-                    transaction.execute("UPDATE work_tasks SET status='queued',wait_reason=NULL,last_error=NULL,continuation_count=0,result_summary=NULL,generation=generation+1,revision=revision+1 WHERE task_id=?1",[&tid]).map_err(|e|e.to_string())?;
-                    transaction.execute("UPDATE task_results SET usable=0,error=COALESCE(error,'任务重新打开：保留为历史结果') WHERE task_id=?1",[&tid]).map_err(|e|e.to_string())?;
+                if kind=="reopen" || kind=="todo" || kind=="in_progress" {
+                    let previous: String=transaction.query_row("SELECT status FROM todo_tasks WHERE id=?1",[&tid],|r|r.get(0)).map_err(|e|e.to_string())?;
+                    transaction.execute("UPDATE todo_tasks SET status=?3,actual_end_date=NULL,updated_at=?2,activity_at=?2 WHERE id=?1",rusqlite::params![tid,now,if kind=="in_progress" {"in_progress"} else {"todo"}]).map_err(|e|e.to_string())?;
+                    transaction.execute("UPDATE work_tasks SET status=?2,wait_reason=CASE WHEN ?2='paused' THEN 'user' ELSE NULL END,last_error=NULL,continuation_count=0,result_summary=NULL,generation=generation+1,revision=revision+1 WHERE task_id=?1",rusqlite::params![tid,"queued"]).map_err(|e|e.to_string())?;
+                    if ["completed","cancelled"].contains(&previous.as_str()) { transaction.execute("UPDATE task_results SET usable=0,error=COALESCE(error,'任务重新打开：保留为历史结果') WHERE task_id=?1",[&tid]).map_err(|e|e.to_string())?; }
                     transaction.execute("UPDATE chat_conversations SET closed=0 WHERE id=COALESCE((SELECT id FROM chat_conversations WHERE task_id=?1 AND mode='auto'),(SELECT id FROM chat_conversations WHERE task_id=?1 ORDER BY created_at LIMIT 1))",[&tid]).map_err(|e|e.to_string())?;
                 } else {
                     transaction.execute("UPDATE todo_tasks SET status=?2,actual_end_date=date(?3,'localtime'),updated_at=?3,activity_at=?3 WHERE id=?1",rusqlite::params![tid,kind,now]).map_err(|e|e.to_string())?;
@@ -253,7 +271,7 @@ impl Scheduler {
         if self.runtime_error.is_some(){return Ok(())}
         for run in self.repository.chat_pending_runs()? {
             if self.live.len()>=MAX_CONCURRENT_TASKS{break}
-            let c=self.repository.chat_conversation(&run.conversation_id)?;
+            let c=match self.repository.prepare_chat_workspace(&run.conversation_id) { Ok(c)=>c, Err(error)=>{self.repository.chat_finish(&run.id,"failed",Some(&error))?;self.dirty=true;continue} };
             if self.repository.chat_require_task(&c.task_id).is_err(){self.repository.chat_finish(&run.id,"interrupted",Some("任务已删除，执行不再启动"))?;continue}
             if run.kind=="chat" && (c.closed||!self.repository.chat_missing_dependencies(&c.task_id)?.is_empty()){continue}
             let workspace=match canonical_workspace(&c.config.workspace){Ok(p)=>p,Err(e)=>{self.repository.chat_finish(&run.id,"failed",Some(&e))?;self.dirty=true;continue}};

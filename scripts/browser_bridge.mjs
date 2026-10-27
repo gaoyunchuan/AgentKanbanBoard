@@ -73,6 +73,37 @@ function cdp(method, params = {}) {
 }
 async function dispatch(method, p = {}) {
   if (method === 'status') return { endpoint, pages: await targets(), target_id: targetId };
+  if (method === 'new_page') {
+    const target = await (await fetch(endpoint + '/json/new?' + encodeURIComponent('about:blank'), { method: 'PUT' })).json();
+    if (!target.id) throw new Error('无法创建标签页');
+    await attach(target.id);
+    return { target_id: target.id };
+  }
+  if (method === 'close_page') {
+    const list = await targets();
+    const id = p.target_id || targetId;
+    if (!list.some(t => t.id === id)) throw new Error('标签页已关闭');
+    // Keep a real blank page alive when closing the final tab.
+    const next = list.find(t => t.id === targetId && t.id !== id) || list.find(t => t.id !== id) || await (await fetch(endpoint + '/json/new?' + encodeURIComponent('about:blank'), { method: 'PUT' })).json();
+    const response = await fetch(endpoint + '/json/close/' + encodeURIComponent(id));
+    if (!response.ok) throw new Error('无法关闭标签页');
+    if (id === targetId) { socket?.close(); socket = undefined; }
+    await attach(next.id);
+    return { target_id: next.id };
+  }
+  if (method === 'activate_page') {
+    const list = await targets();
+    if (!list.some(t => t.id === p.target_id)) throw new Error('标签页已关闭');
+    await fetch(endpoint + '/json/activate/' + encodeURIComponent(p.target_id));
+    await attach(p.target_id);
+    return { target_id: targetId };
+  }
+  if (method === 'frame' && p.target_id) {
+    // An Agent may close the selected tab. Refresh onto another real page, not
+    // an indefinitely broken stale target. Other commands still reject stale IDs.
+    const list = await targets();
+    if (!list.some(t => t.id === p.target_id)) p = { ...p, target_id: list[0]?.id };
+  }
   await attach(p.target_id);
   if (method === 'frame') {
     const width = Math.max(300, Math.min(1800, Number(p.width) || 900)), height = Math.max(220, Math.min(1400, Number(p.height) || 760));

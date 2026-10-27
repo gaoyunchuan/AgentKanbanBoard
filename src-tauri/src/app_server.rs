@@ -55,6 +55,9 @@ impl AppServer {
         }
         let mut command = Command::new(executable);
         command.arg("app-server");
+        if let Some(path) = crate::local_environment::child_path(executable) {
+            command.env("PATH", path);
+        }
         Self::spawn_command(command)
     }
 
@@ -68,7 +71,7 @@ impl AppServer {
             .spawn()
             .map_err(|error| {
                 format!(
-                    "无法启动 Codex app-server：{error}。请安装 Codex CLI，并在设置中指定可执行文件路径。"
+                    "无法启动 Codex app-server：{error}。已尝试自动检测本机 Codex；请在设置页查看诊断，不需要复制登录凭证。"
                 )
             })?;
         let stdin = child.stdin.take().ok_or("app-server 未提供 stdin")?;

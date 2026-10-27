@@ -80,7 +80,7 @@ export type AgentProfile = { id: string; name: string; instructions?: string };
 export type WorkbenchData = {
   tasks: WorkTask[];
   agents?: AgentProfile[];
-  runtime?: { status?: string; connected?: boolean; executable?: string; last_error?: string | null; error?: string | null; max_concurrent_tasks?: number };
+  runtime?: { status?: string; connected?: boolean; executable?: string; configured_executable?: string; last_error?: string | null; error?: string | null; max_concurrent_tasks?: number };
 };
 
 export type TaskAction = "pause" | "resume" | "cancel" | "retry" | "accept" | "rework";

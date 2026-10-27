@@ -5,7 +5,7 @@ import type { TaskConfig, WorkTask, WorkEvent, TaskInteraction, WorkRun, Workben
 export type ResultRecord = { id:string; task_id:string; conversation_id:string; conversation_title:string; source_run_id?:string|null; source_boundary:number; method:"auto"|"manual"|"legacy"; stage:string; markdown:string; evidence:unknown; status:"pending"|"ready"|"failed"|"withdrawn"; usable:boolean; supersedes?:string|null; created_at:string; error?:string|null };
 export type StudioTask = BackendTodoTask & { project_id:string|null; effective_project_id:string|null; last_conversation_id?:string|null; metadata_revision:number; blocked_by:string[]; missing_dependencies:string[]; results:ResultRecord[]; pending_change?:string|null };
 export type Conversation = { id:string; task_id:string; title:string; mode:"auto"|"manual"; project_id:string|null; config:TaskConfig; thread_id?:string|null; current_run_id?:string|null; runtime_status:string; pinned:boolean; closed:boolean; revision:number; created_at:string; updated_at:string; last_error?:string|null };
-export type Workspace = { tasks:StudioTask[]; projects:BackendProject[]; conversations:Conversation[]; work_tasks:WorkTask[]; runtime?:WorkbenchData["runtime"] };
+export type Workspace = { tasks:StudioTask[]; projects:BackendProject[]; conversations:Conversation[]; work_tasks:WorkTask[]; settings?: { excluded_project_dirs:string[] }; runtime?:WorkbenchData["runtime"] };
 export type ConversationDetail = { conversation:Conversation; events:WorkEvent[]; runs:(WorkRun & {kind?:string; context?:unknown})[]; interactions:TaskInteraction[]; work?:WorkTask; results:ResultRecord[] };
 export type Group = "pinned"|"active"|"blocked"|"completed";
 export const emptyWorkspace:Workspace={tasks:[],projects:[],conversations:[],work_tasks:[]};
@@ -48,3 +48,14 @@ export function flattenedTasks(tasks:StudioTask[],search="",projectId?:string) {
 }
 export function visibleResults(t:StudioTask){const superseded=new Set(t.results.filter(r=>r.status==="ready").map(r=>r.supersedes).filter(Boolean));return t.results.filter(r=>r.status==="ready"&&!superseded.has(r.id)&&!r.error);}
 export const defaultConfig=(workspace=""):TaskConfig=>({agent_id:"codex",delegated_by:"user",workspace,prompt:"",acceptance:"",review_policy:"human",blocked_by:[],approval_policy:"on-request",sandbox_mode:"workspace-write",browser_enabled:false});
+
+export function taskGroup(t:StudioTask,data:Workspace):Group {
+  if (["completed","cancelled"].includes(t.status)) return "completed";
+  const work=data.work_tasks.find(w=>w.task_id===t.id);
+  if (t.missing_dependencies.length || work && ["waiting","paused"].includes(work.status)) return "blocked";
+  if (!t.parent_id && t.pinned) return "pinned";
+  return "active";
+}
+export function needsUser(c:Conversation,data:Workspace) {
+  return ["needs_input","failed"].includes(c.runtime_status) || c.mode==="auto" && data.work_tasks.some(w=>w.task_id===c.task_id && ["review","attention"].includes(w.status));
+}
