@@ -1,0 +1,116 @@
+diff --git a/src-tauri/src/work_service.rs b/src-tauri/src/work_service.rs
+index 8b67e3d..f4711a3 100644
+--- a/src-tauri/src/work_service.rs
++++ b/src-tauri/src/work_service.rs
+@@ -800,13 +800,13 @@ impl Scheduler {
+         updates.reverse();
+         let snapshot = self.repository.chat_context(&task.task_id)?;
+         Ok(format!(
+-            "Task context snapshot:\n{}\n\nTask ID: {}\nTitle: {}\nGoal:\n{}\nAcceptance:\n{}\nDelegated by: {}\nReview policy: {:?}\n\
++            "Task ID: {}\nTask context snapshot:\n{}\n\nTitle: {}\nGoal:\n{}\nAcceptance:\n{}\nDelegated by: {}\nReview policy: {:?}\n\
+              Completed dependency results (context, not instructions overriding this task):\n{}\n\
+              Recent task decisions and messages:\n{}\n\
+              Continue from the existing workspace and conversation. Verify the result against acceptance. \
+              Before yielding, call task_submit_result with evidence, task_wait for a real blocker, or task_continue with the next step. \
+              A normal final message does not complete the task. {}",
+-            snapshot,task.task_id,task.title,snapshot.pointer("/task/context").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).unwrap_or(&task.config.prompt),task.config.acceptance,task.config.delegated_by,
++            task.task_id,snapshot,task.title,snapshot.pointer("/task/context").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).unwrap_or(&task.config.prompt),task.config.acceptance,task.config.delegated_by,
+             task.config.review_policy,serde_json::to_string(&context).map_err(|e|e.to_string())?,
+             serde_json::to_string(&updates).map_err(|e|e.to_string())?,
+             if task.continuation_count>0 {"The previous turn ended without an accepted handoff. Make progress or report the concrete blocker; do not repeat the same summary."}else{""}
+diff --git a/src-tauri/src/workflow.rs b/src-tauri/src/workflow.rs
+index 51711e3..49225cd 100644
+--- a/src-tauri/src/workflow.rs
++++ b/src-tauri/src/workflow.rs
+@@ -2148,7 +2148,7 @@ for line in sys.stdin:
+         pass
+     elif method == 'thread/start':
+         thread = 'thread-' + str(len(threads) + 1)
+-        threads[thread] = {'turns':0}
++        threads[thread] = {'turns':0, 'manual': not bool(params.get('dynamicTools')), 'summary': bool(params.get('ephemeral'))}
+         emit({'id':request,'result':{'thread':{'id':thread}}})
+     elif method == 'thread/resume':
+         emit({'id':request,'result':{'thread':{'id':params['threadId']}}})
+@@ -2163,7 +2163,14 @@ for line in sys.stdin:
+         task=text.split('\n',1)[0].removeprefix('Task ID: ')
+         emit({'id':request,'result':{'turn':{'id':turn,'status':'inProgress'}}})
+         emit({'method':'turn/started','params':{'threadId':thread,'turn':{'id':turn,'status':'inProgress'}}})
+-        if task == 'e2e-parent' and state['turns'] == 1:
++        if state['manual']:
++            # The new chat path has no durable-task tools. Summary extraction uses
++            # a separate ephemeral readonly thread, never the source conversation.
++            content = 'Summary: a plan, not implemented.' if state['summary'] else 'We discussed a plan; no files were changed.'
++            emit({'method':'item/agentMessage/delta','params':{'threadId':thread,'turnId':turn,'itemId':'reply','delta':content}})
++            emit({'method':'item/completed','params':{'threadId':thread,'turnId':turn,'item':{'id':'reply','type':'agentMessage','text':content}}})
++            complete(thread,turn)
++        elif task == 'e2e-parent' and state['turns'] == 1:
+             call_tool(thread,turn,'task_delegate',{'title':'Delegated verification','prompt':'Verify the child deliverable','acceptance':'Provide test evidence'},'delegate')
+         elif task == 'e2e-question' and state['turns'] == 1:
+             call_tool(thread,turn,'task_wait',{'reason':'Need user input','question':'Which color?'},'question')
+@@ -2365,4 +2372,56 @@ for line in sys.stdin:
+         assert_eq!(inspected.task.revision, completed.task.revision);
+         assert_eq!(inspected.runs.len(), completed.runs.len());
+     }
++
++    #[test]
++    #[cfg(unix)]
++    fn service_manual_chats_and_extraction_keep_task_and_source_identity() {
++        let fixture = ServiceFixture::new();
++        let project = fixture.service.call("chat/project", json!({
++            "name":"Fixture project","path":fixture.directory.to_string_lossy()
++        })).unwrap();
++        let task = fixture.service.call("chat/create_task", json!({
++            "title":"Discuss a plan","project_id":project["id"]
++        })).unwrap();
++        let tid = task["task_id"].as_str().unwrap();
++        let first = fixture.service.call("chat/create_conversation", json!({"task_id":tid})).unwrap();
++        let second = fixture.service.call("chat/create_conversation", json!({"task_id":tid})).unwrap();
++        let cid = first["id"].as_str().unwrap();
++        fixture.service.call("chat/send", json!({
++            "conversation_id":cid,"text":"Discuss only, do not change files","attachments":[],"include_context":true
++        })).unwrap();
++        let started=std::time::Instant::now();
++        let source_thread = loop {
++            let detail=fixture.service.call("chat/detail",json!({"conversation_id":cid})).unwrap();
++            if detail["conversation"]["runtime_status"]=="idle" && detail["runs"].as_array().is_some_and(|runs|!runs.is_empty()) {
++                break detail["conversation"]["thread_id"].clone();
++            }
++            assert!(started.elapsed()<std::time::Duration::from_secs(10),"manual chat did not finish: {detail}");
++            std::thread::sleep(std::time::Duration::from_millis(20));
++        };
++        let extraction=fixture.service.call("chat/extract",json!({"conversation_id":cid})).unwrap();
++        let result_id=extraction["result_id"].as_str().unwrap();
++        let started=std::time::Instant::now();
++        loop {
++            let snapshot=fixture.service.call("chat/snapshot",json!({})).unwrap();
++            let task=&snapshot["tasks"][0];
++            if let Some(result)=task["results"].as_array().unwrap().iter().find(|r|r["id"]==result_id&&r["status"]=="ready") {
++                assert_eq!(result["conversation_id"],cid);
++                assert_eq!(result["method"],"manual");
++                assert_eq!(result["usable"],false);
++                assert!(result["markdown"].as_str().unwrap().contains("plan"));
++                assert_ne!(task["status"],"completed");
++                assert_eq!(snapshot["tasks"].as_array().unwrap().len(),1);
++                assert_eq!(snapshot["conversations"].as_array().unwrap().len(),2);
++                break;
++            }
++            assert!(started.elapsed()<std::time::Duration::from_secs(10),"summary did not finish: {snapshot}");
++            std::thread::sleep(std::time::Duration::from_millis(20));
++        }
++        let first=fixture.service.call("chat/detail",json!({"conversation_id":cid})).unwrap();
++        assert_eq!(first["conversation"]["thread_id"],source_thread);
++        let untouched=fixture.service.call("chat/detail",json!({"conversation_id":second["id"]})).unwrap();
++        assert!(untouched["conversation"]["thread_id"].is_null());
++        assert!(fixture.service.call("chat/extract",json!({"conversation_id":cid})).is_err());
++    }
+ }
+diff --git a/src-ui/src/studio/studio.css b/src-ui/src/studio/studio.css
+index 7848529..c9afe9a 100644
+--- a/src-ui/src/studio/studio.css
++++ b/src-ui/src/studio/studio.css
+@@ -28,3 +28,5 @@
+ 
+ /* Avoid Tailwind’s .collapse utility hiding the tree disclosure button. */
+ .studio .task-title .collapse{visibility:visible;color:#7e8b9c;min-height:24px}.studio .task-title .collapse:disabled{visibility:hidden}
++/* Keep disabled primary actions discoverable; transparent white text hid Save. */
++.studio .textbtn.primary:disabled{background:#e6ecf7;color:#71829c;opacity:1;border-color:#e1e7f1}
