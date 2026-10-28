@@ -31,10 +31,10 @@ describe('task query predicates and navigation persistence',()=>{
    expect([...queryTasks(tasks,{...emptyTaskQuery(),states:['todo','in_progress'],text:'target',projects:['__none__']},now).matched]).toEqual(['other']);
    expect(queryTasks(tasks,{...emptyTaskQuery(),states:[]},now).rows).toEqual([]);
  });
- it('collapse keeps matches counted and never makes filtered siblings appear',()=>{
+ it('collapse keeps full-tree results counted after a keyword match',()=>{
    const q={...emptyTaskQuery(),text:'leaf',collapsed:['root']};
-   const r=queryTasks(fixture(),q,now);expect(r.rows.map(x=>x.task.id)).toEqual(['root']);expect(r.matched.size).toBe(1);
-   expect(queryTasks(fixture(),{...q,collapsed:[]},now).rows.map(x=>x.task.id)).toEqual(['root','a','leaf']);
+   const r=queryTasks(fixture(),q,now);expect(r.rows.map(x=>x.task.id)).toEqual(['root']);expect(r.matched.size).toBe(4);
+   expect(queryTasks(fixture(),{...q,collapsed:[]},now).rows.map(x=>x.task.id)).toEqual(['root','a','leaf','b']);
  });
  it('roundtrips query, page, expansion and scroll and validates corrupt storage',()=>{
    const q={...emptyTaskQuery(),text:'接口',states:['todo' as const],projects:['p'],updated:'week' as const,collapsed:['root'],page:2,scroll:420};

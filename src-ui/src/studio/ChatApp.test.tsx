@@ -49,10 +49,37 @@ describe('task-focused workspace',()=>{
  });
  it('expands and collapses filtered paths without discarding the query',async()=>{
    const {user}=await tasksPage();await user.type(screen.getByRole('textbox',{name:'搜索全局任务'}),'前端');
-   expect(row('frontend')).toBeInTheDocument();expect(row('contract')).not.toBeInTheDocument();
+   expect(row('frontend')).toBeInTheDocument();expect(row('contract')).toBeInTheDocument();expect(row('regression')).toBeInTheDocument();expect(row('review')).not.toBeInTheDocument();
    await user.click(screen.getByRole('button',{name:'全部折叠'}));expect(row('frontend')).not.toBeInTheDocument();expect(row('diff')).toBeInTheDocument();
    await user.click(screen.getByRole('button',{name:'全部展开'}));expect(row('frontend')).toBeInTheDocument();
    expect(screen.getByRole('textbox',{name:'搜索全局任务'})).toHaveValue('前端');
+ });
+
+ it('keyword scopes the full tree, status filters its nodes, and navigation preserves both',async()=>{
+   const {api,user}=await tasksPage();
+   await user.click(within(row('contract')).getByRole('button',{name:/点击完成，右键改状态/}));
+   await waitFor(async()=>expect((await api.call<Workspace>('snapshot')).tasks.find(t=>t.id==='contract')?.status).toBe('completed'));
+   await user.type(screen.getByRole('textbox',{name:'搜索全局任务'}),'接口');
+   expect(row('contract')).toBeInTheDocument();
+   expect(row('frontend')).toBeInTheDocument();
+   expect(row('regression')).toBeInTheDocument();
+   expect(row('review')).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
+   await user.click(screen.getByRole('button',{name:'全不选'}));
+   await user.click(screen.getByLabelText('待办'));
+   await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
+   expect(row('contract')).not.toBeInTheDocument();
+   expect(row('frontend')).toBeInTheDocument();
+   expect(row('regression')).toBeInTheDocument();
+   expect(row('diff')).toHaveClass('context-only');
+   expect(row('review')).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'设置'}));
+   await user.click(screen.getByRole('button',{name:'任务'}));
+   expect(screen.getByRole('textbox',{name:'搜索全局任务'})).toHaveValue('接口');
+   expect(screen.getByRole('button',{name:'筛选任务状态'})).toHaveTextContent('1 种状态');
+   expect(row('frontend')).toBeInTheDocument();
+   expect(row('regression')).toBeInTheDocument();
+   expect(row('contract')).not.toBeInTheDocument();
  });
 
 });

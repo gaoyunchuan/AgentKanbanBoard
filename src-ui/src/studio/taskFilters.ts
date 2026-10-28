@@ -44,20 +44,27 @@ export function withinUpdateRange(value: string, range: UpdatedRange, now: numbe
   const hours = range === 'day' ? 24 : range === 'week' ? 168 : 720;
   return Number.isFinite(at) && at <= now && at >= now - hours * 3600000;
 }
-/** Apply all predicates to the SAME node, then add only its ancestor path. */
+/** Keywords select whole root trees; other predicates filter nodes within them. */
 export function queryTasks(tasks: StudioTask[], query: TaskQuery, now: number) {
   const text = query.text.trim().toLocaleLowerCase();
+  const paths = new Map(tasks.map(t => [t.id, ancestors(tasks, t.id)]));
+  const rootOf = (id: string) => paths.get(id)?.[0]?.id ?? id;
+  // Select trees BEFORE state/project/time filtering. A completed keyword hit
+  // can still locate its pending siblings, even when completed is deselected.
+  const keywordRoots = text ? new Set(tasks.filter(t =>
+    `${t.title}\n${t.process_tracking}`.toLocaleLowerCase().includes(text)
+  ).map(t => rootOf(t.id))) : null;
   const matched = new Set(tasks.filter(t =>
+    (!keywordRoots || keywordRoots.has(rootOf(t.id))) &&
     query.states.includes(t.status) &&
     (!query.projects.length || query.projects.includes(t.effective_project_id || '__none__')) &&
-    withinUpdateRange(t.updated_at, query.updated, now) &&
-    (!text || `${t.title}\n${t.process_tracking}`.toLocaleLowerCase().includes(text))
+    withinUpdateRange(t.updated_at, query.updated, now)
   ).map(t => t.id));
   const visible = new Set(matched);
-  for (const id of matched) for (const parent of ancestors(tasks, id)) visible.add(parent.id);
+  for (const id of matched) for (const parent of paths.get(id) ?? []) visible.add(parent.id);
   const collapsed = new Set(query.collapsed);
   const rows = flattenedTasks(tasks).filter(({task}) => visible.has(task.id) &&
-    !ancestors(tasks, task.id).some(parent => collapsed.has(parent.id))
+    !paths.get(task.id)?.some(parent => collapsed.has(parent.id))
   ).map(row => ({ ...row, contextOnly: !matched.has(row.task.id) }));
   return { rows, matched, visible };
 }

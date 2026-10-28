@@ -105,7 +105,7 @@ export function TaskTree() {
       <div className="sessions-cell">{taskConversations(s.data,t.id).map(c=><button key={c.id} className="session-chip" title={c.title} onClick={e=>{e.stopPropagation();s.openConversation(c.id)}}><MessageSquare size={12}/><span className="truncate">{c.title}</span></button>)}{!taskConversations(s.data,t.id).length&&<span className="muted no-conversations">尚无会话</span>}<button className="iconbtn new-task-conversation" aria-label={`为 ${t.title} 新建会话`} title="新建同任务会话" disabled={s.busy||['completed','cancelled'].includes(t.status)} onClick={e=>{e.stopPropagation();void s.newConversation(t.id)}}><Plus size={16}/></button></div>
     </div>)}
     {!rows.length&&<div className="empty-search">{query?'没有匹配的任务':'创建一个任务开始工作'}</div>}
-    <div className="tree-foot"><span>命中 {matched.size} 项 · 当前展开 {rows.length} 项（含祖先）</span><div className="flex gap"><button className="textbtn" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {lastPage+1}</span><button className="textbtn" disabled={currentPage===lastPage} onClick={()=>setPage(currentPage+1)}>下一页</button></div></div>
+    <div className="tree-foot"><span>符合筛选 {matched.size} 项 · 当前展开 {rows.length} 项（含层级路径）</span><div className="flex gap"><button className="textbtn" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {lastPage+1}</span><button className="textbtn" disabled={currentPage===lastPage} onClick={()=>setPage(currentPage+1)}>下一页</button></div></div>
     {menu&&<TaskMenu menu={menu} close={()=>setMenu(undefined)}/>}
   </section>;
 }
