@@ -108,3 +108,8 @@
 - 2026-08-05: 记录 Tauri 可选平台包残缺锁节点导致 npm 11 Arborist 报空版本错误的问题。
 - 2026-08-06: 记录旧版快照统一刷新时间导致 To Do 周视图命中全部历史任务的问题及独立变动时间迁移方案。
 - 2026-08-19: 记录 To Do 同级位置连带重排污染周视图业务活动时间的问题。
+
+
+## 2026-10-28：AgentRoleToml 类型错误被误报为 dynamicTools
+
+症状：thread/start 的任意失败都附加“需要支持 dynamicTools 的版本”，掩盖 config.toml 的类型解析失败。处理：结构化分类、初始化后的 config/read 预检、候选兼容检查、实际路径和版本展示；失败连接清理与旧事件隔离。无法仅据整数值确定配置键，不自动修改用户配置。重现测试：codex_errors、local_environment 选择策略、work_runtime 的实际 JSONL 假子进程预检。

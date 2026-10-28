@@ -450,10 +450,10 @@ fn required_task(connection: &Connection, task_id: &str) -> Result<WorkTask, Str
     get_task(connection, task_id)?.ok_or_else(|| "任务尚未委派给 Agent".into())
 }
 
-fn refresh_dependencies(connection: &Connection, now: &str) -> Result<usize, String> {
+pub(crate) fn refresh_dependencies(connection: &Connection, now: &str) -> Result<usize, String> {
     let ids = {
         let mut statement = connection.prepare(
-            "SELECT task_id FROM work_tasks WHERE status IN ('queued','waiting') AND (wait_reason='dependencies' OR status='queued')",
+            "SELECT task_id FROM work_tasks WHERE status IN ('queued','waiting') AND (wait_reason IN ('dependencies','scheduled') OR status='queued')",
         ).map_err(db)?;
         let result = statement
             .query_map([], |row| row.get(0))
@@ -464,11 +464,17 @@ fn refresh_dependencies(connection: &Connection, now: &str) -> Result<usize, Str
     };
     let mut count = 0;
     for id in ids {
-        let ready = unresolved_dependencies(connection, &id)?.is_empty();
+        let reason = if !unresolved_dependencies(connection, &id)?.is_empty() {
+            Some("dependencies")
+        } else if crate::task_schedule::waiting_for_time(connection, &id, now)? {
+            Some("scheduled")
+        } else {
+            None
+        };
+        let ready = reason.is_none();
         let status = if ready { "queued" } else { "waiting" };
-        let reason = if ready { None } else { Some("dependencies") };
         let changed = connection.execute(
-            "UPDATE work_tasks SET status=?2,wait_reason=?3,revision=revision+1,updated_at=?4 WHERE task_id=?1 AND status<>?2",
+            "UPDATE work_tasks SET status=?2,wait_reason=?3,revision=revision+1,updated_at=?4 WHERE task_id=?1 AND (status<>?2 OR wait_reason IS NOT ?3)",
             params![id,status,reason,now],
         ).map_err(db)?;
         if changed > 0 {
@@ -478,10 +484,12 @@ fn refresh_dependencies(connection: &Connection, now: &str) -> Result<usize, Str
                 None,
                 if ready {
                     "dependencies_ready"
+                } else if reason == Some("scheduled") {
+                    "scheduled_waiting"
                 } else {
                     "dependencies_waiting"
                 },
-                &json!({}),
+                &json!({"wait_reason":reason}),
                 now,
             )?;
             count += changed;
@@ -742,7 +750,14 @@ impl Repository {
             }
         }
         replace_dependencies(&tx, task_id, &config.blocked_by)?;
-        let ready = unresolved_dependencies(&tx, task_id)?.is_empty();
+        let reason = if !unresolved_dependencies(&tx, task_id)?.is_empty() {
+            Some("dependencies")
+        } else if crate::task_schedule::waiting_for_time(&tx, task_id, &now)? {
+            Some("scheduled")
+        } else {
+            None
+        };
+        let ready = reason.is_none();
         let status = if ready {
             WorkflowStatus::Queued
         } else {
@@ -752,7 +767,7 @@ impl Repository {
             "INSERT INTO work_tasks(task_id,config_json,status,wait_reason,updated_at) VALUES(?1,?2,?3,?4,?5)
              ON CONFLICT(task_id) DO UPDATE SET config_json=excluded.config_json,status=excluded.status,wait_reason=excluded.wait_reason,
              revision=work_tasks.revision+1,continuation_count=0,last_error=NULL,updated_at=excluded.updated_at",
-            params![task_id,encode(config)?,status.as_str(),if ready {None} else {Some("dependencies")},now],
+            params![task_id,encode(config)?,status.as_str(),reason,now],
         ).map_err(db)?;
         project_business_status(&tx, task_id, status, &now)?;
         event(
@@ -778,6 +793,9 @@ impl Repository {
             return Err("前置任务尚未完成".into());
         }
         let now = self.now_text();
+        if crate::task_schedule::waiting_for_time(&tx, task_id, &now)? {
+            return Err("尚未到达开始时间，任务继续等待；不会创建 Codex Thread".into());
+        }
         let generation: i64 = tx
             .query_row(
                 "SELECT generation+1 FROM work_tasks WHERE task_id=?1",
@@ -2497,5 +2515,46 @@ for line in sys.stdin:
             .service
             .call("chat/extract", json!({"conversation_id":cid}))
             .is_err());
+    }
+    #[test]
+    #[cfg(unix)]
+    fn service_holds_scheduled_work_without_thread_then_starts_once_when_due() {
+        let fixture = ServiceFixture::new();
+        fixture
+            .service
+            .call(
+                "save_todos",
+                json!({"before":[],"after":[todo("scheduled-child")]}),
+            )
+            .unwrap();
+        fixture.service.call("chat/set_start_time",json!({"task_id":"scheduled-child","scheduled_start_at":"2099-01-01T00:00:00Z","expected_start_at":null})).unwrap();
+        let mut cfg = config(ReviewPolicy::Auto);
+        cfg.workspace = fixture.directory.to_string_lossy().into_owned();
+        fixture
+            .service
+            .call(
+                "delegate",
+                json!({"task_id":"scheduled-child","config":cfg}),
+            )
+            .unwrap();
+        let waiting = fixture.wait_for("scheduled-child", |d| {
+            d.task.wait_reason.as_deref() == Some("scheduled")
+        });
+        assert!(waiting.runs.is_empty());
+        assert!(waiting.task.thread_id.is_none());
+        fixture.service.call("chat/set_start_time",json!({"task_id":"scheduled-child","scheduled_start_at":"2000-01-01T00:00:00Z","expected_start_at":"2099-01-01T00:00:00Z"})).unwrap();
+        let done = fixture.wait_for("scheduled-child", |d| {
+            d.task.status == WorkflowStatus::Completed
+        });
+        assert_eq!(done.runs.len(), 1);
+        assert!(done.task.thread_id.is_some());
+        let again: TaskExecutionDetail = serde_json::from_value(
+            fixture
+                .service
+                .call("detail", json!({"task_id":"scheduled-child"}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(again.runs.len(), 1);
     }
 }

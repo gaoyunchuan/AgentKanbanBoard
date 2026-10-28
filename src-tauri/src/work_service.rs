@@ -69,6 +69,7 @@ struct Scheduler {
     runtime: Option<CodexRuntime>,
     emergency_runtime: Arc<Mutex<Option<CodexRuntime>>>,
     executable: String,
+    resolved_executable: Option<PathBuf>,
     runtime_error: Option<String>,
     sender: mpsc::Sender<Message>,
     live: HashMap<String, LiveRun>,
@@ -150,6 +151,7 @@ impl WorkService {
                     runtime: None,
                     emergency_runtime: worker_runtime,
                     executable,
+                    resolved_executable: None,
                     runtime_error: None,
                     sender: worker_sender,
                     live: HashMap::new(),
@@ -326,6 +328,17 @@ impl WorkService {
 
 impl Scheduler {
     fn connect(&mut self, executable: Option<&str>) -> Result<CodexRuntime, String> {
+        if executable.is_some() && self.runtime.is_some() {
+            if !self.live.is_empty() || !self.terminals.is_empty() {
+                return Err(
+                    "当前仍有执行，不能切换或重新检测 Codex；请先暂停并等待停止确认".into(),
+                );
+            }
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown();
+            }
+            self.resolved_executable = None;
+        }
         if let Some(value) = executable {
             let value = if value.trim().is_empty() {
                 "codex"
@@ -370,7 +383,7 @@ impl Scheduler {
                 }
             }
         }
-        let resolved = match crate::local_environment::resolve_codex(&self.executable) {
+        let candidates = match crate::local_environment::codex_candidates(&self.executable) {
             Ok(path) => path,
             Err(error) => {
                 self.runtime_error = Some(error.clone());
@@ -378,14 +391,18 @@ impl Scheduler {
                 return Err(error);
             }
         };
-        let sender = self.sender.clone();
-        match CodexRuntime::connect(
-            &resolved,
-            Arc::new(move |event| {
-                let _ = sender.send(Message::Runtime(event));
-            }),
-        ) {
-            Ok(runtime) => {
+        let checked = crate::local_environment::choose_compatible(&candidates, |path| {
+            let sender = self.sender.clone();
+            CodexRuntime::connect(
+                path,
+                Arc::new(move |event| {
+                    let _ = sender.send(Message::Runtime(event));
+                }),
+            )
+        });
+        match checked {
+            Ok((resolved, runtime)) => {
+                self.resolved_executable = Some(resolved);
                 self.runtime = Some(runtime.clone());
                 *self
                     .emergency_runtime
@@ -414,8 +431,9 @@ impl Scheduler {
                 "runtime":{
                     "connected":self.runtime.as_ref().is_some_and(CodexRuntime::is_alive),
                     "status":if self.runtime.as_ref().is_some_and(CodexRuntime::is_alive) {"connected"} else {"disconnected"},
-                    "executable":crate::local_environment::resolve_codex(&self.executable).ok().map(|p|p.to_string_lossy().into_owned()),
+                    "executable":self.resolved_executable.as_ref().map(|p|p.to_string_lossy().into_owned()),
                     "configured_executable":self.executable,"last_error":self.runtime_error,
+                    "server_version":self.runtime.as_ref().map(CodexRuntime::server_version),
                     "max_concurrent_tasks":MAX_CONCURRENT_TASKS
                 }
             })),
@@ -889,10 +907,10 @@ impl Scheduler {
     }
 
     fn runtime_event(&mut self, event: RuntimeEvent) -> Result<(), String> {
-        if self
+        if !self
             .runtime
             .as_ref()
-            .is_some_and(|runtime| runtime.connection_id() != event.connection_id)
+            .is_some_and(|runtime| runtime.connection_id() == event.connection_id)
         {
             return Ok(());
         }

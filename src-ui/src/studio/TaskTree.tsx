@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Plus, Pin, ChevronDown, ChevronRight, MessageSquare, Clock, Circle, CircleCheck, Link, ListTree, Settings2, Trash2, ArrowUpRight } from 'lucide-react';
+import { Plus, Pin, ChevronDown, ChevronRight, MessageSquare, Clock,  Link, ListTree, Settings2, Trash2, ArrowUpRight } from 'lucide-react';
 import { useStudio } from './context';
 import { ancestors, flattenedTasks, taskConversations, taskLabel, type StudioTask } from './model';
 import { HoverInfo } from './components';
+import { StatusIcon } from './TaskStatusIcon';
+import { TaskFilters } from './TaskFilterBar';
+import { queryTasks } from './taskFilters';
 
 type Menu = { task: StudioTask; x: number; y: number; status?: boolean };
 export function TaskMenu({ menu, close }: { menu: Menu; close: () => void }) {
@@ -28,25 +31,22 @@ export function TaskMenu({ menu, close }: { menu: Menu; close: () => void }) {
     </>}
   </div></div>,document.body);
 }
-export function StatusIcon({ status, blocked = false }: { status: string; blocked?: boolean }) {
-  return status==='completed'?<CircleCheck size={16} className="green"/>:blocked?<Clock size={16} className="orange"/>:<Circle size={16} className={status==='in_progress'?'blue':'muted'}/>;
-}
-export function TaskTree({ projectFilter = '' }: {projectFilter?:string}) {
+export function TaskTree() {
   const s = useStudio();
-  const [query,setQuery] = useState(''), [filter,setFilter] = useState('all'), [page,setPage] = useState(0);
-  const [collapsed,setCollapsed] = useState(new Set<string>());
+  const query=s.taskQuery.text, page=s.taskQuery.page;
+  const collapsed=useMemo(()=>new Set(s.taskQuery.collapsed),[s.taskQuery.collapsed]);
+  const setCollapsed=(fn:(v:Set<string>)=>Set<string>)=>s.setTaskQuery(q=>({...q,collapsed:[...fn(new Set(q.collapsed))]}));
+  const setPage=(page:number)=>s.setTaskQuery(q=>({...q,page,scroll:0}));
+  const pageRef=useRef<HTMLElement>(null), [now,setNow]=useState(Date.now);
+  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[]);
   const [menu,setMenu] = useState<Menu>();
   const [editing,setEditing] = useState<{id:string; text:string; original:string}>();
   const editingRef=useRef(editing);editingRef.current=editing;
   const editInput = useRef<HTMLInputElement>(null), clickTimer=useRef<ReturnType<typeof setTimeout>>();
   const editLock = useRef(false), indented = useRef<string>(), mounted=useRef(true);
-  const rows=useMemo(() => {
-    const ordered=flattenedTasks(s.data.tasks,query,projectFilter);
-    const stateIds=new Set(s.data.tasks.filter(t=>filter==='all'||t.status===filter).flatMap(t=>[t.id,...ancestors(s.data.tasks,t.id).map(x=>x.id)]));
-    return ordered.filter(({task:t})=>stateIds.has(t.id)&&(query||filter!=='all'||!ancestors(s.data.tasks,t.id).some(p=>collapsed.has(p.id))));
-  },[s.data.tasks,query,projectFilter,filter,collapsed]);
+  const {rows, matched}=useMemo(()=>queryTasks(s.data.tasks,s.taskQuery,now),[s.data.tasks,s.taskQuery,now]);
   const lastPage=Math.max(0,Math.ceil(rows.length/200)-1), currentPage=Math.min(page,lastPage);
-  useEffect(()=>{setPage(0)},[query,filter,projectFilter]);
+  useLayoutEffect(()=>{if(pageRef.current)pageRef.current.scrollTop=s.taskQuery.scroll;},[s.taskQuery.scroll]);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;clearTimeout(clickTimer.current)}},[]);
   useEffect(()=>{if(editing){editInput.current?.focus();editInput.current?.select()}},[editing?.id]);
   const edit = (t:StudioTask) => {clearTimeout(clickTimer.current);indented.current=undefined;s.inspectTask(t.id);setEditing({id:t.id,text:t.title,original:t.title})};
@@ -88,22 +88,24 @@ export function TaskTree({ projectFilter = '' }: {projectFilter?:string}) {
     // A double-click edits without opening a Thread or navigating away.
     clickTimer.current=setTimeout(()=>s.openTask(t.id),300);
   };
-  return <section className="page task-page" aria-label="全局任务树">
-    <div className="page-header"><div><h2>{projectFilter?s.data.projects.find(p=>p.id===projectFilter)?.name||'项目任务':'全部任务'}</h2><p>单击名称打开会话，双击编辑；单击行空白联动详情。右键设置任务或状态。</p></div></div>
-    <div className="toolbar"><div className="searchbox"><Search size={14}/><input aria-label="搜索全局任务" placeholder="搜索任务树标题或上下文" value={query} onChange={e=>setQuery(e.target.value)}/></div><span className="grow"/><select aria-label="筛选任务状态" value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">全部状态</option><option value="todo">待办</option><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></div>
+  return <section className="page task-page" aria-label="全局任务树" ref={pageRef} onScroll={e=>{const scroll=e.currentTarget.scrollTop;s.setTaskQuery(q=>q.scroll===scroll?q:{...q,scroll})}}>
+    <div className="page-header"><div><h2>全部任务</h2><p>单击名称打开会话，双击编辑；单击行空白联动详情。右键设置任务或状态。</p></div></div>
+    <TaskFilters/>
     <div className="table-head"><span>任务</span><span>关联会话</span></div>
-    {rows.slice(currentPage*200,(currentPage+1)*200).map(({task:t,depth})=><div key={t.id} data-task-row={t.id} className={`task-row ${depth?'child':''} ${t.id===s.task?.id?'highlight':''} ${!t.parent_id&&t.pinned?'root-pinned':''}`} onClick={()=>s.inspectTask(t.id)} onContextMenu={e=>openMenu(e,t)} onKeyDown={e=>{if(e.key==='F10'&&e.shiftKey){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();setMenu({task:t,x:r.left+30,y:r.top+20})}}}>
+    {rows.slice(currentPage*200,(currentPage+1)*200).map(({task:t,depth,contextOnly})=><div key={t.id} data-task-row={t.id} className={`task-row ${depth?'child':''} ${contextOnly?'context-only':''} ${t.id===s.task?.id?'highlight':''} ${!t.parent_id&&t.pinned?'root-pinned':''}`} onClick={()=>s.inspectTask(t.id)} onContextMenu={e=>openMenu(e,t)} onKeyDown={e=>{if(e.key==='F10'&&e.shiftKey){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();setMenu({task:t,x:r.left+30,y:r.top+20})}}}>
       <div className="task-title" style={{paddingLeft:depth*17}}>
         <button className="collapse" aria-label={`${collapsed.has(t.id)?'展开':'折叠'} ${t.title}`} disabled={!s.data.tasks.some(x=>x.parent_id===t.id)} onClick={e=>{e.stopPropagation();setCollapsed(current=>{const next=new Set(current);if(next.has(t.id))next.delete(t.id);else next.add(t.id);return next})}}>{s.data.tasks.some(x=>x.parent_id===t.id)?collapsed.has(t.id)?<ChevronRight size={13}/>:<ChevronDown size={13}/>:<span className="tree-spacer"/>}</button>
         <button className="task-status-control" aria-label={`${t.title}：${taskLabel(t)}，点击完成，右键改状态`} title="点击完成 · 右键设置状态" onClick={e=>{e.stopPropagation();if(t.status!=='completed')s.changeTaskState(t,'completed')}} onContextMenu={e=>openMenu(e,t,true)}><StatusIcon status={t.status} blocked={Boolean(t.missing_dependencies.length)}/></button>
         <div className="task-name-stack">{editing?.id===t.id?<input ref={editInput} className="task-title-editor" aria-label={`编辑任务名称 ${t.id}`} value={editing.text} onChange={e=>setEditing({...editing,text:e.target.value})} onClick={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()} onKeyDown={e=>void editKey(e,t)} onBlur={()=>{if(!editLock.current)void persistTitle().catch(e=>s.notify(String(e)))}}/>:<HoverInfo data={s.data} task={t} onOpen={()=>s.inspectTask(t.id,'content')} onResults={()=>s.inspectTask(t.id,'content')}><button className="task-title-btn" onClick={e=>{e.stopPropagation();selectAndOpen(t)}} onDoubleClick={e=>{e.preventDefault();e.stopPropagation();edit(t)}} onKeyDown={e=>{if(e.key==='F2'){e.preventDefault();edit(t)}}}>{t.title}</button></HoverInfo>}
+        {contextOnly&&<span className="ancestor-label">层级路径</span>}
+        {t.scheduled_start_at&&s.data.work_tasks.some(w=>w.task_id===t.id&&w.wait_reason==='scheduled')&&<span className="scheduled-tag"><Clock size={12}/>等待开始 · {new Date(t.scheduled_start_at).toLocaleString('zh-CN')}</span>}
         {t.blocked_by.length>0&&<button className={`dependency-tag ${t.missing_dependencies.length?'waiting':'ready'}`} onClick={e=>{e.stopPropagation();s.openDialog({kind:'dependencies',task:t.id})}}><Link size={11}/>{t.missing_dependencies.length===1?`等待：${s.data.tasks.find(x=>x.id===t.missing_dependencies[0])?.title||'前置交付'}`:t.missing_dependencies.length?`等待 ${t.missing_dependencies.length} 项`:`${t.blocked_by.length} 项前置已就绪`}</button>}</div>
         {!t.parent_id&&t.pinned&&<Pin size={12} className="pin-mark"/>}
       </div>
       <div className="sessions-cell">{taskConversations(s.data,t.id).map(c=><button key={c.id} className="session-chip" title={c.title} onClick={e=>{e.stopPropagation();s.openConversation(c.id)}}><MessageSquare size={12}/><span className="truncate">{c.title}</span></button>)}{!taskConversations(s.data,t.id).length&&<span className="muted no-conversations">尚无会话</span>}<button className="iconbtn new-task-conversation" aria-label={`为 ${t.title} 新建会话`} title="新建同任务会话" disabled={s.busy||['completed','cancelled'].includes(t.status)} onClick={e=>{e.stopPropagation();void s.newConversation(t.id)}}><Plus size={16}/></button></div>
     </div>)}
     {!rows.length&&<div className="empty-search">{query?'没有匹配的任务':'创建一个任务开始工作'}</div>}
-    <div className="tree-foot"><span>共 {rows.length} 项</span><div className="flex gap"><button className="textbtn" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {lastPage+1}</span><button className="textbtn" disabled={currentPage===lastPage} onClick={()=>setPage(currentPage+1)}>下一页</button></div></div>
+    <div className="tree-foot"><span>命中 {matched.size} 项 · 当前展开 {rows.length} 项（含祖先）</span><div className="flex gap"><button className="textbtn" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {lastPage+1}</span><button className="textbtn" disabled={currentPage===lastPage} onClick={()=>setPage(currentPage+1)}>下一页</button></div></div>
     {menu&&<TaskMenu menu={menu} close={()=>setMenu(undefined)}/>}
   </section>;
 }

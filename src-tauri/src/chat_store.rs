@@ -180,19 +180,23 @@ pub fn finalize_handoff(
     success: bool,
     accepted: bool,
 ) -> Result<(), String> {
-    c.execute(
-        "UPDATE task_results SET status=?3,usable=CASE WHEN ?4 THEN 1 ELSE 0 END,
+    let changed = c
+        .execute(
+            "UPDATE task_results SET status=?3,usable=CASE WHEN ?4 THEN 1 ELSE 0 END,
         error=CASE WHEN ?5 THEN NULL ELSE '交付后的执行未正常结束，结果不可用于解除依赖' END
         WHERE task_id=?1 AND source_run_id=?2 AND method='auto' AND status='pending'",
-        params![
-            task_id,
-            run_id,
-            if success { "ready" } else { "failed" },
-            success && accepted,
-            success
-        ],
-    )
-    .map_err(db)?;
+            params![
+                task_id,
+                run_id,
+                if success { "ready" } else { "failed" },
+                success && accepted,
+                success
+            ],
+        )
+        .map_err(db)?;
+    if changed > 0 && success {
+        c.execute("UPDATE todo_tasks SET activity_at=COALESCE((SELECT ended_at FROM work_runs WHERE id=?2),activity_at) WHERE id=?1",params![task_id,run_id]).map_err(db)?;
+    }
     Ok(())
 }
 pub fn accept_results(c: &Connection, task_id: &str) -> Result<(), String> {
@@ -263,7 +267,9 @@ impl Repository {
                     }
                     WorkflowStatus::Running => "running",
                     WorkflowStatus::Waiting => {
-                        if w.execution_status.starts_with("waiting_") {
+                        if w.wait_reason.as_deref() == Some("scheduled") {
+                            "scheduled"
+                        } else if w.execution_status.starts_with("waiting_") {
                             "needs_input"
                         } else {
                             "waiting"
@@ -317,6 +323,7 @@ impl Repository {
                 continue;
             }
             let mut t = serde_json::to_value(&todo).map_err(|e| e.to_string())?;
+            t["scheduled_start_at"] = json!(self.task_start_time(&todo.id)?);
             t["project_id"] = json!(pref.as_ref().and_then(|p| p.0.clone()));
             t["effective_project_id"] = json!(self.chat_effective_project(&todo.id)?);
             t["last_conversation_id"] = json!(pref.as_ref().and_then(|p| p.2.clone()));
@@ -459,6 +466,13 @@ impl Repository {
     }
     pub fn chat_set_dependencies(&self, task_id: &str, blockers: &[String]) -> Result<(), String> {
         self.chat_validate_dependencies(task_id, blockers)?;
+        let mut previous = self.chat_dependencies(task_id)?;
+        previous.sort();
+        let mut requested = blockers.to_vec();
+        requested.sort();
+        if previous == requested {
+            return Ok(());
+        }
         let transaction = tx(&self.connection)?;
         crate::workflow::replace_dependencies(&transaction, task_id, blockers)?;
         transaction
@@ -468,6 +482,12 @@ impl Repository {
             )
             .map_err(db)?;
         transaction.execute("INSERT INTO task_preferences(task_id,revision) VALUES(?1,1) ON CONFLICT(task_id) DO UPDATE SET revision=revision+1",[task_id]).map_err(db)?;
+        transaction
+            .execute(
+                "UPDATE todo_tasks SET updated_at=?2,activity_at=?2 WHERE id=?1",
+                params![task_id, self.now_text()],
+            )
+            .map_err(db)?;
         transaction.commit().map_err(db)?;
         self.refresh_work_dependencies()?;
         Ok(())
@@ -556,6 +576,9 @@ impl Repository {
             if before.get(key) != Some(&current) {
                 return Err(format!("{key} 已被修改，请刷新后重试"));
             }
+            if &current == next {
+                continue;
+            }
             if key == "project_id" {
                 if !next.is_null() && !next.is_string() {
                     return Err("无效项目".into());
@@ -564,6 +587,12 @@ impl Repository {
                     self.selectable_project_path(pid)?;
                 }
                 transaction.execute("INSERT INTO task_preferences(task_id,project_id) VALUES(?1,?2) ON CONFLICT(task_id) DO UPDATE SET project_id=excluded.project_id,revision=revision+1",params![tid,next.as_str()]).map_err(db)?;
+                transaction
+                    .execute(
+                        "UPDATE todo_tasks SET updated_at=?2,activity_at=?2 WHERE id=?1",
+                        params![tid, now],
+                    )
+                    .map_err(db)?;
             } else if key == "pinned" {
                 let b = next.as_bool().ok_or("置顶必须是布尔值")?;
                 let parent: Option<String> = transaction
@@ -576,7 +605,7 @@ impl Repository {
                 }
                 transaction
                     .execute(
-                        "UPDATE todo_tasks SET pinned=?2,updated_at=?3 WHERE id=?1",
+                        "UPDATE todo_tasks SET pinned=?2,updated_at=?3,activity_at=?3 WHERE id=?1",
                         params![tid, b, now],
                     )
                     .map_err(db)?;
@@ -992,7 +1021,10 @@ impl Repository {
             } else {
                 false
             };
-            transaction.execute("UPDATE task_results SET status=?2,markdown=?3,error=?4,usable=?5 WHERE id=?1 AND status='pending'",params![run.result_id,if valid{"ready"}else{"failed"},run.output,error.or(if valid{None}else{Some("结果整理失败，可仅重试整理")}),valid&&accepted]).map_err(db)?;
+            let changed=transaction.execute("UPDATE task_results SET status=?2,markdown=?3,error=?4,usable=?5 WHERE id=?1 AND status='pending'",params![run.result_id,if valid{"ready"}else{"failed"},run.output,error.or(if valid{None}else{Some("结果整理失败，可仅重试整理")}),valid&&accepted]).map_err(db)?;
+            if changed > 0 && valid {
+                transaction.execute("UPDATE todo_tasks SET updated_at=?2,activity_at=?2 WHERE id=(SELECT task_id FROM task_results WHERE id=?1)",params![run.result_id,now]).map_err(db)?;
+            }
         } else {
             transaction.execute("UPDATE chat_conversations SET current_run_id=NULL,runtime_status=?2,last_error=?3,updated_at=?4 WHERE id=?1 AND current_run_id=?5",params![run.conversation_id,if success{"idle"}else if status=="interrupted"{"paused"}else{"failed"},error,now,rid]).map_err(db)?;
         }

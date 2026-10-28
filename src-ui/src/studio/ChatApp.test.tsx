@@ -29,4 +29,30 @@ describe('task-focused workspace',()=>{
  it('utility panels share a right tabstrip and preserve inspector selection',async()=>{const {user}=await tasksPage();await user.click(row('diff').querySelector('.task-title-btn')!);await screen.findByRole('textbox',{name:'聊天输入'});await user.click(screen.getByRole('tab',{name:'属性与设置'}));await user.click(screen.getByRole('button',{name:'侧边浏览器'}));await user.click(screen.getByRole('button',{name:'文件与终端'}));const tabs=screen.getByRole('tablist',{name:'右侧工具标签'});expect(within(tabs).getByRole('tab',{name:'浏览器'})).toBeInTheDocument();expect(within(tabs).getByRole('tab',{name:'文件与终端'})).toHaveAttribute('aria-selected','true');await user.click(within(tabs).getByRole('tab',{name:'任务详情'}));expect(screen.getByRole('tab',{name:'属性与设置'})).toHaveAttribute('aria-selected','true');});
  it('renders native Markdown without executing HTML',()=>{const {container}=render(<Markdown text={'## 成果\n<script>alert(1)</script>\n[坏链接](javascript:alert)\n[安全文档](https://example.com)\n```sh\necho test\n```'}/>);expect(container.querySelector('script')).toBeNull();expect(container.querySelector('a[href^="javascript:"]')).toBeNull();expect(screen.getByRole('link',{name:'安全文档'})).toHaveAttribute('rel','noreferrer noopener');});
  it('ignores a late detail response after selecting a different conversation',async()=>{const api=createDemoApi(),original=api.call.bind(api);let release:((x:unknown)=>void)|undefined;const d=await api.call<Workspace>('snapshot'),first=d.conversations[0],second=d.conversations[1];const delayed={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>method==='detail'&&params?.conversation_id===first.id?new Promise(resolve=>{release=resolve}):original(method,params))} as typeof api;const user=userEvent.setup();render(<ChatApp api={delayed}/>);await user.click(await screen.findByRole('button',{name:first.title}));await user.click(screen.getByRole('button',{name:second.title}));await waitFor(()=>expect(delayed.call).toHaveBeenCalledWith('detail',{conversation_id:second.id}));release?.(await original('detail',{conversation_id:first.id}));await waitFor(()=>expect(screen.queryByText('已明确的边界')).not.toBeInTheDocument());});
+ it('preserves multiselect, week, project and collapsed filters across navigation',async()=>{
+   const {user}=await tasksPage();
+   await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
+   await user.click(screen.getByRole('button',{name:'全不选'}));
+   await user.click(screen.getByLabelText('待办'));await user.click(screen.getByLabelText('进行中'));
+   await user.selectOptions(screen.getByRole('combobox',{name:'按更新时间筛选'}),'week');
+   await user.click(screen.getByRole('button',{name:'筛选任务项目'}));await user.click(screen.getByLabelText('release-console'));
+   await user.click(screen.getByRole('button',{name:'筛选任务项目'}));
+   await user.click(screen.getByRole('button',{name:'全部折叠'}));
+   await user.click(screen.getByRole('button',{name:'设置'}));await user.click(screen.getByRole('button',{name:'任务'}));
+   expect(screen.getByRole('button',{name:'筛选任务状态'})).toHaveTextContent('2 种状态');
+   expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveValue('week');
+   expect(screen.getByRole('button',{name:'筛选任务项目'})).toHaveTextContent('1 个项目');
+   expect(row('frontend')).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'重置筛选'}));
+   expect(row('frontend')).toBeInTheDocument();expect(row('review')).toBeInTheDocument();
+   expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveValue('all');
+ });
+ it('expands and collapses filtered paths without discarding the query',async()=>{
+   const {user}=await tasksPage();await user.type(screen.getByRole('textbox',{name:'搜索全局任务'}),'前端');
+   expect(row('frontend')).toBeInTheDocument();expect(row('contract')).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'全部折叠'}));expect(row('frontend')).not.toBeInTheDocument();expect(row('diff')).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'全部展开'}));expect(row('frontend')).toBeInTheDocument();
+   expect(screen.getByRole('textbox',{name:'搜索全局任务'})).toHaveValue('前端');
+ });
+
 });

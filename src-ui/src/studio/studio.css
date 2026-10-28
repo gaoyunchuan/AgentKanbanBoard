@@ -54,3 +54,25 @@
 .studio .browser-tabstrip{display:flex;align-items:center;overflow:auto;gap:4px;padding:7px 0 2px}.studio .browser-tab{display:flex;align-items:center;flex-shrink:0;max-width:200px;border:1px solid #e1e6ee;border-radius:6px;background:#f5f7fa;font-size:12px}.studio .browser-tab.active{background:white;border-color:#a6bfdf}.studio .browser-tab button{padding:7px;display:flex;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:160px}.studio .browser-tab button[role=tab]{display:block}.studio .browser-surface{min-width:0;min-height:200px}.studio .browser-text-entry input{min-width:0;font-size:12px}.studio .browser-error{font-size:12px}.studio .browser-start p{font-size:13px;line-height:1.8}.studio .browser-toolbar input{font-size:12px}.studio .modal-body{font-size:13px}.studio .modal-desc{font-size:12px}.studio .modal-header h2{font-size:17px}.studio .modal .dependency-choice{font-size:13px}.studio .form-error{font-size:12px}
 @media(max-width:1100px){.studio .sidebar{width:210px}.studio .right-dock{width:35vw;min-width:300px}.studio .page{padding:18px}.studio .header-actions .extract-label{display:none}.studio .chat-scroll{padding:18px}.studio .composer-wrap{padding:12px 16px}.studio .right-dock .inspector-body{padding:18px}.studio .task-title{gap:3px}}
 @media(max-width:850px){.studio .sidebar{width:180px}.studio .rail{width:42px}.studio .right-dock{width:38vw;min-width:270px}.studio .page{padding:12px}.studio .task-page .table-head,.studio .task-page .task-row{gap:6px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}.studio .main-head{padding:0 12px}.studio .main-head h1{max-width:180px}.studio .dock-tabs{padding:3px 4px 0}.studio .dock-tab>button:first-child{padding:7px 6px}.studio .task-title{padding-left:0!important}.studio .task-row.child .task-title{border-left:1px solid #dce3ed;padding-left:4px!important}.studio .no-conversations{display:none}.studio .header-actions .textbtn{padding:4px}.studio .header-actions .iconbtn{width:25px}}
+/* Persistent task queries: compact controls, independent from sidebar search. */
+.studio .task-filter-bar{margin:0 0 14px;position:relative;z-index:5}
+.studio .task-filter-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+.studio .task-filter-line.secondary{gap:4px}
+.studio .task-filter-line .note{margin:0;flex-basis:160px}
+.studio .task-filter-line .searchbox{flex:1;min-width:180px;max-width:none}
+.studio .filter-anchor{position:relative}
+.studio .filter-popover{position:absolute;top:calc(100% + 6px);left:0;z-index:25;width:208px;background:white;border:1px solid var(--line);box-shadow:var(--shadow);border-radius:9px;padding:8px}
+.studio .filter-popover label{display:flex;gap:9px;align-items:center;padding:8px;border-radius:5px;cursor:pointer}
+.studio .filter-popover label:hover{background:var(--side)}
+.studio .filter-popover input[type=checkbox]{width:14px;height:14px;accent-color:var(--blue)}
+.studio .filter-actions{display:flex;gap:14px;padding:4px 8px 9px;border-bottom:1px solid var(--line);color:var(--blue)}
+.studio .project-filter{left:auto;right:0;width:260px;max-width:70vw}
+.studio .project-filter>input{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px}
+.studio .filter-options{max-height:260px;overflow:auto}
+.studio .time-filter select{padding:6px;border:1px solid var(--line);border-radius:6px;background:white;max-width:180px;font-size:12px}
+.studio .ancestor-label{font-size:10px;color:var(--muted)}
+.studio .task-row.context-only .task-title-btn{color:var(--muted)}
+.studio .schedule-field input{width:100%;padding:8px;border:1px solid var(--line);border-radius:7px;background:white}
+.studio .schedule-field .flex{margin-top:7px}
+.studio .scheduled-tag{color:var(--orange);font-size:11px;display:flex;align-items:center;gap:4px}
+.studio .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}

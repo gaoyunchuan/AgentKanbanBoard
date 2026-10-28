@@ -80,7 +80,7 @@ export type AgentProfile = { id: string; name: string; instructions?: string };
 export type WorkbenchData = {
   tasks: WorkTask[];
   agents?: AgentProfile[];
-  runtime?: { status?: string; connected?: boolean; executable?: string; configured_executable?: string; last_error?: string | null; error?: string | null; max_concurrent_tasks?: number };
+  runtime?: { server_version?: string; status?: string; connected?: boolean; executable?: string; configured_executable?: string; last_error?: string | null; error?: string | null; max_concurrent_tasks?: number };
 };
 
 export type TaskAction = "pause" | "resume" | "cancel" | "retry" | "accept" | "rework";
@@ -93,7 +93,7 @@ export const workStatusLabels: Record<WorkStatus, string> = {
 
 export function needsAttention(task: WorkTask) {
   return task.status === "review" || task.status === "attention" ||
-    (task.status === "waiting" && !["dependency", "dependencies", "workspace", "capacity"].includes(task.wait_reason ?? ""));
+    (task.status === "waiting" && !["dependency", "dependencies", "workspace", "capacity", "scheduled"].includes(task.wait_reason ?? ""));
 }
 
 export function isCurrentInteraction(interaction: TaskInteraction, task: WorkTask) {

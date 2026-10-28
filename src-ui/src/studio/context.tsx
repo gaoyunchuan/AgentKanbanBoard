@@ -1,4 +1,6 @@
 import { createContext, useContext } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import type { TaskQuery } from "./taskFilters";
 import type { StudioApi } from "./api";
 import type { Workspace, StudioTask, Conversation, ConversationDetail } from "./model";
 
@@ -14,6 +16,8 @@ export type DialogState =
 export type Panel = "content" | "properties" | "context" | "results" | "browser" | "diff" | "workspace" | null;
 export type Draft = { text: string; projectId?: string; importContext: boolean; attachments: { name: string; input?: unknown; text?: string }[] };
 export type StudioState = {
+  taskQuery: TaskQuery;
+  setTaskQuery: Dispatch<SetStateAction<TaskQuery>>;
   api: StudioApi;
   data: Workspace;
   detail: ConversationDetail | null;

@@ -35,6 +35,12 @@ impl Scheduler {
             }
             "context" => self.repository.chat_context(req(&value,"task_id")?),
             "create_task" => {let id=self.repository.chat_create_task(&value)?;self.dirty=true;Ok(json!({"task_id":id}))}
+            "set_start_time" => {
+                let task_id=req(&value,"task_id")?;
+                if !value.get("scheduled_start_at").is_some_and(|v|v.is_null()||v.is_string()) || !value.get("expected_start_at").is_some_and(|v|v.is_null()||v.is_string()) { return Err("缺少开始时间或版本，请刷新后重试".into()); }
+                self.repository.set_task_start_time(task_id,value["scheduled_start_at"].as_str(),value["expected_start_at"].as_str())?;
+                self.dirty=true;Ok(json!({"saved":true}))
+            }
             "update_task" => {
                 self.repository.chat_update_task(req(&value,"task_id")?,&value["patch"],&value["before"])?;
                 self.dirty=true;Ok(json!({"saved":true}))

@@ -102,11 +102,22 @@ fn candidates(home: Option<&Path>, path: Option<&std::ffi::OsStr>, apps: &Path) 
             .map(|p| home.join(p)),
         );
     }
+    if let Some(home) = home {
+        if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            let mut versions: Vec<_> = entries
+                .flatten()
+                .map(|entry| entry.path().join("bin/codex"))
+                .collect();
+            versions.sort();
+            versions.reverse();
+            values.extend(versions);
+        }
+    }
     values
 }
 /// Explicit overrides are respected (and never silently replaced). The ordinary
 /// blank / legacy "codex" setting discovers Desktop first, then installed CLI.
-pub fn resolve_codex(configured: &str) -> Result<PathBuf, String> {
+pub fn codex_candidates(configured: &str) -> Result<Vec<PathBuf>, String> {
     let env = std::env::var("CODEX_APP_SERVER_PATH").ok();
     let requested = if configured.trim().is_empty() || configured.trim() == "codex" {
         env.as_deref()
@@ -125,30 +136,61 @@ pub fn resolve_codex(configured: &str) -> Result<PathBuf, String> {
                     .map(|p| p.join(requested))
                     .find(|p| executable(p))
                 {
-                    return Ok(found);
+                    return Ok(vec![found]);
                 }
             }
         } else {
             let path = absolute_path(requested)?;
             if executable(&path) {
-                return Ok(path);
+                return Ok(vec![path]);
             }
         }
         return Err(format!(
             "指定的 Codex 程序不可用：{requested}。可以在高级设置清除覆盖，恢复自动检测。"
         ));
     }
-    for path in candidates(
+    let mut seen = std::collections::HashSet::new();
+    let available: Vec<_> = candidates(
         home.as_deref(),
         search_path.as_deref(),
         Path::new("/Applications"),
-    ) {
-        if executable(&path) {
-            return Ok(path);
-        }
+    )
+    .into_iter()
+    .filter(|path| executable(path))
+    .filter(|path| seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())))
+    .collect();
+    if !available.is_empty() {
+        return Ok(available);
     }
+
     Err("未找到可执行的 Codex。请确认 Codex Desktop 已安装；非常规安装位置可在高级设置中指定。无需重复安装 CLI 或复制登录凭证。".into())
 }
+pub fn resolve_codex(configured: &str) -> Result<PathBuf, String> {
+    codex_candidates(configured)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "未找到 Codex 程序".into())
+}
+
+/// Return the first candidate that passes a real read-only connection preflight.
+/// An explicit override has only one candidate, so it is never silently replaced.
+pub(crate) fn choose_compatible<T>(
+    paths: &[PathBuf],
+    mut check: impl FnMut(&Path) -> Result<T, String>,
+) -> Result<(PathBuf, T), String> {
+    let mut errors = Vec::new();
+    for path in paths {
+        match check(path) {
+            Ok(value) => return Ok((path.clone(), value)),
+            Err(error) => errors.push(format!("{}\n{}", path.display(), error)),
+        }
+    }
+    Err(format!(
+        "候选 Codex 均未通过连接/配置预检。未修改配置或登录凭证。\n{}",
+        errors.join("\n\n")
+    ))
+}
+
 /// GUI launch environments often have a smaller PATH than a Terminal shell.
 /// Add known tool locations without sourcing arbitrary login shell scripts.
 pub fn child_path(codex: &Path) -> Option<std::ffi::OsString> {
@@ -213,5 +255,27 @@ mod tests {
             PathBuf::from("/Users/test/Applications/Codex.app/Contents/Resources/codex")
         );
         assert_eq!(c[2], PathBuf::from("/opt/bin/codex"));
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    #[test]
+    fn incompatible_desktop_falls_back_but_explicit_override_does_not() {
+        let paths = vec![PathBuf::from("/desktop/codex"), PathBuf::from("/cli/codex")];
+        let mut calls = Vec::new();
+        let (chosen, ()) = choose_compatible(&paths, |path| {
+            calls.push(path.to_path_buf());
+            if path == paths[0] {
+                Err("failed to load configuration: expected struct AgentRoleToml".into())
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        assert_eq!(chosen, paths[1]);
+        assert_eq!(calls, paths);
+        assert!(choose_compatible::<()>(&paths[..1], |_| Err("bad config".into())).is_err());
     }
 }

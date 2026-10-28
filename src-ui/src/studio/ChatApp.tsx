@@ -11,6 +11,7 @@ import { TaskTree } from "./TaskTree";
 import { RightDock } from "./RightDock";
 import { AttentionPage, ProjectsPage, SettingsPage } from "./Pages";
 import { Dialogs } from "./Dialogs";
+import { readTaskQuery, writeTaskQuery } from "./taskFilters";
 import "./studio.css";
 
 const blankDraft = (): Draft => ({ text: '', attachments: [], importContext: false });
@@ -25,7 +26,8 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const [selection, setSelection] = useState<{ task?: string; conversation?: string }>({});
   const [panel, setPanelState] = useState<Panel>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
-  const [projectFilter, setProjectFilter] = useState('');
+  const [taskQuery, setTaskQuery] = useState(readTaskQuery);
+  useEffect(() => { writeTaskQuery(taskQuery); }, [taskQuery]);
   const [projectId, setProjectId] = useState('');
   const [notice, setNotice] = useState(''), [error, setError] = useState('');
   const [loading, setLoading] = useState(true), [busyCount, setBusyCount] = useState(0);
@@ -99,7 +101,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const locateTask=useCallback((id:string)=>{
     const t=latest.current.tasks.find(x=>x.id===id);if(!t)return;
     setSelection({task:id,conversation:preferredConversation(latest.current,t)?.id});
-    setViewState('tasks');setTaskScreen('tree');setProjectFilter('');
+    setViewState('tasks');setTaskScreen('tree');
   },[]);
   const newConversation=useCallback(async(taskId:string)=>{
     try{const c=await command<Conversation>('create_conversation',{task_id:taskId});setSelection({task:taskId,conversation:c.id});if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');}catch{/* command displays error */}
@@ -111,7 +113,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     }
     void command('task_state',{task_id:t.id,state,confirm_stop:false},'任务状态已更新').catch(()=>{});
   },[command]);
-  const setView=useCallback((next:View)=>{setViewState(next);if(next==='tasks'){setTaskScreen('tree');setProjectFilter('');}},[]);
+  const setView=useCallback((next:View)=>{setViewState(next);if(next==='tasks'){setTaskScreen('tree');}},[]);
   // The tree has a stable selection and persistent inspector even before opening a chat.
   useEffect(()=>{if(view==='tasks'&&!latest.current.tasks.some(t=>t.id===currentSelection.current.task)&&data.tasks.length)inspectTask(data.tasks[0].id);},[view,data.tasks,inspectTask]);
   const conversation=data.conversations.find(c=>c.id===selection.conversation);
@@ -140,7 +142,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     const onKey=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey))return;if(e.key==='1'){e.preventDefault();setView('chat');}else if(e.key==='2'){e.preventDefault();setView('tasks');}};
     document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
   },[setView]);
-  const context={api,data,detail,task,conversation,view,panel,setPanel,openDialog:setDialog,setView,openTask,openConversation,locateTask,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
+  const context={taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,openDialog:setDialog,setView,openTask,openConversation,locateTask,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
   const conversationVisible=view==='chat'||view==='tasks'&&taskScreen==='conversation';
   const attentionCount=data.conversations.filter(c=>needsUser(c,data)&&!c.closed).length;
   return <StudioContext.Provider value={context}><div className="studio studio-app">
@@ -149,9 +151,9 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
       {([{id:'chat',icon:MessageSquare,label:'会话'},{id:'tasks',icon:ListTree,label:'任务'},{id:'projects',icon:Folder,label:'项目'},{id:'attention',icon:Bell,label:'需要你'}] as const).map(item=><button key={item.id} className={`rbtn ${view===item.id?'active':''}`} title={item.label} aria-label={item.label} aria-current={view===item.id?'page':undefined} onClick={()=>setView(item.id)}><item.icon size={19}/>{item.id==='attention'&&attentionCount>0&&<span className="tiny-dot"/>}</button>)}
       <div className="spacer"/><button className={`rbtn ${view==='settings'?'active':''}`} title="设置" aria-label="设置" aria-current={view==='settings'?'page':undefined} onClick={()=>setView('settings')}><Settings2 size={19}/></button><div className="avatar" title="个人工作区">我</div>
     </nav>
-    {showSidebar&&<Sidebar loading={loading} onNewChat={newChat} onAllTasks={()=>{setTaskScreen('tree');setProjectFilter('');}}/>}
+    {showSidebar&&<Sidebar loading={loading} onNewChat={newChat} onAllTasks={()=>{setTaskScreen('tree');}}/>}
     <main className="main">{error&&<div className="workspace-error" role="alert"><AlertCircle size={15}/><span>{error}</span><button className="textbtn" onClick={()=>void refresh().catch(e=>setError(String(e)))}>重试</button></div>}
-      {conversationVisible?<><ConversationHeader/><div className="content-split"><ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={draft.projectId||task?.effective_project_id||projectId} setProject={changeProject}/><RightDock persistent={view==='tasks'}/></div></>:view==='tasks'?<><header className="main-head"><h1>任务</h1><span className="grow"/><button className="textbtn" onClick={()=>setDialog({kind:'deleted'})}>已删除</button><button className="textbtn primary" onClick={()=>setDialog({kind:'createTask'})}><Plus size={14}/>新建任务</button></header><div className="content-split"><TaskTree projectFilter={projectFilter}/><RightDock persistent/></div></>:view==='projects'?<ProjectsPage onSelect={id=>{setProjectFilter(id);setTaskScreen('tree');setViewState('tasks');}}/>:view==='attention'?<AttentionPage/>:<SettingsPage/>}
+      {conversationVisible?<><ConversationHeader/><div className="content-split"><ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={draft.projectId||task?.effective_project_id||projectId} setProject={changeProject}/><RightDock persistent={view==='tasks'}/></div></>:view==='tasks'?<><header className="main-head"><h1>任务</h1><span className="grow"/><button className="textbtn" onClick={()=>setDialog({kind:'deleted'})}>已删除</button><button className="textbtn primary" onClick={()=>setDialog({kind:'createTask'})}><Plus size={14}/>新建任务</button></header><div className="content-split"><TaskTree/><RightDock persistent/></div></>:view==='projects'?<ProjectsPage onSelect={id=>{setTaskQuery(q=>({...q,projects:[id],collapsed:[],page:0,scroll:0}));setTaskScreen('tree');setViewState('tasks');}}/>:view==='attention'?<AttentionPage/>:<SettingsPage/>}
     </main></div>
     {notice&&<div className="studio-toast show" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={()=>setNotice('')}><X size={13}/></button></div>}
     {dialog&&<Dialogs key={JSON.stringify(dialog)} dialog={dialog} onClose={()=>setDialog(null)} onImport={key=>setDrafts(current=>({...current,[key]:{...(current[key]||blankDraft()),importContext:true}}))} onNewProject={id=>{setProjectId(id);if(task&&!conversation)setDraft({...draft,projectId:id});}}/>}

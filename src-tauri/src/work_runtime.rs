@@ -106,6 +106,7 @@ struct Registry {
 struct RuntimeShared {
     server: AppServer,
     connection_id: String,
+    server_version: String,
     registry: Mutex<Registry>,
     operations: Mutex<()>,
     sink: RuntimeSink,
@@ -121,7 +122,21 @@ pub struct CodexRuntime {
 impl CodexRuntime {
     pub fn connect(executable: &Path, sink: RuntimeSink) -> Result<Self, String> {
         let (server, events) = AppServer::spawn(executable)?;
-        Self::from_server(server, events, sink)
+        let runtime = Self::from_server(server, events, sink)?;
+        // Read-only preflight: initialize alone does not prove config.toml loads.
+        // No Thread/Turn, tools, model execution, config writes or credential copies.
+        if let Err(error) = runtime.shared.server.request_with_timeout(
+            "config/read",
+            json!({"includeLayers":false}),
+            Duration::from_secs(8),
+        ) {
+            runtime.shutdown();
+            return Err(crate::codex_errors::explain(
+                &format!("连接预检失败（{}）", runtime.server_version()),
+                &error,
+            ));
+        }
+        Ok(runtime)
     }
 
     fn from_server(
@@ -129,7 +144,13 @@ impl CodexRuntime {
         events: mpsc::Receiver<ServerMessage>,
         sink: RuntimeSink,
     ) -> Result<Self, String> {
-        server.initialize()?;
+        let initialized = match server.initialize() {
+            Ok(value) => value,
+            Err(error) => {
+                server.shutdown();
+                return Err(crate::codex_errors::explain("连接初始化失败", &error));
+            }
+        };
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -137,6 +158,11 @@ impl CodexRuntime {
         let shared = Arc::new(RuntimeShared {
             server,
             connection_id: format!("codex-{}-{stamp}", std::process::id()),
+            server_version: initialized
+                .get("userAgent")
+                .and_then(Value::as_str)
+                .unwrap_or("版本未报告")
+                .to_owned(),
             registry: Mutex::new(Registry::default()),
             operations: Mutex::new(()),
             sink,
@@ -160,6 +186,10 @@ impl CodexRuntime {
             })
             .map_err(|error| format!("无法启动 Codex 事件处理：{error}"))?;
         Ok(Self { shared })
+    }
+
+    pub fn server_version(&self) -> &str {
+        &self.shared.server_version
     }
 
     pub fn connection_id(&self) -> &str {
@@ -264,7 +294,7 @@ impl CodexRuntime {
                     // A resumed thread may carry native continuation state. Do not
                     // release its workspace while that state cannot be reconciled.
                     self.shared.server.shutdown();
-                    return Err(format!("恢复 Codex 会话失败：{error}"));
+                    return Err(crate::codex_errors::explain("恢复 Codex 会话失败", &error));
                 }
             }
         } else {
@@ -288,9 +318,7 @@ impl CodexRuntime {
                 Err(error) => {
                     self.shared.lock_registry()?.starting_thread = false;
                     self.shared.flush_early_events();
-                    return Err(format!(
-                        "创建 Codex 会话失败：{error}。自动任务需要支持 dynamicTools 的 app-server 版本。"
-                    ));
+                    return Err(crate::codex_errors::explain("创建 Codex 会话失败", &error));
                 }
             };
             let thread_id = match response.pointer("/thread/id").and_then(Value::as_str) {
@@ -2373,5 +2401,51 @@ for line in sys.stdin:
         assert!(workspace_path(&workspace, "inside.txt").is_ok());
         assert!(workspace_path(&workspace, "../outside.txt").is_err());
         let _ = std::fs::remove_dir_all(root);
+    }
+    #[test]
+    #[cfg(unix)]
+    fn config_preflight_rejects_incompatible_binary_before_thread_and_tries_next() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = std::env::temp_dir().join(format!(
+            "akb-preflight-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let log = directory.join("requests.txt");
+        let mut paths = Vec::new();
+        for (name, bad) in [("old", true), ("compatible", false)] {
+            let path = directory.join(name);
+            let script=r#"#!/usr/bin/env python3
+import json,sys
+for line in sys.stdin:
+    m=json.loads(line)
+    with open(__LOG__,'a') as f: f.write(__NAME__+':'+m.get('method','')+'\n')
+    if 'id' not in m: continue
+    if m.get('method')=='config/read' and __BAD__:
+        print(json.dumps({'id':m['id'],'error':{'code':-32600,'message':'failed to load configuration: config.toml:387:1: invalid type: integer `10`, expected struct AgentRoleToml'}}),flush=True)
+    else:
+        print(json.dumps({'id':m['id'],'result':{'userAgent':__NAME__+'/test'}}),flush=True)
+"#.replace("__LOG__",&serde_json::to_string(&log.to_string_lossy()).unwrap()).replace("__NAME__",&serde_json::to_string(name).unwrap()).replace("__BAD__",if bad{"True"}else{"False"});
+            std::fs::write(&path, script).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            paths.push(path);
+        }
+        let (selected, runtime) = crate::local_environment::choose_compatible(&paths, |p| {
+            CodexRuntime::connect(p, Arc::new(|_| {}))
+        })
+        .unwrap();
+        assert_eq!(selected, paths[1]);
+        assert_eq!(runtime.server_version(), "compatible/test");
+        runtime.shutdown();
+        let methods = std::fs::read_to_string(&log).unwrap();
+        assert!(methods.contains("old:config/read"));
+        assert!(methods.contains("compatible:config/read"));
+        assert!(!methods.contains("thread/start"));
+        assert!(!methods.contains("turn/start"));
+        assert!(!methods.contains("config/value/write"));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

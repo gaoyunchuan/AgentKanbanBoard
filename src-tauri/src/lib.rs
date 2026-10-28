@@ -1,6 +1,7 @@
 pub mod app_server;
 pub mod browser_bridge;
 pub mod chat_store;
+pub mod codex_errors;
 pub mod config;
 pub mod deeplink;
 pub mod domain;
@@ -8,6 +9,7 @@ pub mod local_environment;
 pub mod project_preferences;
 pub mod repository;
 pub mod task_editing;
+pub mod task_schedule;
 pub mod time;
 pub mod work_runtime;
 pub mod work_service;

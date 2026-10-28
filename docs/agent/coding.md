@@ -2,6 +2,17 @@
 
 ## Current Knowledge
 
+### 2026-10-28 任务筛选和延时启动
+
+- TypeScript 模块基础名（去扩展名）不得只靠大小写区分；macOS 的无扩展名导入可能先命中另一 `.ts` 文件。筛选组件用 `TaskFilterBar.tsx`，工具用 `taskFilters.ts`。
+
+- `task_schedule.rs` 管理最早自动启动时间，单独存 `task_preferences.scheduled_start_at`；不复用旧 date-only `todo_tasks.start_date`。时间均为规范 UTC 秒，界面显示本地时区。
+- 调度刷新与事务 claim 双重检查时间，等待原因 `scheduled` 不属于人工待办。不得因到点唤醒 paused、human/environment wait 或 terminal task。人工附加会话不走该自动门槛。
+- 全局任务树查询与侧栏查询分离；状态/项目多选，周视图取滚动 168 小时。所有条件在同节点上取交集，再补祖先；本机持久化条件/折叠/分页/滚动，而非冻结任务数据。
+- `config/read` 是只读连接预检，不创建 Thread。自动检测仅切换到通过同一配置预检的候选，不删改配置、不换凭据目录。显式 override 只验证该程序。
+- 错误分类依据实际 RPC；配置解析失败不得一律拼接 dynamicTools 提示。丢弃不属于当前连接的事件，包括所有候选均失败后的迟到 EOF。
+
+
 ### 2026-10-27 验收修订（优先于下方历史记录）
 
 - 当前任务工作区规则以 `docs/review-fixes-2026-10-27.md` 为准。旧看板入口和旧 UI 已删除，旧数据库迁移和数据仍保留。不要恢复被删除的旧页面命令或在文档中要求回到旧版。
