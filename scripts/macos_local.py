@@ -130,6 +130,9 @@ def build_app():
     settings = json.loads(local_config.read_text())
     if settings.get("bundle", {}).get("macOS", {}).get("signingIdentity") != "-":
         raise LocalBuildError("tauri.local.conf.json must set macOS signingIdentity to '-'.")
+    # 构建只准备私有sidecar，不要求Docker运行或下载Chrome镜像。
+    run([sys.executable, ROOT / "scripts/session_browser_probe/prepare.py", "--binary-only"],
+        label="Prepare private browser sidecar", env=local_build_env(), capture=False)
     run(
         [
             ROOT / "src-ui/node_modules/.bin/tauri",

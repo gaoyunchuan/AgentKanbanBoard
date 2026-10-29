@@ -275,10 +275,11 @@ pub(crate) fn unresolved_dependencies(
 ) -> Result<Vec<String>, String> {
     let mut statement = connection
         .prepare(
+            // 人工任务勾选完成即可满足依赖；只有交给 Agent 执行过的任务才要求已验收的可用结果。
             "SELECT d.blocked_by FROM work_dependencies d JOIN todo_tasks t ON t.id=d.blocked_by
-         WHERE d.task_id=?1 AND (t.status<>'completed' OR NOT (
-           EXISTS(SELECT 1 FROM task_results r WHERE r.task_id=t.id AND r.status='ready' AND r.usable=1)
-           OR (NOT EXISTS(SELECT 1 FROM chat_conversations c WHERE c.task_id=t.id) AND trim(t.result_review)<>''))) ORDER BY d.blocked_by",
+         WHERE d.task_id=?1 AND (t.status<>'completed' OR EXISTS(SELECT 1 FROM work_resource_leases l WHERE l.owner=t.id OR l.run_id IN (SELECT cr.id FROM chat_runs cr JOIN chat_conversations cc ON cc.id=cr.conversation_id WHERE cc.task_id=t.id)) OR (
+           EXISTS(SELECT 1 FROM chat_conversations c WHERE c.task_id=t.id)
+           AND NOT EXISTS(SELECT 1 FROM task_results r WHERE r.task_id=t.id AND r.status='ready' AND r.usable=1))) ORDER BY d.blocked_by",
         )
         .map_err(db)?;
     let result = statement
@@ -334,6 +335,19 @@ pub(crate) fn replace_dependencies(
             )
             .map_err(db)?;
     }
+    Ok(())
+}
+
+/// 把设置页选择的默认权限映射成一次委托的沙箱与审批策略。
+pub(crate) fn apply_delegation_permission(config: &mut TaskConfig, mode: &str) -> Result<(), String> {
+    let (sandbox, approval) = match mode {
+        "on-request" => ("workspace-write", "on-request"),
+        "read-only" => ("read-only", "on-request"),
+        "full-access" => ("danger-full-access", "never"),
+        _ => return Err("委托默认权限只能是按需确认、只读或完全访问".into()),
+    };
+    config.sandbox_mode = sandbox.into();
+    config.approval_policy = approval.into();
     Ok(())
 }
 
@@ -406,7 +420,7 @@ fn get_task(connection: &Connection, task_id: &str) -> Result<Option<WorkTask>, 
     let mut value = connection.query_row(
         "SELECT w.task_id,t.title,t.parent_id,w.status,w.revision,w.config_json,w.current_run_id,w.thread_id,
                 w.wait_reason,w.last_error,w.result_summary,w.continuation_count,w.updated_at,
-                COALESCE((SELECT r.status FROM work_runs r WHERE r.id=w.current_run_id),'idle')
+                COALESCE((SELECT l.state FROM work_resource_leases l WHERE l.owner=w.task_id AND l.state='stopping'),(SELECT r.status FROM work_runs r WHERE r.id=w.current_run_id),'idle')
          FROM work_tasks w JOIN todo_tasks t ON t.id=w.task_id WHERE w.task_id=?1",
         [task_id], |row| {
             let status: String = row.get(3)?;
@@ -2150,7 +2164,8 @@ mod tests {
             std::fs::create_dir_all(&directory).unwrap();
             let executable = directory.join("fake-codex");
             std::fs::write(&executable,r###"#!/usr/bin/env python3
-import json, sys
+import json, sys, subprocess, pathlib
+processes = {}
 threads = {}
 pending = {}
 
@@ -2192,7 +2207,7 @@ for line in sys.stdin:
         pass
     elif method == 'thread/start':
         thread = 'thread-' + str(len(threads) + 1)
-        threads[thread] = {'turns':0, 'manual': not bool(params.get('dynamicTools')), 'summary': bool(params.get('ephemeral'))}
+        threads[thread] = {'turns':0, 'manual': not bool(params.get('dynamicTools')), 'summary': bool(params.get('ephemeral')), 'cwd': params.get('cwd')}
         emit({'id':request,'result':{'thread':{'id':thread}}})
     elif method == 'thread/resume':
         emit({'id':request,'result':{'thread':{'id':params['threadId']}}})
@@ -2214,6 +2229,13 @@ for line in sys.stdin:
             emit({'method':'item/agentMessage/delta','params':{'threadId':thread,'turnId':turn,'itemId':'reply','delta':content}})
             emit({'method':'item/completed','params':{'threadId':thread,'turnId':turn,'item':{'id':'reply','type':'agentMessage','text':content}}})
             complete(thread,turn)
+        elif task == 'e2e-native-stop':
+            path = pathlib.Path(state['cwd'])
+            code = "import pathlib,time; p=pathlib.Path('heartbeat.log'); f=p.open('a'); print('ready',flush=True); [(f.write('tick\\n'),f.flush(),time.sleep(.03)) for _ in range(400)]"
+            process = subprocess.Popen([sys.executable,'-c',code],cwd=path,stdout=subprocess.PIPE,text=True)
+            process.stdout.readline()
+            processes[thread] = process
+            emit({'method':'item/started','params':{'threadId':thread,'turnId':turn,'item':{'id':'native-command','type':'commandExecution','source':'unifiedExecStartup','processId':'opaque-native-id','command':'bounded heartbeat'}}})
         elif task == 'e2e-parent' and state['turns'] == 1:
             call_tool(thread,turn,'task_delegate',{'title':'Delegated verification','prompt':'Verify the child deliverable','acceptance':'Provide test evidence'},'delegate')
         elif task == 'e2e-question' and state['turns'] == 1:
@@ -2229,6 +2251,20 @@ for line in sys.stdin:
         emit({'id':request,'result':{}})
         # Deliberately simulate a completion that arrives after cancellation.
         complete(params['threadId'],params['turnId'])
+    elif method == 'thread/backgroundTerminals/list':
+        if pathlib.Path(threads[params['threadId']]['cwd'],'fail-native-list').exists():
+            emit({'id':request,'result':{'invalid':True}})
+            continue
+        process = processes.get(params['threadId'])
+        data = [{'itemId':'native-command','processId':'opaque-native-id','command':'bounded heartbeat','cwd':threads[params['threadId']]['cwd'],'osPid':process.pid}] if process and process.poll() is None else []
+        emit({'id':request,'result':{'data':data,'nextCursor':None}})
+    elif method == 'thread/backgroundTerminals/terminate':
+        process = processes.get(params['threadId'])
+        allowed = pathlib.Path(threads[params['threadId']]['cwd'],'allow-native-stop').exists()
+        if allowed and process and process.poll() is None:
+            process.terminate()
+            process.wait()
+        emit({'id':request,'result':{'terminated':allowed}})
     elif method == 'command/exec':
         emit({'id':request,'result':{'exitCode':0,'stdout':'terminal checked\n','stderr':''}})
     elif request is not None:
@@ -2291,6 +2327,237 @@ for line in sys.stdin:
             std::thread::sleep(std::time::Duration::from_millis(100));
             let _ = std::fs::remove_dir_all(&self.directory);
         }
+    }
+
+    #[test]
+    fn uncertain_resources_block_even_an_already_accepted_dependency() {
+        let repo = repository(&["upstream", "downstream"]);
+        repo.connection.execute("UPDATE todo_tasks SET status='completed',result_review='已核对' WHERE id='upstream'",[]).unwrap();
+        replace_dependencies(&repo.connection, "downstream", &["upstream".into()]).unwrap();
+        assert!(unresolved_dependencies(&repo.connection, "downstream")
+            .unwrap()
+            .is_empty());
+        repo.connection.execute("INSERT INTO work_resource_leases VALUES('old-run','upstream','old-connection','/workspace','[]','uncertain','停止待核对','now')",[]).unwrap();
+        assert_eq!(
+            unresolved_dependencies(&repo.connection, "downstream").unwrap(),
+            vec!["upstream"]
+        );
+        repo.connection
+            .execute(
+                "DELETE FROM work_resource_leases WHERE run_id='old-run'",
+                [],
+            )
+            .unwrap();
+        assert!(unresolved_dependencies(&repo.connection, "downstream")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn delegation_permission_setting_maps_to_task_config() {
+        let mut config = TaskConfig::default();
+        apply_delegation_permission(&mut config, "full-access").unwrap();
+        assert_eq!(config.sandbox_mode, "danger-full-access");
+        assert_eq!(config.approval_policy, "never");
+        apply_delegation_permission(&mut config, "read-only").unwrap();
+        assert_eq!(config.sandbox_mode, "read-only");
+        assert_eq!(config.approval_policy, "on-request");
+        apply_delegation_permission(&mut config, "on-request").unwrap();
+        assert_eq!(config.sandbox_mode, "workspace-write");
+        assert!(apply_delegation_permission(&mut config, "custom").is_err());
+    }
+
+    #[test]
+    fn manually_completed_dependency_releases_without_review_note() {
+        let repo = repository(&["upstream", "downstream", "cancelled-upstream"]);
+        repo.connection
+            .execute("UPDATE todo_tasks SET status='completed',result_review='' WHERE id='upstream'", [])
+            .unwrap();
+        replace_dependencies(&repo.connection, "downstream", &["upstream".into(), "cancelled-upstream".into()]).unwrap();
+        // 人工完成即满足依赖，未写结果复盘也不能永久卡住下游。
+        assert_eq!(
+            unresolved_dependencies(&repo.connection, "downstream").unwrap(),
+            vec!["cancelled-upstream"]
+        );
+        // 交给 Agent 执行过的任务仍必须有可接受的结果，完成勾选本身不足以放行。
+        repo.connection
+            .execute(
+                "INSERT INTO chat_conversations(id,task_id,title,mode,config_json,created_at,updated_at) VALUES('manual-upstream','upstream','上游会话','manual','{}','now','now')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(
+            unresolved_dependencies(&repo.connection, "downstream").unwrap(),
+            vec!["cancelled-upstream", "upstream"]
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn failed_native_cleanup_keeps_pending_completion_blocked_until_checked_release() {
+        let fixture = ServiceFixture::new();
+        fixture.delegate("e2e-native-stop");
+        let detail = fixture.wait_for("e2e-native-stop", |d| {
+            d.events.iter().any(|e| {
+                e.payload
+                    .pointer("/item/processId")
+                    .and_then(Value::as_str)
+                    .is_some()
+            })
+        });
+        let run = detail.task.current_run_id.clone().unwrap();
+        let thread = detail.task.thread_id.clone().unwrap();
+        std::fs::write(fixture.directory.join("fail-native-list"), "yes").unwrap();
+        fixture
+            .service
+            .call(
+                "chat/task_state",
+                json!({"task_id":"e2e-native-stop","state":"completed","confirm_stop":true}),
+            )
+            .unwrap();
+        let repo = Repository::open_path(&fixture.directory.join("tasks.sqlite")).unwrap();
+        let start = std::time::Instant::now();
+        while repo
+            .resource_hold("e2e-native-stop")
+            .unwrap()
+            .is_none_or(|h| h["state"] != "uncertain")
+        {
+            assert!(start.elapsed() < std::time::Duration::from_secs(5));
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        // 模拟传输已读取、actor 尚未消费的迟到终态；watchdog 此时已经移除。
+        let runtime = fixture.service.runtime().unwrap();
+        for status in ["failed", "completed"] {
+            fixture
+                .service
+                .enqueue_runtime_event_for_test(crate::work_runtime::RuntimeEvent {
+                    connection_id: runtime.connection_id().into(),
+                    task_id: Some("e2e-native-stop".into()),
+                    run_id: Some(run.clone()),
+                    thread_id: Some(thread.clone()),
+                    turn_id: Some("turn-1".into()),
+                    request_id: None,
+                    method: "turn/completed".into(),
+                    params: json!({"threadId":thread,"turn":{"id":"turn-1","status":status}}),
+                });
+            // 同一个 actor 的只读请求是队列屏障，避免依赖 sleep 判断是否已消费。
+            fixture.service.call("list", json!({})).unwrap();
+            assert_eq!(
+                repo.resource_hold("e2e-native-stop").unwrap().unwrap()["state"],
+                "uncertain"
+            );
+        }
+        assert_ne!(
+            repo.get_work_task("e2e-native-stop")
+                .unwrap()
+                .unwrap()
+                .status,
+            WorkflowStatus::Completed
+        );
+        let pending: i64 = repo
+            .connection
+            .query_row(
+                "SELECT count(*) FROM chat_pending_changes WHERE task_id='e2e-native-stop'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 1);
+        assert!(fixture
+            .service
+            .execute_command(
+                "e2e-native-stop",
+                vec!["echo".into(), "blocked".into()],
+                1000
+            )
+            .is_err());
+        // 模拟用户核对并结束本测试拥有的进程，再执行绑定到原运行的解除动作。
+        std::fs::remove_file(fixture.directory.join("fail-native-list")).unwrap();
+        std::fs::write(fixture.directory.join("allow-native-stop"), "yes").unwrap();
+        fixture
+            .service
+            .runtime()
+            .unwrap()
+            .cleanup_native_terminals("e2e-native-stop", &run, &[thread])
+            .unwrap();
+        let cid = repo
+            .chat_conversations()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.task_id == "e2e-native-stop")
+            .unwrap()
+            .id;
+        assert!(fixture
+            .service
+            .call(
+                "chat/release_resources",
+                json!({"conversation_id":cid,"run_id":"wrong-old-run"})
+            )
+            .is_err());
+        fixture
+            .service
+            .call(
+                "chat/release_resources",
+                json!({"conversation_id":cid,"run_id":run}),
+            )
+            .unwrap();
+        fixture.wait_for("e2e-native-stop", |d| {
+            d.task.status == WorkflowStatus::Completed
+        });
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stop_keeps_workspace_until_native_command_has_really_exited() {
+        let fixture = ServiceFixture::new();
+        fixture.delegate("e2e-native-stop");
+        let detail = fixture.wait_for("e2e-native-stop", |d| {
+            d.events.iter().any(|e| {
+                e.payload.pointer("/item/processId").and_then(Value::as_str)
+                    == Some("opaque-native-id")
+            })
+        });
+        fixture.service.call("action", json!({"task_id":"e2e-native-stop","action":"pause","expected_revision":detail.task.revision})).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let state: TaskExecutionDetail = serde_json::from_value(
+            fixture
+                .service
+                .call("detail", json!({"task_id":"e2e-native-stop"}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            state.task.execution_status, "stopping",
+            "不能把 turn/completed 当成原生命令已退出"
+        );
+        assert!(fixture
+            .service
+            .execute_command(
+                "e2e-native-stop",
+                vec!["echo".into(), "blocked".into()],
+                1000
+            )
+            .is_err());
+        std::fs::write(fixture.directory.join("allow-native-stop"), "yes").unwrap();
+        fixture.wait_for("e2e-native-stop", |d| d.task.execution_status != "stopping");
+        let before = std::fs::metadata(fixture.directory.join("heartbeat.log"))
+            .unwrap()
+            .len();
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert_eq!(
+            before,
+            std::fs::metadata(fixture.directory.join("heartbeat.log"))
+                .unwrap()
+                .len()
+        );
+        assert!(fixture
+            .service
+            .execute_command(
+                "e2e-native-stop",
+                vec!["echo".into(), "released".into()],
+                1000
+            )
+            .is_ok());
     }
 
     #[test]
@@ -2515,6 +2782,122 @@ for line in sys.stdin:
             .service
             .call("chat/extract", json!({"conversation_id":cid}))
             .is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn service_rework_reopens_only_main_conversation_after_task_completion() {
+        let fixture = ServiceFixture::new();
+        fixture
+            .service
+            .call(
+                "save_todos",
+                json!({"before":[],"after":[todo("e2e-rework")]}),
+            )
+            .unwrap();
+        let manual = fixture
+            .service
+            .call("chat/create_conversation", json!({"task_id":"e2e-rework"}))
+            .unwrap();
+        let mut task_config = config(ReviewPolicy::Auto);
+        task_config.workspace = fixture.directory.to_string_lossy().into_owned();
+        fixture
+            .service
+            .call(
+                "delegate",
+                json!({"task_id":"e2e-rework","config":task_config}),
+            )
+            .unwrap();
+        fixture.wait_for("e2e-rework", |d| d.task.status == WorkflowStatus::Completed);
+        fixture
+            .service
+            .call(
+                "chat/task_state",
+                json!({"task_id":"e2e-rework","state":"completed","confirm_stop":true}),
+            )
+            .unwrap();
+        let snapshot = fixture.service.call("chat/snapshot", json!({})).unwrap();
+        assert!(snapshot["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["closed"] == true));
+        let completed =
+            fixture.wait_for("e2e-rework", |d| d.task.status == WorkflowStatus::Completed);
+        fixture.service.call("chat/work_action", json!({"task_id":"e2e-rework","action":"rework","expected_revision":completed.task.revision,"feedback":"重新核对上游证据并提交新版本"})).unwrap();
+        let revised = fixture.wait_for("e2e-rework", |d| {
+            d.task.status == WorkflowStatus::Completed && d.runs.len() == 2
+        });
+        assert_eq!(revised.runs.len(), 2);
+        let snapshot = fixture.service.call("chat/snapshot", json!({})).unwrap();
+        let conversations = snapshot["conversations"].as_array().unwrap();
+        assert_eq!(revised.runs[0].thread_id, revised.runs[1].thread_id);
+        assert_eq!(
+            conversations
+                .iter()
+                .find(|c| c["id"] == manual["id"])
+                .unwrap()["closed"],
+            true
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn returning_delegated_work_to_todo_pauses_instead_of_starting_again() {
+        let fixture = ServiceFixture::new();
+        fixture.delegate("e2e-cancel");
+        fixture.wait_for("e2e-cancel", |d| !d.interactions.is_empty());
+        fixture
+            .service
+            .call(
+                "chat/task_state",
+                json!({"task_id":"e2e-cancel","state":"todo","confirm_stop":true}),
+            )
+            .unwrap();
+        let started = std::time::Instant::now();
+        loop {
+            let snapshot = fixture.service.call("chat/snapshot", json!({})).unwrap();
+            if snapshot["tasks"][0]["pending_change"].is_null() {
+                break;
+            }
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let detail: TaskExecutionDetail = serde_json::from_value(
+            fixture
+                .service
+                .call("detail", json!({"task_id":"e2e-cancel"}))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(detail.task.status, WorkflowStatus::Paused);
+        assert!(detail.task.current_run_id.is_none());
+        assert_eq!(detail.runs.len(), 1);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn explicitly_resuming_a_closed_main_conversation_restarts_the_task() {
+        let fixture = ServiceFixture::new();
+        fixture.delegate("e2e-cancel");
+        fixture.wait_for("e2e-cancel", |d| !d.interactions.is_empty());
+        fixture
+            .service
+            .call(
+                "chat/close_conversation",
+                json!({"conversation_id":"main:e2e-cancel"}),
+            )
+            .unwrap();
+        let stopped = fixture.wait_for("e2e-cancel", |d| {
+            d.task.status == WorkflowStatus::Paused && d.task.current_run_id.is_none()
+        });
+        fixture.service.call("chat/work_action", json!({"task_id":"e2e-cancel","action":"resume","expected_revision":stopped.task.revision})).unwrap();
+        let resumed = fixture.wait_for("e2e-cancel", |d| {
+            d.runs.len() == 2 && d.task.current_run_id.is_some()
+        });
+        assert_eq!(resumed.runs.len(), 2);
+        let snapshot = fixture.service.call("chat/snapshot", json!({})).unwrap();
+        assert_eq!(snapshot["conversations"][0]["closed"], false);
     }
     #[test]
     #[cfg(unix)]

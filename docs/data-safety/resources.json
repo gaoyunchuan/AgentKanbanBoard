@@ -1,0 +1,46 @@
+{
+  "resources": [
+    {
+      "resource_id": "sqlite.work_resource_leases",
+      "resource_type": "sqlite",
+      "owner": "桌面调度器",
+      "purpose": "停止结果不确定时保留工作目录占用",
+      "schema": "run_id 主键；connection+owner 归属",
+      "cardinality": {
+        "growth_dimensions": [
+          "run_id"
+        ],
+        "max_items": 256,
+        "derivation": "SQLite trigger 硬限制 256；调度 254 背压＋两个在途执行"
+      },
+      "retention": {
+        "mechanism": "正常结束删除；停止查询为空删除；uncertain 核对后按原运行解除，保守长期保留有硬上限",
+        "permanent": true
+      },
+      "rate": {
+        "normal_writes_per_second": 10,
+        "peak_writes_per_second": 1000,
+        "burst_seconds": 1
+      },
+      "capacity": {
+        "avg_item_bytes": 4096,
+        "max_item_bytes": 147456,
+        "estimated_upper_bound_bytes": 75497472,
+        "formula": "256 * 144 KiB * 2（含索引、页开销和余量）",
+        "headroom_ratio": 2
+      },
+      "backpressure": {
+        "behavior_at_limit": "254 时停止接纳；256 硬拒绝新记录；未知状态保持目录锁",
+        "retry_policy": "停止后有期限轮询，业务不自动重放",
+        "max_retries": 80,
+        "circuit_breaker": true
+      },
+      "cleanup_recovery": {
+        "cleanup_mechanism": "原生终端分页查询为空或人工核对后的原 run 解除",
+        "bulk_selector": "work_resource_leases.connection_id + owner + run_id",
+        "ownership_identifiable": true,
+        "recovery_required": false
+      }
+    }
+  ]
+}

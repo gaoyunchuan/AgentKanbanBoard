@@ -75,6 +75,12 @@ fn candidates(home: Option<&Path>, path: Option<&std::ffi::OsStr>, apps: &Path) 
     if let Some(home) = home {
         values.push(home.join("Applications/Codex.app/Contents/Resources/codex"));
     }
+    // ChatGPT 桌面版也内置 Codex；优先复用它，避免旧 CLI 无法解析桌面版配置。
+    let bundled = "ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex";
+    values.push(apps.join(bundled));
+    if let Some(home) = home {
+        values.push(home.join("Applications").join(bundled));
+    }
     if let Some(path) = path {
         values.extend(
             std::env::split_paths(path)
@@ -254,7 +260,33 @@ mod tests {
             c[1],
             PathBuf::from("/Users/test/Applications/Codex.app/Contents/Resources/codex")
         );
-        assert_eq!(c[2], PathBuf::from("/opt/bin/codex"));
+        assert_eq!(c[4], PathBuf::from("/opt/bin/codex"));
+    }
+
+    #[test]
+    fn discovery_finds_chatgpt_bundled_runtime_before_incompatible_cli() {
+        let paths = candidates(
+            Some(Path::new("/Users/test")),
+            Some(std::ffi::OsStr::new("/old-cli/bin")),
+            Path::new("/Applications"),
+        );
+        for expected in [
+            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+            "/Users/test/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+        ] {
+            let (chosen, ()) = choose_compatible(&paths, |path| {
+                if path == Path::new(expected) {
+                    Ok(())
+                } else {
+                    Err("当前程序不能加载用户配置".into())
+                }
+            })
+            .expect("已安装的 ChatGPT 内置 Codex 应可用于连接");
+            assert_eq!(chosen, PathBuf::from(expected));
+            let desktop = paths.iter().position(|p| p == &chosen).unwrap();
+            let cli = paths.iter().position(|p| p == Path::new("/old-cli/bin/codex")).unwrap();
+            assert!(desktop < cli);
+        }
     }
 }
 

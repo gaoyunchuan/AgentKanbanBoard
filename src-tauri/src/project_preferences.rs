@@ -6,6 +6,41 @@ use crate::repository::Repository;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 impl Repository {
+    /// 委托任务的默认权限；只影响尚未创建执行会话的新委托，不追溯修改历史任务。
+    pub const DELEGATION_PERMISSIONS: [&'static str; 3] = ["on-request", "read-only", "full-access"];
+
+    pub fn delegation_permission(&self) -> Result<String, String> {
+        let raw: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT value FROM studio_settings WHERE key='delegation_permission'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        Ok(raw
+            .filter(|mode| Self::DELEGATION_PERMISSIONS.contains(&mode.as_str()))
+            .unwrap_or_else(|| "on-request".into()))
+    }
+
+    pub fn save_delegation_permission(&self, mode: &str) -> Result<(), String> {
+        if !Self::DELEGATION_PERMISSIONS.contains(&mode) {
+            return Err("委托默认权限只能是按需确认、只读或完全访问".into());
+        }
+        self.connection
+            .execute(
+                "INSERT INTO studio_settings(key,value) VALUES('delegation_permission',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                [mode],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn apply_delegation_defaults(&self, config: &mut crate::workflow::TaskConfig) -> Result<(), String> {
+        crate::workflow::apply_delegation_permission(config, &self.delegation_permission()?)
+    }
+
     pub fn project_exclusions(&self) -> Result<Vec<String>, String> {
         let raw: Option<String> = self
             .connection
@@ -117,13 +152,26 @@ impl Repository {
         Ok(task)
     }
     pub fn studio_settings(&self) -> Result<Value, String> {
-        Ok(json!({"excluded_project_dirs":self.project_exclusions()?}))
+        Ok(json!({"excluded_project_dirs":self.project_exclusions()?,"delegation_permission":self.delegation_permission()?}))
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::ProjectInput;
+    #[test]
+    fn delegation_permission_defaults_and_rejects_unknown_modes() {
+        let r = Repository::open_in_memory().unwrap();
+        assert_eq!(r.delegation_permission().unwrap(), "on-request");
+        r.save_delegation_permission("full-access").unwrap();
+        assert_eq!(r.delegation_permission().unwrap(), "full-access");
+        let mut config = crate::workflow::TaskConfig::default();
+        r.apply_delegation_defaults(&mut config).unwrap();
+        assert_eq!(config.sandbox_mode, "danger-full-access");
+        assert_eq!(config.approval_policy, "never");
+        assert!(r.save_delegation_permission("custom").is_err());
+        assert_eq!(r.delegation_permission().unwrap(), "full-access");
+    }
     #[test]
     fn inherited_project_is_resolved_after_placeholder_creation() {
         let r = Repository::open_in_memory().unwrap();

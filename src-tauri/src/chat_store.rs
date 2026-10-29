@@ -59,6 +59,8 @@ pub struct Conversation {
     pub created_at: String,
     pub updated_at: String,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub resource_hold: Option<Value>,
 }
 fn conversation_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
     Ok(Conversation {
@@ -79,6 +81,7 @@ fn conversation_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
         created_at: r.get(12)?,
         updated_at: r.get(13)?,
         last_error: r.get(14)?,
+        resource_hold: None,
     })
 }
 const CONV_COLUMNS:&str="id,task_id,title,mode,project_id,config_json,thread_id,current_run_id,runtime_status,pinned,closed,revision,created_at,updated_at,last_error";
@@ -282,6 +285,19 @@ impl Repository {
                 .into();
                 result.last_error = w.last_error;
             }
+        }
+        let owner = if result.mode == "auto" {
+            result.task_id.clone()
+        } else {
+            format!("chat:{}", result.id)
+        };
+        result.resource_hold = self.resource_hold(&owner)?;
+        if result
+            .resource_hold
+            .as_ref()
+            .is_some_and(|h| h["state"] == "stopping")
+        {
+            result.runtime_status = "stopping".into();
         }
         Ok(result)
     }
@@ -740,10 +756,15 @@ impl Repository {
         ]
         .iter()
         .any(|k| patch.get(k).is_some());
-        if changes_config && self.chat_active_run(cid)?.is_some() {
+        // 权限只影响每一轮 turn 的启动参数；运行中修改保留下一轮生效，其余配置仍需先停止。
+        let permissions_only = (patch.get("approval_policy").is_some() || patch.get("sandbox_mode").is_some())
+            && ["model", "reasoning_effort", "browser_enabled", "project_id"]
+                .iter()
+                .all(|k| patch.get(k).is_none());
+        if changes_config && !permissions_only && self.chat_active_run(cid)?.is_some() {
             return Err("当前正在运行，先停止再修改会话设置".into());
         }
-        if changes_config
+        if changes_config && !permissions_only
             && c.mode == "auto"
             && self
                 .get_work_task(&c.task_id)?
@@ -1258,7 +1279,7 @@ mod tests {
         assert!(r.chat_queue_extraction(&c.id).is_err());
     }
     #[test]
-    fn pin_and_title_can_change_during_run_but_config_cannot() {
+    fn pin_and_title_can_change_during_run_and_permission_waits_for_next_turn() {
         let r = repo();
         let t = task(&r, "t", None);
         let c = r.chat_create_conversation(&t, None).unwrap();
@@ -1271,7 +1292,37 @@ mod tests {
         assert!(r
             .chat_update_conversation(&c.id, &json!({"model":"other"}), current.revision)
             .is_err());
+        // 权限属于下一轮 turn 的启动参数：运行中允许修改，模型等其余配置仍需先停止。
+        r.chat_update_conversation(&c.id, &json!({"approval_policy":"never","sandbox_mode":"danger-full-access"}), current.revision)
+            .unwrap();
+        let changed = r.chat_conversation(&c.id).unwrap();
+        assert_eq!(changed.config.approval_policy, "never");
+        assert_eq!(changed.config.sandbox_mode, "danger-full-access");
         assert!(!r.list_todo_tasks().unwrap()[0].pinned);
+    }
+    #[test]
+    fn permission_change_during_auto_run_updates_work_config_for_next_turn() {
+        let r = repo();
+        let t = task(&r, "t", None);
+        let c = r.chat_create_conversation(&t, None).unwrap();
+        r.connection
+            .execute("UPDATE chat_conversations SET mode='auto' WHERE id=?1", [&c.id])
+            .unwrap();
+        let mut config = crate::workflow::TaskConfig::default();
+        config.prompt = "work".into();
+        config.workspace = "/tmp".into();
+        r.delegate_task(&t, &config).unwrap();
+        r.claim_work_task(&t, "work").unwrap();
+        let current = r.chat_conversation(&c.id).unwrap();
+        r.chat_update_conversation(
+            &c.id,
+            &json!({"approval_policy":"never","sandbox_mode":"danger-full-access"}),
+            current.revision,
+        )
+        .unwrap();
+        let work = r.get_work_task(&t).unwrap().unwrap();
+        assert_eq!(work.config.approval_policy, "never");
+        assert_eq!(work.config.sandbox_mode, "danger-full-access");
     }
     #[test]
     fn late_binding_cannot_clear_stopping_or_replace_new_conversation_run() {

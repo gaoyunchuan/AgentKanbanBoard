@@ -23,8 +23,19 @@ pub struct Repository {
 }
 
 impl Repository {
+    /// 浏览器状态跟随已经打开的数据库，不能重新读取配置而切换到另一个目录。
+    pub fn browser_state_root(&self) -> Result<std::path::PathBuf, String> {
+        let database_path = self
+            .connection
+            .path()
+            .filter(|path| !path.is_empty() && *path != ":memory:")
+            .ok_or_else(|| "内存数据库不支持持久化浏览器状态".to_string())?;
+        crate::browser_state::state_root(Path::new(database_path))
+    }
+
     pub fn open_default() -> rusqlite::Result<Self> {
-        let path = default_app_db_path();
+        let path =
+            default_app_db_path().map_err(|error| rusqlite::Error::InvalidParameterName(error))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
@@ -1074,6 +1085,7 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     connection.execute_batch(THREAD_TASK_LINKS_SQL)?;
     connection.execute_batch(TASK_WORKFLOW_SQL)?;
     connection.execute_batch(include_str!("../db/004_chat_workspace.sql"))?;
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS work_resource_leases(run_id TEXT PRIMARY KEY CHECK(length(CAST(run_id AS BLOB))<=512),owner TEXT NOT NULL CHECK(length(CAST(owner AS BLOB))<=512),connection_id TEXT NOT NULL CHECK(length(CAST(connection_id AS BLOB))<=512),workspace TEXT NOT NULL CHECK(length(CAST(workspace AS BLOB))<=4096),threads_json TEXT NOT NULL CHECK(length(CAST(threads_json AS BLOB))<=131072),state TEXT NOT NULL,error TEXT CHECK(length(CAST(error AS BLOB))<=4096),created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS work_resource_leases_owner ON work_resource_leases(owner); CREATE TRIGGER IF NOT EXISTS work_resource_leases_limit BEFORE INSERT ON work_resource_leases WHEN NOT EXISTS(SELECT 1 FROM work_resource_leases WHERE run_id=NEW.run_id) AND (SELECT COUNT(*) FROM work_resource_leases)>=256 BEGIN SELECT RAISE(ABORT,'原生命令占用达到上限，请先核对并清理历史占用'); END")?;
     crate::task_schedule::migrate(connection)?;
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS studio_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
@@ -1193,10 +1205,50 @@ fn int_to_bool(value: i64) -> bool {
     value != 0
 }
 
-fn default_app_db_path() -> std::path::PathBuf {
-    std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".codex-kanban")
-        .join("app.db")
+fn default_app_db_path() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let override_path = std::env::var_os("AGENT_KANBAN_DB_PATH").map(std::path::PathBuf::from);
+    app_db_path(home.as_deref(), override_path.as_deref())
+}
+
+fn app_db_path(
+    home: Option<&Path>,
+    override_path: Option<&Path>,
+) -> Result<std::path::PathBuf, String> {
+    // 本机真实验收只隔离应用数据，不改变 HOME/CODEX_HOME，继续由 Codex 自行读取登录。
+    if let Some(path) = override_path {
+        if !path.is_absolute() {
+            return Err("AGENT_KANBAN_DB_PATH 必须是绝对路径，拒绝回退到正式数据库".into());
+        }
+        return Ok(path.to_path_buf());
+    }
+    Ok(home
+        .unwrap_or_else(|| Path::new("."))
+        .join(".codex-kanban/app.db"))
+}
+
+#[cfg(test)]
+mod database_path_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_database_is_isolated_without_changing_home_or_credentials() {
+        assert_eq!(
+            app_db_path(
+                Some(Path::new("/Users/test")),
+                Some(Path::new("/tmp/kanban-e2e/app.db"))
+            )
+            .unwrap(),
+            std::path::PathBuf::from("/tmp/kanban-e2e/app.db")
+        );
+        assert_eq!(
+            app_db_path(Some(Path::new("/Users/test")), None).unwrap(),
+            std::path::PathBuf::from("/Users/test/.codex-kanban/app.db")
+        );
+        assert!(app_db_path(
+            Some(Path::new("/Users/test")),
+            Some(Path::new("relative.db"))
+        )
+        .is_err());
+    }
 }

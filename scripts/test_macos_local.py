@@ -123,11 +123,19 @@ class MacosLocalTests(unittest.TestCase):
         with patch.dict(local.os.environ, inherited, clear=True):
             local.build_app()
             self.assertTrue(dict(local.os.environ) == inherited, "Build mutated the inherited environment")
-        command, options = self.native.calls[0]
+        command, options = next(call for call in self.native.calls if "tauri" in str(call[0][0]))
         self.assertTrue(options["env"] == expected, "Only Apple signing variables should be removed")
         self.assertIn("--config", command)
         self.assertIn(str(self.root / "src-tauri/tauri.local.conf.json"), command)
         self.assertNotIn("--no-sign", command)
+
+    def test_build_prepares_private_browser_sidecar_without_starting_docker(self):
+        local.build_app()
+        commands = [call[0] for call in self.native.calls]
+        preparations = [command for command in commands if any(str(arg).endswith("session_browser_probe/prepare.py") for arg in command)]
+        self.assertEqual(len(preparations), 1)
+        self.assertIn("--binary-only", preparations[0])
+        self.assertLess(commands.index(preparations[0]), next(i for i, command in enumerate(commands) if "tauri" in str(command[0])))
 
     def test_build_rejects_nonlocal_signing_configuration(self):
         (self.root / "src-tauri/tauri.local.conf.json").write_text(json.dumps({

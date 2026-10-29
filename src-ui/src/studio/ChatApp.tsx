@@ -11,8 +11,9 @@ import { TaskTree } from "./TaskTree";
 import { RightDock } from "./RightDock";
 import { AttentionPage, ProjectsPage, SettingsPage } from "./Pages";
 import { Dialogs } from "./Dialogs";
-import { readTaskQuery, writeTaskQuery } from "./taskFilters";
+import { readTaskQuery, writeTaskQuery, taskQueryForReveal } from "./taskFilters";
 import "./studio.css";
+import "./controls.css";
 
 const blankDraft = (): Draft => ({ text: '', attachments: [], importContext: false });
 const native = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -27,6 +28,8 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const [panel, setPanelState] = useState<Panel>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [taskQuery, setTaskQuery] = useState(readTaskQuery);
+  const [taskReveal,setTaskReveal]=useState<string|null>(null);
+  const completeTaskReveal=useCallback((id:string)=>setTaskReveal(current=>current===id?null:current),[]);
   useEffect(() => { writeTaskQuery(taskQuery); }, [taskQuery]);
   const [projectId, setProjectId] = useState('');
   const [notice, setNotice] = useState(''), [error, setError] = useState('');
@@ -41,7 +44,8 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const refresh = useCallback(async () => {
     const n = ++snapshotSequence.current;
     const value = await api.call<Workspace>('snapshot');
-    if (mounted.current && n === snapshotSequence.current) { setData(value); setError(''); setLoading(false); }
+    // 命令完成后的导航需要立即读取新任务，不能依赖 React 何时提交这次快照。
+    if (mounted.current && n === snapshotSequence.current) { latest.current=value; setData(value); setError(''); setLoading(false); }
   }, [api]);
   const refreshDetail = useCallback(async () => {
     const cid = currentSelection.current.conversation;
@@ -100,9 +104,14 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   },[setPanel]);
   const locateTask=useCallback((id:string)=>{
     const t=latest.current.tasks.find(x=>x.id===id);if(!t)return;
+    const revealed=taskQueryForReveal(latest.current.tasks,taskQuery,id,Date.now());
+    setTaskQuery(revealed.query);setTaskReveal(id);
+    if(revealed.filtersReset)notify('已切回全部任务筛选，以显示所定位的任务');
     setSelection({task:id,conversation:preferredConversation(latest.current,t)?.id});
+    // 定位后显示详情，保留用户原来的详情页签；不能继续停在浏览器等工具页。
+    setPanelState(current=>current==='browser'||current==='diff'||current==='workspace'?'content':current);
     setViewState('tasks');setTaskScreen('tree');
-  },[]);
+  },[taskQuery,notify]);
   const newConversation=useCallback(async(taskId:string)=>{
     try{const c=await command<Conversation>('create_conversation',{task_id:taskId});setSelection({task:taskId,conversation:c.id});if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');}catch{/* command displays error */}
   },[command]);
@@ -116,11 +125,28 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const setView=useCallback((next:View)=>{setViewState(next);if(next==='tasks'){setTaskScreen('tree');}},[]);
   // The tree has a stable selection and persistent inspector even before opening a chat.
   useEffect(()=>{if(view==='tasks'&&!latest.current.tasks.some(t=>t.id===currentSelection.current.task)&&data.tasks.length)inspectTask(data.tasks[0].id);},[view,data.tasks,inspectTask]);
+  useEffect(()=>{
+    // 委托前可能只有任务占位；后台创建主会话后立即展示进度，不要求用户重开任务。
+    // 已明确选中的人工会话保持原选择，避免自动主会话抢走用户正在阅读的内容。
+    if(selection.conversation||!selection.task)return;
+    const selected=data.tasks.find(t=>t.id===selection.task);
+    const next=selected&&preferredConversation(data,selected);
+    if(!next||!selected)return;
+    const sourceKey=`task:${selected.id}`,source=drafts[sourceKey],target=drafts[next.id];
+    const hasDraft=(value?:Draft)=>Boolean(value&&(value.text||value.attachments.length||value.importContext||value.projectId));
+    // 迁移整份草稿（文本、附件和上下文开关）；两边都有草稿时保留当前编辑现场。
+    if(hasDraft(source)&&hasDraft(target))return;
+    if(hasDraft(source))setDrafts(current=>{
+      if(current[sourceKey]!==source)return current;
+      const moved={...current,[next.id]:source};delete moved[sourceKey];return moved;
+    });
+    setSelection(current=>current.task===selected.id&&!current.conversation?{task:selected.id,conversation:next.id}:current);
+  },[data.tasks,data.conversations,selection.task,selection.conversation,drafts]);
   const conversation=data.conversations.find(c=>c.id===selection.conversation);
   const task=data.tasks.find(t=>t.id===selection.task||!selection.task&&t.id===conversation?.task_id);
   const draftKey=conversation?.id||(task?`task:${task.id}`:'new-chat');
   const draft=drafts[draftKey]||blankDraft();
-  const setDraft=(next:Draft)=>setDrafts(current=>({...current,[draftKey]:next}));
+  const setDraft=(next:Draft|((value:Draft)=>Draft))=>setDrafts(current=>({...current,[draftKey]:typeof next==='function'?next(current[draftKey]||blankDraft()):next}));
   const changeProject=(id:string)=>{
     if(conversation)void command('update_conversation',{conversation_id:conversation.id,revision:conversation.revision,patch:{project_id:id}}).catch(()=>{});
     else if(task)setDraft({...draft,projectId:id});else setProjectId(id);
@@ -142,7 +168,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     const onKey=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey))return;if(e.key==='1'){e.preventDefault();setView('chat');}else if(e.key==='2'){e.preventDefault();setView('tasks');}};
     document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
   },[setView]);
-  const context={taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,openDialog:setDialog,setView,openTask,openConversation,locateTask,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
+  const context={taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,openDialog:setDialog,setView,openTask,openConversation,locateTask,taskReveal,completeTaskReveal,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
   const conversationVisible=view==='chat'||view==='tasks'&&taskScreen==='conversation';
   const attentionCount=data.conversations.filter(c=>needsUser(c,data)&&!c.closed).length;
   return <StudioContext.Provider value={context}><div className="studio studio-app">

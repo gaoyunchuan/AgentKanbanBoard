@@ -1,0 +1,48 @@
+.studio .streaming-browser[hidden] {display: none;}
+.studio .streaming-browser {position: relative;}
+.studio .right-dock .inspector.streaming-browser {position: relative!important;}
+/* 侧边浏览器沿用工作台控件与浅色层级，不改变其他面板。 */
+.studio .streaming-browser .inspector-head {gap: 7px; flex: none;}
+.studio .streaming-browser .inspector-head > .iconbtn {margin-left: 0;}
+.studio .streaming-browser .browser-connection {display: flex; align-items: center; gap: 4px; margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 400;}
+.studio .streaming-browser .browser-connection.connected {color: #498267;}
+.studio .streaming-browser .browser-controls {padding: 8px 10px 6px; background: #f8fafd;}
+.studio .streaming-browser .browser-toolbar {display: flex; align-items: center; gap: 3px;}
+.studio .streaming-browser .browser-toolbar .iconbtn {width: 28px; height: 30px; flex: none;}
+.studio .streaming-browser .browser-toolbar input {height: 32px; width: 100%; padding: 0 10px; border: 1px solid var(--control-border, #dce2eb); border-radius: var(--control-radius, 8px); background: white; font-size: 12px; color: var(--text);}
+.studio .streaming-browser .browser-toolbar input:focus {outline: 2px solid #5b87ec40; border-color: var(--control-focus, #5b87ec);}
+.studio .streaming-browser .browser-tabstrip {scrollbar-width: thin; padding-top: 8px;}
+.studio .streaming-browser .browser-tab {max-width: 170px; min-width: 70px; border-radius: 7px; border-color: #e4e9f1; background: transparent;}
+.studio .streaming-browser .browser-tab.active {background: white; border-color: #c3d2ea;}
+.studio .streaming-browser .browser-tab button[role=tab] {min-width: 0; padding: 7px 8px; color: var(--sub);}
+.studio .streaming-browser .browser-tab > button:last-child {padding: 6px; flex: none; color: #8290a4;}
+.studio .streaming-browser .browser-tab button:hover {background: #edf2f9;}
+.studio .streaming-browser .browser-surface {min-height: 180px; flex: 1; background: #fff; position: relative; overflow: hidden; touch-action: none;}
+.studio .streaming-browser .browser-frame {position: absolute; inset: 0; opacity: 0; pointer-events: none;}
+.studio .streaming-browser .browser-frame.visible {opacity: 1;}
+.studio .streaming-browser .browser-surface:focus-within {box-shadow: inset 0 0 0 2px #7c9fd45c;}
+.studio .streaming-browser .browser-keyboard {position: absolute; left: 1px; top: 1px; width: 1px; height: 1px; min-height: 0; padding: 0; margin: 0; border: 0; opacity: 0; resize: none; pointer-events: none;}
+.studio .streaming-browser .browser-input-diagnostics {position: absolute; left: 4px; right: 4px; top: 4px; max-height: 110px; overflow: auto; z-index: 4; background: #fffffff0; color: #59677b; font: 10px/1.4 monospace; pointer-events: none; overflow-wrap: anywhere;}
+.studio .streaming-browser .browser-frame-wait {display: grid; place-items: center; height: 100%; min-height: 180px; font-size: 12px; color: var(--muted);}
+.studio .streaming-browser .browser-actions {display: flex; gap: 5px; padding: 8px 10px; align-items: center; border-top: 1px solid var(--line); background: #fcfdff; flex: none;}
+.studio .streaming-browser .browser-control-owner {display: flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; color: var(--sub);}
+.studio .streaming-browser .browser-actions .textbtn {height: 28px; min-height: 28px; font-size: 12px; padding: 0 8px;}
+.studio .streaming-browser .browser-actions .iconbtn {width: 28px; height: 28px;}
+.studio .streaming-browser .browser-actions-spacer {flex: 1;}
+.studio .streaming-browser .browser-footer {font-size: 11px; padding: 7px 12px; color: var(--muted);}
+.studio .streaming-browser .browser-start {padding: 28px 22px;}
+.studio .streaming-browser .browser-start > svg {color: #7c96b8;}
+.studio .streaming-browser .browser-start h3 {font-size: 15px; line-height: 22px;}
+.studio .streaming-browser .browser-start .textbtn {margin-top: 9px;}
+.studio .streaming-browser .browser-error p {margin: 0;}
+/* 错误覆盖画面，不改变被 ResizeObserver 观察的 viewport，避免重连反馈循环。 */
+.studio .streaming-browser .browser-error {position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; border-top: 1px solid #efd9d1; box-shadow: 0 -3px 12px #57311c0a;}
+.studio .streaming-browser .browser-recovery {display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;}
+.studio .streaming-browser .browser-recovery .textbtn {height: 28px; min-height: 28px; font-size: 12px;}
+.studio .streaming-browser .browser-input-notice {margin: 0; padding: 7px 12px; font-size: 12px; color: #8a7042; background: #fffbf2;}
+.studio .streaming-browser .browser-transfer {display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-top: 1px solid var(--line); background: #f7faff; color: var(--sub); font-size: 12px; flex: none;}
+.studio .streaming-browser .browser-transfer > span {min-width: 0; flex: 1; overflow-wrap: anywhere;}
+.studio .streaming-browser .browser-transfer strong {font-weight: 500;}
+.studio .streaming-browser .browser-transfer[role=alert] {background: #fff6f3; color: #a96652;}
+.studio .streaming-browser .browser-transfer progress {width: 70px; height: 5px; flex: none; accent-color: var(--blue);}
+.studio .streaming-browser .browser-transfer .textbtn {height: 26px; min-height: 26px; font-size: 12px; padding: 0 7px;}

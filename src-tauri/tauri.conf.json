@@ -20,7 +20,16 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../.build/browser/agent-browser": "browser/agent-browser",
+      "../scripts/session_browser.mjs": "browser/session_browser.mjs",
+      "../scripts/session_browser_core.mjs": "browser/session_browser_core.mjs",
+      "../scripts/session_browser_probe/runtime.json": "browser/session_browser_probe/runtime.json",
+      "../scripts/session_browser_probe/prepare.py": "browser/session_browser_probe/prepare.py",
+      "../scripts/session_browser_probe/oci_cache.py": "browser/session_browser_probe/oci_cache.py",
+      "../scripts/session_browser_cdp.mjs": "browser/session_browser_cdp.mjs"
+    }
   },
   "app": {
     "windows": [

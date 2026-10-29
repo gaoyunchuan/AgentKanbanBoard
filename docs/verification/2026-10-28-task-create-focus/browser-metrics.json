@@ -1,0 +1,29 @@
+{
+  "chatVisible": false,
+  "class": "task-row   highlight revealed-task ",
+  "focus": "task-510",
+  "pagination": "符合筛选 241 项 · 当前展开 241 项（含层级路径）上一页2 / 2下一页",
+  "row": {
+    "bottom": 948.1875,
+    "height": 53,
+    "left": 320,
+    "right": 897.609375,
+    "top": 895.1875,
+    "width": 577.609375,
+    "x": 320,
+    "y": 895.1875
+  },
+  "scrollTop": 1539,
+  "timeFilter": "最近 24 小时",
+  "treeVisible": true,
+  "viewport": {
+    "bottom": 1024,
+    "height": 940,
+    "left": 296,
+    "right": 921.609375,
+    "top": 84,
+    "width": 625.609375,
+    "x": 296,
+    "y": 84
+  }
+}

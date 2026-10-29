@@ -1,0 +1,8 @@
+The following is a diff from the previous accessibility tree for Window: "Codex Thread Kanban" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
++				53 text 新会话的项目
++				54 text field (settable) 检索会话项目, Placeholder: 搜索项目名称或目录
++				55 list (settable) 可选项目
++					56 text AgentKanbanBoard
++				57 container
++					58 text 显示前 5 项，共  68  项；继续输入以缩小范围
++				59 button 添加本地项目

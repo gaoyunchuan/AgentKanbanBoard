@@ -1,0 +1,805 @@
+[
+  {
+    "at": "2026-10-29T06:28:39.721Z",
+    "step": "environment",
+    "root": "/tmp/akb-bp-639115a2",
+    "binary": "/tmp/akb-browser-probe-deps/package/bin/agent-browser-darwin-arm64",
+    "image": "chromedp/headless-shell:probe-fixed",
+    "version": "agent-browser 0.40.0",
+    "binarySha256": "b064c9107a0431c76d8916e47c2c8ac322f49c2b2720d6c9036ab538ec1ed911",
+    "docker": "{\"Platform\":{\"Name\":\"Docker Engine - Community\"},\"Version\":\"29.8.2\",\"ApiVersion\":\"1.56\",\"MinAPIVersion\":\"1.40\",\"Os\":\"linux\",\"Arch\":\"arm64\",\"Components\":[{\"Name\":\"Engine\",\"Version\":\"29.8.2\",\"Details\":{\"ApiVersion\":\"1.56\",\"Arch\":\"arm64\",\"BuildTime\":\"Wed Sep 30 19:32:49 2026\",\"Experimental\":\"true\",\"GitCommit\":\"8af9fe3\",\"GoVersion\":\"go1.26.8\",\"KernelVersion\":\"7.2.12-orbstack-00394-gbecdd6130068\",\"MinAPIVersion\":\"1.40\",\"Module\":\"github.com/moby/moby/v2\",\"ModuleVersion\":\"v2.0.0+unknown\",\"Os\":\"linux\"}},{\"Name\":\"containerd\",\"Version\":\"v2.3.6\",\"Details\":{\"GitCommit\":\"ee2735368117d2eb259779949d5e75cdafec9761\"}},{\"Name\":\"runc\",\"Version\":\"1.5.2\",\"Details\":{\"GitCommit\":\"29dd3dc2b13b4123162e5fe132504bb4b15569f1\"}},{\"Name\":\"docker-init\",\"Version\":\"0.19.0\",\"Details\":{\"GitCommit\":\"de40ad0\"}}],\"GitCommit\":\"8af9fe3\",\"GoVersion\":\"go1.26.8\",\"KernelVersion\":\"7.2.12-orbstack-00394-gbecdd6130068\",\"Experimental\":true,\"BuildTime\":\"2026-09-30T19:32:49.000000000+00:00\"}"
+  },
+  {
+    "at": "2026-10-29T06:28:40.590Z",
+    "step": "container",
+    "owner": "a",
+    "name": "akb-bp-639115a2-a",
+    "id": "436ae5f5f70aee6374f56e687c411d43195167c9ddbef9b567bf4666397d4175",
+    "profile": "/tmp/akb-bp-639115a2/session-browser/a/profile",
+    "port": 32768,
+    "user": "502:20",
+    "binds": [
+      {
+        "Type": "bind",
+        "Source": "/tmp/akb-bp-639115a2/session-browser/a/profile",
+        "Destination": "/profile",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
+      }
+    ],
+    "image": "sha256:a8eda062ca7bb9d9696212c14e6e9e8d7c12b599b988e52ec9ec52a7d1a9106d"
+  },
+  {
+    "at": "2026-10-29T06:28:41.362Z",
+    "step": "container",
+    "owner": "b",
+    "name": "akb-bp-639115a2-b",
+    "id": "cb1a54559550ee97ec4712a54830fcf63f4c90fdc3490fc919cd03759af76cd6",
+    "profile": "/tmp/akb-bp-639115a2/session-browser/b/profile",
+    "port": 32769,
+    "user": "502:20",
+    "binds": [
+      {
+        "Type": "bind",
+        "Source": "/tmp/akb-bp-639115a2/session-browser/b/profile",
+        "Destination": "/profile",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
+      }
+    ],
+    "image": "sha256:a8eda062ca7bb9d9696212c14e6e9e8d7c12b599b988e52ec9ec52a7d1a9106d"
+  },
+  {
+    "at": "2026-10-29T06:28:41.928Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "connect",
+        "http://127.0.0.1:32768"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "launched": true,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": true,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": false,
+            "saveStatus": "not_attempted"
+          },
+          "relaunchedBrowser": false
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:42.383Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-b",
+    "actions": [
+      [
+        "connect",
+        "http://127.0.0.1:32769"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "launched": true,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 8940869647398087000
+            },
+            "launched": true,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": false,
+            "saveStatus": "not_attempted"
+          },
+          "relaunchedBrowser": false
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:42.523Z",
+    "step": "fixture-http",
+    "method": "GET",
+    "path": "/red"
+  },
+  {
+    "at": "2026-10-29T06:28:42.552Z",
+    "step": "fixture-ws",
+    "text": "hmr:058c1def-698a-4f67-9ef4-10c99b5c8011"
+  },
+  {
+    "at": "2026-10-29T06:28:42.622Z",
+    "step": "fixture-http",
+    "method": "GET",
+    "path": "/blue"
+  },
+  {
+    "at": "2026-10-29T06:28:42.636Z",
+    "step": "fixture-ws",
+    "text": "hmr:058c1def-698a-4f67-9ef4-10c99b5c8011"
+  },
+  {
+    "at": "2026-10-29T06:28:42.759Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "open",
+        "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+      ],
+      [
+        "eval",
+        "store(\"058c1def-698a-4f67-9ef4-10c99b5c8011\")"
+      ],
+      [
+        "tab",
+        "new",
+        "http://host.docker.internal:60944/blue?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "targetId": "DB2DADA1A7F168DFFF6F1E01D68FDD39",
+          "title": "红页-058c1def-698a-4f67-9ef4-10c99b5c8011",
+          "url": "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+        },
+        "success": true
+      },
+      {
+        "error": null,
+        "index": 1,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011",
+          "result": true
+        },
+        "success": true
+      },
+      {
+        "error": null,
+        "index": 2,
+        "result": {
+          "label": null,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "tabId": "t2",
+          "targetId": "4136A42F7E8205E5B63FC5C89C115CFF",
+          "total": 2,
+          "url": "http://host.docker.internal:60944/blue?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.002Z",
+    "step": "fixture-http",
+    "method": "GET",
+    "path": "/red"
+  },
+  {
+    "at": "2026-10-29T06:28:43.021Z",
+    "step": "fixture-ws",
+    "text": "hmr:2ba190f5-0bed-4d55-b1ef-d28b7fc78f9b"
+  },
+  {
+    "at": "2026-10-29T06:28:43.086Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-b",
+    "actions": [
+      [
+        "open",
+        "http://host.docker.internal:60944/red?marker=2ba190f5-0bed-4d55-b1ef-d28b7fc78f9b"
+      ],
+      [
+        "eval",
+        "store(\"2ba190f5-0bed-4d55-b1ef-d28b7fc78f9b\")"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 8940869647398087000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "targetId": "9D3A35CE4BDE3EC311C40DA5AD953729",
+          "title": "红页-2ba190f5-0bed-4d55-b1ef-d28b7fc78f9b",
+          "url": "http://host.docker.internal:60944/red?marker=2ba190f5-0bed-4d55-b1ef-d28b7fc78f9b"
+        },
+        "success": true
+      },
+      {
+        "error": null,
+        "index": 1,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 8940869647398087000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "http://host.docker.internal:60944/red?marker=2ba190f5-0bed-4d55-b1ef-d28b7fc78f9b",
+          "result": true
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.200Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "tab",
+        "list"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "tabs": [
+            {
+              "active": false,
+              "label": null,
+              "tabId": "t1",
+              "targetId": "DB2DADA1A7F168DFFF6F1E01D68FDD39",
+              "title": "host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011",
+              "type": "page",
+              "url": "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+            },
+            {
+              "active": true,
+              "label": null,
+              "tabId": "t2",
+              "targetId": "4136A42F7E8205E5B63FC5C89C115CFF",
+              "title": "蓝页-058c1def-698a-4f67-9ef4-10c99b5c8011",
+              "type": "page",
+              "url": "http://host.docker.internal:60944/blue?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+            }
+          ]
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.363Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "tab",
+        "DB2DADA1A7F168DFFF6F1E01D68FDD39"
+      ],
+      [
+        "fill",
+        "#text",
+        "--cdp http://evil"
+      ],
+      [
+        "get",
+        "value",
+        "#text"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "label": null,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "tabId": "t1",
+          "targetId": "DB2DADA1A7F168DFFF6F1E01D68FDD39",
+          "title": "红页-058c1def-698a-4f67-9ef4-10c99b5c8011",
+          "url": "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+        },
+        "success": true
+      },
+      {
+        "error": null,
+        "index": 1,
+        "result": {
+          "filled": "#text",
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          }
+        },
+        "success": true
+      },
+      {
+        "error": null,
+        "index": 2,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "value": "--cdp http://evil"
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.493Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "get",
+        "value",
+        "#text"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "value": "--cdp http://evil"
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.591Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-b",
+    "actions": [
+      [
+        "tab",
+        "DB2DADA1A7F168DFFF6F1E01D68FDD39"
+      ]
+    ],
+    "output": [
+      {
+        "error": "No tab with label `DB2DADA1A7F168DFFF6F1E01D68FDD39`; run `agent-browser tab` to list open tabs",
+        "index": 0,
+        "result": null,
+        "success": false
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.848Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "eval",
+        "wsReply"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011",
+          "result": "reply:hmr:058c1def-698a-4f67-9ef4-10c99b5c8011"
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.940Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "stream",
+        "status"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "connected": true,
+          "enabled": true,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 10106682619895198000
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": false,
+            "saveStatus": "not_attempted"
+          },
+          "port": 60957,
+          "screencasting": false
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:43.942Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "connected": true,
+      "engine": "chrome",
+      "recording": false,
+      "screencasting": false,
+      "type": "status",
+      "viewportHeight": 720,
+      "viewportWidth": 1280
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:43.943Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "tabs": [
+        {
+          "active": true,
+          "label": null,
+          "tabId": "t1",
+          "targetId": "DB2DADA1A7F168DFFF6F1E01D68FDD39",
+          "title": "红页-058c1def-698a-4f67-9ef4-10c99b5c8011",
+          "type": "page",
+          "url": "http://host.docker.internal:60944/red?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+        },
+        {
+          "active": false,
+          "label": null,
+          "tabId": "t2",
+          "targetId": "4136A42F7E8205E5B63FC5C89C115CFF",
+          "title": "蓝页-058c1def-698a-4f67-9ef4-10c99b5c8011",
+          "type": "page",
+          "url": "http://host.docker.internal:60944/blue?marker=058c1def-698a-4f67-9ef4-10c99b5c8011"
+        }
+      ],
+      "timestamp": 1793255323941,
+      "type": "tabs"
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:43.943Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "connected": true,
+      "engine": "chrome",
+      "recording": false,
+      "screencasting": true,
+      "type": "status",
+      "viewportHeight": 720,
+      "viewportWidth": 1280
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:44.210Z",
+    "step": "result",
+    "success": false,
+    "error": "Error: /Users/gaoyunchuan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 [\"-c\",\"from PIL import Image; import sys,json; im=Image.open(sys.argv[1]);print(json.dumps({\\\"size\\\":im.size,\\\"pixel\\\":im.getpixel((10,200))}))\",\"docs/verification/2026-10-29-session-browser/probe/headless-shell/red-first.jpg\"] exit=1: Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/Users/gaoyunchuan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/PIL/Image.py\", line 3639, in open\n    fp = builtins.open(filename, \"rb\")\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'docs/verification/2026-10-29-session-browser/probe/headless-shell/red-first.jpg'\n \n    at ChildProcess.<anonymous> (file:///Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/scripts/session_browser_probe/probe.mjs:32:55)\n    at ChildProcess.emit (node:events:508:20)\n    at maybeClose (node:internal/child_process:1108:16)\n    at Socket.<anonymous> (node:internal/child_process:480:11)\n    at Socket.emit (node:events:508:20)\n    at Pipe.<anonymous> (node:net:350:12)"
+  },
+  {
+    "at": "2026-10-29T06:28:44.304Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "action": "close",
+      "id": "r304395",
+      "params": {
+        "action": "close",
+        "id": "r304395"
+      },
+      "timestamp": 1793255324304,
+      "type": "command"
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:44.305Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "tabs": [],
+      "timestamp": 1793255324304,
+      "type": "tabs"
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:44.305Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "connected": false,
+      "engine": "chrome",
+      "recording": false,
+      "screencasting": true,
+      "type": "status",
+      "viewportHeight": 720,
+      "viewportWidth": 1280
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:44.305Z",
+    "step": "stream-message",
+    "tag": "red",
+    "message": {
+      "action": "close",
+      "data": {
+        "closed": true,
+        "lifecycle": {
+          "effectiveLaunch": {
+            "browserLaunched": false,
+            "engine": "chrome",
+            "launchHash": null
+          },
+          "launched": false,
+          "relaunchedBrowser": false,
+          "restartedBackground": false,
+          "restoreStatus": "not_configured",
+          "reused": false,
+          "saveStatus": "not_configured"
+        },
+        "restoreStatus": "not_configured",
+        "saveStatus": "not_configured"
+      },
+      "duration_ms": 0,
+      "id": "r304395",
+      "success": false,
+      "timestamp": 1793255324304,
+      "type": "result"
+    }
+  },
+  {
+    "at": "2026-10-29T06:28:44.305Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-a",
+    "actions": [
+      [
+        "close"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "closed": true,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": false,
+              "engine": "chrome",
+              "launchHash": null
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": false,
+            "saveStatus": "not_configured"
+          },
+          "restoreStatus": "not_configured",
+          "saveStatus": "not_configured"
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:44.387Z",
+    "step": "cli",
+    "session": "akb-bp-639115a2-b",
+    "actions": [
+      [
+        "close"
+      ]
+    ],
+    "output": [
+      {
+        "error": null,
+        "index": 0,
+        "result": {
+          "closed": true,
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": false,
+              "engine": "chrome",
+              "launchHash": null
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": false,
+            "saveStatus": "not_configured"
+          },
+          "restoreStatus": "not_configured",
+          "saveStatus": "not_configured"
+        },
+        "success": true
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T06:28:45.214Z",
+    "step": "container-stopped",
+    "name": "akb-bp-639115a2-a",
+    "code": 143,
+    "oom": false,
+    "output": "Flag --time has been deprecated, use --timeout instead\nakb-bp-639115a2-a"
+  },
+  {
+    "at": "2026-10-29T06:28:46.354Z",
+    "step": "container-stopped",
+    "name": "akb-bp-639115a2-b",
+    "code": 143,
+    "oom": false,
+    "output": "Flag --time has been deprecated, use --timeout instead\nakb-bp-639115a2-b"
+  },
+  {
+    "at": "2026-10-29T06:28:46.949Z",
+    "step": "cleanup",
+    "rootRetainedForEvidence": "/tmp/akb-bp-639115a2",
+    "activeProbeContainers": ""
+  }
+]

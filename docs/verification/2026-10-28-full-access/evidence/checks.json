@@ -1,0 +1,9 @@
+{
+  "frontend": 85,
+  "rust_library": 136,
+  "rust_main": 1,
+  "rust_integration": 1,
+  "python": 18,
+  "build": "make build-app 成功，TypeScript 编译及本机 ad-hoc 签名校验通过",
+  "scope": "新增预设、旧配置保留、其它会话不受影响、并发权限收紧不被旧弹窗覆盖"
+}

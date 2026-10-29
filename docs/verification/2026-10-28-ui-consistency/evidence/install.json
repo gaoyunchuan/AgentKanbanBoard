@@ -1,0 +1,19 @@
+{
+  "task_count": 320,
+  "task_count_unchanged": true,
+  "work_unchanged": true,
+  "permissions_unchanged": true,
+  "installed_binary_equals_build": true,
+  "tested_executable_code_equals_build": true,
+  "signatures_verified": true,
+  "binary_sha256": {
+    "built": "aebf69bdc8402a3e1a10b62db84b50efa57099a6fcd4f6ed9820ce9e2d892f0a",
+    "installed": "aebf69bdc8402a3e1a10b62db84b50efa57099a6fcd4f6ed9820ce9e2d892f0a",
+    "tested": "ed11f9322f1e8b4514f7928f7a8dcbb44fa67077d351db40863146fb740b03ff"
+  },
+  "unsigned_sha256": {
+    "built": "a4f8ed5ec83fe2097f8c82fcb5e9e33e72ebf979bfb33e21a01f1decc1b33a0a",
+    "tested": "a4f8ed5ec83fe2097f8c82fcb5e9e33e72ebf979bfb33e21a01f1decc1b33a0a"
+  },
+  "active_work": 0
+}

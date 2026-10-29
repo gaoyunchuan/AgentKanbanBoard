@@ -1,0 +1,16 @@
+{
+  "task_count": 320,
+  "formal_state_unchanged": true,
+  "installed_equals_build": true,
+  "tested_code_equals_build": true,
+  "signatures_verified": true,
+  "sha256": {
+    "built": "b6f0f50e5bb46068f9e43e13311e5284df9e48c459a627ec69cd14a781dc410d",
+    "installed": "b6f0f50e5bb46068f9e43e13311e5284df9e48c459a627ec69cd14a781dc410d",
+    "tested": "b7724079a283bb3011db569e40281ca8b8e8c6f90ae482f8a221f23cefd76304"
+  },
+  "unsigned_sha256": {
+    "built": "15d8c51d27c7549914da6d6b09801ce199052bc1ce50505fe359265a58f18056",
+    "tested": "15d8c51d27c7549914da6d6b09801ce199052bc1ce50505fe359265a58f18056"
+  }
+}

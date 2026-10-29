@@ -1,0 +1,42 @@
+[
+  {
+    "id": "chat-run-98612-1793183488170817000-1",
+    "status": "completed",
+    "error": null,
+    "thread_id": "01a18210-98b1-7b63-a649-5e96ddcd2ece",
+    "started_at": "2026-10-28T10:31:28Z",
+    "ended_at": "2026-10-28T10:32:03Z",
+    "approval_requests": 1,
+    "successful_mcp_calls": 1
+  },
+  {
+    "id": "chat-run-98612-1793183620107369000-3",
+    "status": "failed",
+    "error": "Selected model is at capacity. Please try a different model.",
+    "thread_id": "01a18210-98b1-7b63-a649-5e96ddcd2ece",
+    "started_at": "2026-10-28T10:33:40Z",
+    "ended_at": "2026-10-28T10:33:49Z",
+    "approval_requests": 0,
+    "successful_mcp_calls": 1
+  },
+  {
+    "id": "chat-run-98612-1793183659025771000-4",
+    "status": "completed",
+    "error": null,
+    "thread_id": "01a18210-98b1-7b63-a649-5e96ddcd2ece",
+    "started_at": "2026-10-28T10:34:19Z",
+    "ended_at": "2026-10-28T10:34:34Z",
+    "approval_requests": 0,
+    "successful_mcp_calls": 1
+  },
+  {
+    "id": "chat-run-98612-1793183719237944000-5",
+    "status": "completed",
+    "error": null,
+    "thread_id": "01a18210-98b1-7b63-a649-5e96ddcd2ece",
+    "started_at": "2026-10-28T10:35:19Z",
+    "ended_at": "2026-10-28T10:36:34Z",
+    "approval_requests": 1,
+    "successful_mcp_calls": 0
+  }
+]

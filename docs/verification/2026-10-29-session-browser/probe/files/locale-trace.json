@@ -1,0 +1,217 @@
+[
+  {
+    "at": "2026-10-29T07:02:24.498Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:24.593Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:default"
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:24.958Z",
+    "step": "locale-case",
+    "value": {
+      "locale": "default",
+      "filename": "剪贴板图片.png",
+      "result": {},
+      "value": {
+        "result": {
+          "type": "object",
+          "value": {
+            "files": [],
+            "received": null
+          }
+        }
+      },
+      "environment": [
+        "LANG=en-US.UTF-8"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:25.303Z",
+    "step": "locale-case",
+    "value": {
+      "locale": "default",
+      "filename": "ascii.png",
+      "result": {},
+      "value": {
+        "result": {
+          "type": "object",
+          "value": {
+            "files": [
+              {
+                "name": "ascii.png",
+                "size": 12
+              }
+            ],
+            "received": {
+              "name": "ascii.png",
+              "size": 12,
+              "type": "image/png",
+              "data": "data:image/png;base64,c2FtZS1jb250ZW50"
+            }
+          }
+        }
+      },
+      "environment": [
+        "LANG=en-US.UTF-8"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:27.361Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:27.374Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:c-utf-8"
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:27.739Z",
+    "step": "locale-case",
+    "value": {
+      "locale": "C.UTF-8",
+      "filename": "剪贴板图片.png",
+      "result": {},
+      "value": {
+        "result": {
+          "type": "object",
+          "value": {
+            "files": [
+              {
+                "name": "剪贴板图片.png",
+                "size": 12
+              }
+            ],
+            "received": {
+              "name": "剪贴板图片.png",
+              "size": 12,
+              "type": "image/png",
+              "data": "data:image/png;base64,c2FtZS1jb250ZW50"
+            }
+          }
+        }
+      },
+      "environment": [
+        "LANG=C.UTF-8",
+        "LC_ALL=C.UTF-8"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:28.102Z",
+    "step": "locale-case",
+    "value": {
+      "locale": "C.UTF-8",
+      "filename": "ascii.png",
+      "result": {},
+      "value": {
+        "result": {
+          "type": "object",
+          "value": {
+            "files": [
+              {
+                "name": "ascii.png",
+                "size": 12
+              }
+            ],
+            "received": {
+              "name": "ascii.png",
+              "size": 12,
+              "type": "image/png",
+              "data": "data:image/png;base64,c2FtZS1jb250ZW50"
+            }
+          }
+        }
+      },
+      "environment": [
+        "LANG=C.UTF-8",
+        "LC_ALL=C.UTF-8"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:30.104Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:30.120Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:en-us-utf-8"
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:30.461Z",
+    "step": "locale-case",
+    "value": {
+      "locale": "en_US.UTF-8",
+      "filename": "剪贴板图片.png",
+      "result": {},
+      "value": {
+        "result": {
+          "type": "object",
+          "value": {
+            "files": [],
+            "received": null
+          }
+        }
+      },
+      "environment": [
+        "LANG=en_US.UTF-8",
+        "LC_ALL=en_US.UTF-8"
+      ]
+    }
+  },
+  {
+    "at": "2026-10-29T07:02:30.807Z",
+    "step": "locale-case",
+    "value": {
+      "locale": "en_US.UTF-8",
+      "filename": "ascii.png",
+      "result": {},
+      "value": {
+        "result": {
+          "type": "object",
+          "value": {
+            "files": [
+              {
+                "name": "ascii.png",
+                "size": 12
+              }
+            ],
+            "received": {
+              "name": "ascii.png",
+              "size": 12,
+              "type": "image/png",
+              "data": "data:image/png;base64,c2FtZS1jb250ZW50"
+            }
+          }
+        }
+      },
+      "environment": [
+        "LANG=en_US.UTF-8",
+        "LC_ALL=en_US.UTF-8"
+      ]
+    }
+  }
+]

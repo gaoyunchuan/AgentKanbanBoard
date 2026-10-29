@@ -104,3 +104,8 @@
 - task_schedule.rs：注入时钟验证到点边界、不重复领取、暂停/依赖不被绕过、无效/过期编辑保护、幂等迁移。
 - workflow.rs：服务层未来任务无运行/Thread，时间改为已到后无需手动推动即只执行一次（假 app-server）。
 - work_runtime.rs：真实子进程传输模拟首个候选配置失败、下个通过；预检无 Thread/Turn/配置写入。
+
+### 2026-10-28 主聊天输入
+
+- Composer.test.tsx 覆盖两种IME确认时序、普通Enter/ShiftEnter、文字粘贴默认行为、图片items/files去重及fallback、预览/移除/纯图发送、异步读取期间保留新字与切换取消、超量/超大/格式整批预检。与ChatApp既有文本附件/草稿迁移一起回归。
+- 输入法原生验收必须用实际系统拼音按键，不能用fill或文本粘贴代替；系统图片剪贴板可在隔离WKWebView中用图片右键Copy Image→移除旧附件→Cmd+V检验。证据见 docs/verification/2026-10-28-composer/README.md。

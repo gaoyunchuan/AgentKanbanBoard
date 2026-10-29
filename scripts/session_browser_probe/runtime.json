@@ -1,0 +1,35 @@
+{
+  "agentBrowser": {
+    "version": "0.40.0",
+    "source": "https://registry.npmjs.org/agent-browser/-/agent-browser-0.40.0.tgz",
+    "mirror": "https://registry.npmmirror.com/agent-browser/-/agent-browser-0.40.0.tgz",
+    "integrity": "sha512-uqDAR3ozwJKYzVENMr/ZKYTZT1LUZauI49rTiK/KsFBxQDVTdtmrWGWTMWZlaIIQWToEtZUfWVXBSSTY6aHzrA==",
+    "binaries": {
+      "darwin-arm64": "b064c9107a0431c76d8916e47c2c8ac322f49c2b2720d6c9036ab538ec1ed911",
+      "darwin-x64": "478cba056938c5cde286fbeea3994a8b8144f2e18f054684b93abb80c0340d25",
+      "linux-arm64": "f33b4dd9bd7707ad952125937f9de18f93548c5d51283b18092fe21ced6b9e53",
+      "linux-x64": "da26cc8029c004325b960fa955951063380cb61e622cc580fd5adf3aa89e4676"
+    }
+  },
+  "chrome": {
+    "source": "docker.io/chromedp/headless-shell",
+    "registry": "docker.m.daocloud.io",
+    "repository": "chromedp/headless-shell",
+    "indexDigest": "sha256:7bee201478b2f6266aae01243740ee85c16281e32f42d3aed9fdf04f4eace7a1",
+    "testedVersion": "Chromium 157.0.8103.27",
+    "entrypoint": "/headless-shell/run.sh",
+    "executable": "/headless-shell/headless-shell",
+    "publishedContainerPort": 9222,
+    "internalChromePort": 9223,
+    "platforms": {
+      "arm64": {
+        "manifestDigest": "sha256:d1a6b8b5ae14c1dcc475fa1300586ee3b811f2b39105dedde6f62d68270f4359",
+        "configId": "sha256:a8eda062ca7bb9d9696212c14e6e9e8d7c12b599b988e52ec9ec52a7d1a9106d"
+      },
+      "amd64": {
+        "manifestDigest": "sha256:b9f182c7474cc773513e672054bc2d9df90fe479e90a356fddaaef4b9492c230",
+        "configId": "sha256:296afdab3a8072ba7ed84cf1b08f4e5818173fbea1880b8db6e09dc521f8fecb"
+      }
+    }
+  }
+}

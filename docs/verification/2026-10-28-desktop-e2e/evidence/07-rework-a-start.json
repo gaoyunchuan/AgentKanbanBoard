@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-10-28T08:34:05.275363+00:00",
+  "records": [
+    {
+      "title": "05-依赖与返工",
+      "business_status": "todo",
+      "execution_status": null,
+      "runs": 0
+    },
+    {
+      "title": "07-独立任务不受返工影响",
+      "business_status": "todo",
+      "execution_status": null,
+      "runs": 0
+    },
+    {
+      "title": "05-A-分析故障",
+      "business_status": "in_progress",
+      "execution_status": "running",
+      "runs": 2
+    },
+    {
+      "title": "05-B-使用A的交付",
+      "business_status": "completed",
+      "execution_status": "completed",
+      "runs": 1
+    }
+  ]
+}

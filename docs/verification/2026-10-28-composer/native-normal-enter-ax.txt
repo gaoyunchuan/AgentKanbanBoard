@@ -1,0 +1,30 @@
+Window: "Codex Thread Kanban", App: Codex Thread Kanban.
+0 standard window Codex Thread Kanban, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Codex Thread Kanban, URL: tauri://localhost
+			3 container 添加本地项目
+				4 container
+					5 heading 添加本地项目, Value: 2
+						6 text 添加本地项目
+					7 button 关闭对话框
+				8 text 工作目录是你本机的项目目录，不会上传文件。绑定任务后，新会话默认使用它。
+				9 text 项目名称
+				10 text field (settable) 项目名称
+				11 text 工作目录
+				12 text field (settable) 工作目录, Placeholder: /Users/you/Projects/project
+				13 button 选择目录
+				14 container
+					15 button 取消
+					16 button (disabled) 保存项目
+	17 close button
+	18 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	19 minimize button
+20 menu bar
+	21 Codex Kanban Composer Test
+	22 File
+	23 Edit
+	24 View
+	25 Window
+	26 Help
+
+The focused UI element is 7 button 关闭对话框

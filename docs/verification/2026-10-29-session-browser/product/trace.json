@@ -1,0 +1,793 @@
+[
+  {
+    "at": "2026-10-29T14:22:11.305Z",
+    "step": "A启动",
+    "value": {
+      "state_path": "/private/tmp/akb-browser-product-dcbc5c5a/browser-state/app.db/636861743a636f6e766572736174696f6e2d33303536362d313739333238333732373036333339323030302d32",
+      "pages": [
+        {
+          "active": true,
+          "id": "255B9246C9B1991FDF274F3A22995C53",
+          "title": "",
+          "url": "about:blank"
+        }
+      ]
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:11.538Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:11.561Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:12.408Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:12.446Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:13.122Z",
+    "step": "保存网页状态",
+    "value": {
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 1143225559043096800
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "origin": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+      "result": {
+        "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:14.079Z",
+    "step": "真实MCP读取",
+    "value": {
+      "domMarker": "DOM-07eb4e20-8e78-49f4-991d-2ef590ae4510",
+      "structured": {
+        "lifecycle": {
+          "effectiveLaunch": {
+            "browserLaunched": true,
+            "engine": "chrome",
+            "launchHash": 1143225559043096800
+          },
+          "launched": false,
+          "relaunchedBrowser": false,
+          "restartedBackground": false,
+          "restoreStatus": "not_configured",
+          "reused": true,
+          "saveStatus": "not_attempted"
+        },
+        "origin": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "refs": {
+          "e1": {
+            "name": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+            "role": "heading"
+          },
+          "e2": {
+            "name": "",
+            "role": "textbox"
+          },
+          "e3": {
+            "name": "提交",
+            "role": "button"
+          },
+          "e4": {
+            "name": "Choose File",
+            "role": "button"
+          },
+          "e5": {
+            "name": "粘贴图片到这里",
+            "role": "textbox"
+          },
+          "e6": {
+            "name": "下载测试文件",
+            "role": "link"
+          }
+        },
+        "removedRefs": [],
+        "snapshot": "- heading \"saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6\" [level=1, ref=e1]\n- textbox [ref=e2]\n- button \"提交\" [ref=e3]\n- paragraph\n- StaticText \"frame 24\"\n- paragraph\n  - StaticText \"DOM-07eb4e20-8e78-49f4-991d-2ef590ae4510\"\n- button \"Choose File\" [ref=e4]: No file chosen\n- StaticText \"拖文件到这里\"\n- textbox \"粘贴图片到这里\" [ref=e5]\n- paragraph\n- link \"下载测试文件\" [ref=e6]"
+      },
+      "content": [
+        {
+          "text": "{\"lifecycle\":{\"effectiveLaunch\":{\"browserLaunched\":true,\"engine\":\"chrome\",\"launchHash\":1143225559043096800},\"launched\":false,\"relaunchedBrowser\":false,\"restartedBackground\":false,\"restoreStatus\":\"not_configured\",\"reused\":true,\"saveStatus\":\"not_attempted\"},\"origin\":\"http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6\",\"refs\":{\"e1\":{\"name\":\"saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6\",\"role\":\"heading\"},\"e2\":{\"name\":\"\",\"role\":\"textbox\"},\"e3\":{\"name\":\"提交\",\"role\":\"button\"},\"e4\":{\"name\":\"Choose File\",\"role\":\"button\"},\"e5\":{\"name\":\"粘贴图片到这里\",\"role\":\"textbox\"},\"e6\":{\"name\":\"下载测试文件\",\"role\":\"link\"}},\"removedRefs\":[],\"snapshot\":\"- heading \\\"saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6\\\" [level=1, ref=e1]\\n- textbox [ref=e2]\\n- button \\\"提交\\\" [ref=e3]\\n- paragraph\\n- StaticText \\\"frame 24\\\"\\n- paragraph\\n  - StaticText \\\"DOM-07eb4e20-8e78-49f4-991d-2ef590ae4510\\\"\\n- button \\\"Choose File\\\" [ref=e4]: No file chosen\\n- StaticText \\\"拖文件到这里\\\"\\n- textbox \\\"粘贴图片到这里\\\" [ref=e5]\\n- paragraph\\n- link \\\"下载测试文件\\\" [ref=e6]\"}",
+          "type": "text"
+        }
+      ],
+      "scoped": {
+        "content": [
+          {
+            "text": "{\"lifecycle\":{\"effectiveLaunch\":{\"browserLaunched\":true,\"engine\":\"chrome\",\"launchHash\":1143225559043096800},\"launched\":false,\"relaunchedBrowser\":false,\"restartedBackground\":false,\"restoreStatus\":\"not_configured\",\"reused\":true,\"saveStatus\":\"not_attempted\"},\"origin\":\"http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6\",\"refs\":{\"e1\":{\"name\":\"saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6\",\"role\":\"heading\"},\"e2\":{\"name\":\"\",\"role\":\"textbox\"},\"e3\":{\"name\":\"提交\",\"role\":\"button\"},\"e4\":{\"name\":\"Choose File\",\"role\":\"button\"},\"e5\":{\"name\":\"粘贴图片到这里\",\"role\":\"textbox\"},\"e6\":{\"name\":\"下载测试文件\",\"role\":\"link\"}},\"removedRefs\":[],\"snapshot\":\"- paragraph\\n  - StaticText \\\"DOM-07eb4e20-8e78-49f4-991d-2ef590ae4510\\\"\"}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "lifecycle": {
+            "effectiveLaunch": {
+              "browserLaunched": true,
+              "engine": "chrome",
+              "launchHash": 1143225559043096800
+            },
+            "launched": false,
+            "relaunchedBrowser": false,
+            "restartedBackground": false,
+            "restoreStatus": "not_configured",
+            "reused": true,
+            "saveStatus": "not_attempted"
+          },
+          "origin": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "refs": {
+            "e1": {
+              "name": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+              "role": "heading"
+            },
+            "e2": {
+              "name": "",
+              "role": "textbox"
+            },
+            "e3": {
+              "name": "提交",
+              "role": "button"
+            },
+            "e4": {
+              "name": "Choose File",
+              "role": "button"
+            },
+            "e5": {
+              "name": "粘贴图片到这里",
+              "role": "textbox"
+            },
+            "e6": {
+              "name": "下载测试文件",
+              "role": "link"
+            }
+          },
+          "removedRefs": [],
+          "snapshot": "- paragraph\n  - StaticText \"DOM-07eb4e20-8e78-49f4-991d-2ef590ae4510\""
+        }
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:14.706Z",
+    "step": "Agent变更与输入边界",
+    "value": {
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 1143225559043096800
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "value": "--cdp http://evil"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:18.555Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:18.568Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:19.532Z",
+    "step": "A/B隔离",
+    "value": {
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 8747168896673437000
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "origin": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+      "result": {
+        "cookie": "",
+        "local": null
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:24.676Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:24.676Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:24.692Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:24.703Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:25.767Z",
+    "step": "产品容器重建恢复",
+    "value": {
+      "pages": [
+        {
+          "active": false,
+          "id": "3658D24552453A43E07221D3EBE00FF9",
+          "title": "host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": true,
+          "id": "E765FB9ED2BE0668B865A9F640982E60",
+          "title": "蓝页-saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        }
+      ],
+      "state": {
+        "lifecycle": {
+          "effectiveLaunch": {
+            "browserLaunched": true,
+            "engine": "chrome",
+            "launchHash": 15346182897850020000
+          },
+          "launched": false,
+          "relaunchedBrowser": false,
+          "restartedBackground": false,
+          "restoreStatus": "not_configured",
+          "reused": true,
+          "saveStatus": "not_attempted"
+        },
+        "origin": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "result": {
+          "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        }
+      },
+      "path": "/private/tmp/akb-browser-product-dcbc5c5a/browser-state/app.db/636861743a636f6e766572736174696f6e2d33303536362d313739333238333732373036333339323030302d32"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:26.433Z",
+    "step": "真实文件-input",
+    "value": {
+      "data": "data:image/png;base64,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",
+      "name": "kanban-upload-18e30610c8045968-0-剪贴板图片.png",
+      "size": 5433,
+      "type": "image/png"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:27.574Z",
+    "step": "真实文件-drop",
+    "value": {
+      "data": "data:image/png;base64,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",
+      "name": "kanban-upload-18e306111513bc58-1-剪贴板图片.png",
+      "size": 5433,
+      "type": "image/png"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:28.496Z",
+    "step": "真实文件-paste",
+    "value": {
+      "data": "data:image/png;base64,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",
+      "name": "kanban-upload-18e3061145e5a530-2-剪贴板图片.png",
+      "size": 5433,
+      "type": "image/png"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:29.257Z",
+    "step": "真实整段粘贴",
+    "value": {
+      "textarea": {
+        "lifecycle": {
+          "effectiveLaunch": {
+            "browserLaunched": true,
+            "engine": "chrome",
+            "launchHash": 15346182897850020000
+          },
+          "launched": false,
+          "relaunchedBrowser": false,
+          "restartedBackground": false,
+          "restoreStatus": "not_configured",
+          "reused": true,
+          "saveStatus": "not_attempted"
+        },
+        "value": "粘贴验收😀 第二行"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:29.862Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/download"
+    }
+  },
+  {
+    "at": "2026-10-29T14:22:29.969Z",
+    "step": "真实下载落DB旁",
+    "value": {
+      "downloaded": "/private/tmp/akb-browser-product-dcbc5c5a/browser-state/app.db/636861743a636f6e766572736174696f6e2d33303536362d313739333238333732373036333339323030302d32/downloads/browser-download.txt"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:02.869Z",
+    "step": "启动恢复失败且Docker停止失败保留槽并stop-only恢复",
+    "value": {
+      "name": "akb-83b95dd1a2a32f0136d3355b",
+      "recoveredCleanup": {
+        "state_preserved": true,
+        "stopped": true
+      },
+      "originalBytes": 478
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:05.934Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:05.935Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:05.956Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:05.960Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:45.860Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:45.861Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:45.898Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:45.899Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:47.536Z",
+    "step": "中途恢复失败保留完整清单且可重试",
+    "value": {
+      "filename": "/private/tmp/akb-browser-product-dcbc5c5a/browser-state/app.db/636861743a636f6e766572736174696f6e2d33303536362d313739333238333732373036333339323030302d32/pages.json",
+      "originalBytes": 481,
+      "pages": [
+        {
+          "active": false,
+          "id": "05DB53F8C2801701A092163F1DE2C579",
+          "title": "host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": false,
+          "id": "DD9023367A822712131381594C60ACA0",
+          "title": "恢复重试正常页",
+          "url": "http://host.docker.internal:53511/recover"
+        },
+        {
+          "active": true,
+          "id": "73843472DD985C341C9F1CE2D2103CE6",
+          "title": "蓝页-saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        }
+      ],
+      "storage": {
+        "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:54.306Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:54.306Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:54.333Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:54.340Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:23:56.729Z",
+    "step": "真实Blob弹窗重启以说明页占位且正常页登录保留",
+    "value": {
+      "originalBlobUrl": "blob:http://host.docker.internal:53313/5c4da9cb-d638-4c2a-a368-b4eaa23ed22d",
+      "pages": [
+        {
+          "active": false,
+          "id": "DABEC8C469E0EBE74CB9B7085F418CA8",
+          "title": "host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": false,
+          "id": "53F5CDB1391446998944ABEC931D90B9",
+          "title": "蓝页-saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": true,
+          "id": "5E77AF4A2A9D9E82B6C770073E9B60F2",
+          "restoration_notice": "此页面使用临时 Blob 或内嵌数据地址，浏览器重启后无法继续恢复。为避免重放旧内容，请回到来源页面重新打开。",
+          "title": "临时页面未恢复：ä¸´æ—¶æŠ¥è¡¨",
+          "url": "about:blank"
+        }
+      ],
+      "placeholder": {
+        "replayed": false,
+        "text": "此页面使用临时 Blob 或内嵌数据地址，浏览器重启后无法继续恢复。为避免重放旧内容，请回到来源页面重新打开。"
+      },
+      "storage": {
+        "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:04.267Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:04.267Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:04.284Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:04.292Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:06.073Z",
+    "step": "真实关闭失败可重试-stop",
+    "value": {
+      "name": "akb-83b95dd1a2a32f0136d3355b",
+      "firstFailureRunning": true,
+      "stopped": {
+        "state_preserved": true,
+        "stopped": true
+      },
+      "pages": [
+        {
+          "active": false,
+          "id": "9DA7D0243906EB88FDD75D6C708E829E",
+          "title": "host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": false,
+          "id": "6501A732AE15585851BA8B07D60A072F",
+          "restoration_notice": "此页面使用临时 Blob 或内嵌数据地址，浏览器重启后无法继续恢复。为避免重放旧内容，请回到来源页面重新打开。",
+          "title": "临时页面未恢复：ä¸´æ—¶æŠ¥è¡¨",
+          "url": "about:blank"
+        },
+        {
+          "active": true,
+          "id": "CA6D470BAF9995C42240D6A3699A5F02",
+          "title": "蓝页-saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        }
+      ],
+      "storage": {
+        "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:16.039Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:16.039Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:16.056Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:16.062Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:18.121Z",
+    "step": "真实关闭失败可重试-rm",
+    "value": {
+      "name": "akb-83b95dd1a2a32f0136d3355b",
+      "firstFailureRunning": false,
+      "stopped": {
+        "state_preserved": true,
+        "stopped": true
+      },
+      "pages": [
+        {
+          "active": false,
+          "id": "6BA1FD1EF82E320930406CA5A00E5D39",
+          "title": "host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": false,
+          "id": "8AF80A24EA613B119F4D757CD730AE9D",
+          "restoration_notice": "此页面使用临时 Blob 或内嵌数据地址，浏览器重启后无法继续恢复。为避免重放旧内容，请回到来源页面重新打开。",
+          "title": "临时页面未恢复：ä¸´æ—¶æŠ¥è¡¨",
+          "url": "about:blank"
+        },
+        {
+          "active": true,
+          "id": "4365669642A1F2D61672101741AF45BC",
+          "title": "蓝页-saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        }
+      ],
+      "storage": {
+        "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:24.791Z",
+    "step": "stop-only不依赖Agent且可恢复未知归属状态",
+    "value": {
+      "name": "akb-83b95dd1a2a32f0136d3355b",
+      "output": {
+        "cleanup_complete": true
+      },
+      "firstFailureRunning": true
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:28.375Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:28.375Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:28.392Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:28.402Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:35.161Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/red"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:35.161Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:35.178Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:35.188Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+    }
+  },
+  {
+    "at": "2026-10-29T14:24:36.968Z",
+    "step": "超过128KiB清单从文件恢复且不重放data内容",
+    "value": {
+      "filename": "/private/tmp/akb-browser-product-dcbc5c5a/browser-state/app.db/636861743a636f6e766572736174696f6e2d33303536362d313739333238333732373036333339323030302d32/pages.json",
+      "bytes": 140338,
+      "pages": [
+        {
+          "active": false,
+          "id": "5DD0B10C124DC107C50FFFC932451A3E",
+          "title": "host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/red?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        },
+        {
+          "active": false,
+          "id": "C61357892668CB73D50CDE26BC296837",
+          "restoration_notice": "此页面使用临时 Blob 或内嵌数据地址，浏览器重启后无法继续恢复。为避免重放旧内容，请回到来源页面重新打开。",
+          "title": "临时页面未恢复：临时大文档",
+          "url": "about:blank"
+        },
+        {
+          "active": true,
+          "id": "B1AAF4EF0836AD624F45734D63447E91",
+          "title": "蓝页-saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+          "url": "http://host.docker.internal:53313/blue?marker=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+        }
+      ],
+      "storage": {
+        "cookie": "probe=saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "idb": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6",
+        "local": "saved-cfc43517-e2ff-46dd-9886-b12e310fcfa6"
+      }
+    }
+  }
+]

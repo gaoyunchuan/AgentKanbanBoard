@@ -1,0 +1,28 @@
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "value": "你hao",
+      "events": [
+        {
+          "type": "pointerdown",
+          "value": ""
+        },
+        {
+          "type": "pointerup",
+          "value": ""
+        },
+        {
+          "type": "input",
+          "inputType": "insertText",
+          "value": "你"
+        },
+        {
+          "type": "input",
+          "inputType": "insertText",
+          "value": "你hao"
+        }
+      ]
+    }
+  }
+}

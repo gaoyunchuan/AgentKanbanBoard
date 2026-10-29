@@ -41,6 +41,9 @@
 - 一个 WorkRun 对应一个 Turn。`turn/completed` 只结束执行；有效 `task_submit_result` 后 Human 等人工验收，Auto 还要等本轮正常结束。提交后继续实质工具操作会使交付失效，不能靠最终文本或未读状态猜测完成。
 - 未完成交接的正常结束最多自动续跑两轮；依赖、业务问题、环境阻塞不消费模型轮询。默认 `on-request` + `workspace-write`，Agent 创建的业务子任务继承父级权限、目录、交付与浏览器策略。
 - 树形父子关系不等于启动依赖；`blocked_by` 需校验自依赖、重复、缺失与循环。父任务提交需直接子任务已完成或明确取消；被取消的前置任务不满足完成依赖。
+- 依赖满足：前端任务（从未创建 `chat_conversations`）勾选完成即放行下游，不要求结果复盘；交给 Agent 执行过的任务必须存在 `task_results` 中 `ready+usable` 的验收结果；任一不确定资源租约继续阻塞。
+- 委托默认权限保存在 `studio_settings.delegation_permission`（按需确认/只读/完全访问），只在首次委托创建执行配置时应用；已有 `work_tasks` 的重委派保留原权限，避免静默放宽。
+- 运行中的任务允许修改权限：仅 `approval_policy`/`sandbox_mode` 变更可绕过“先停止”检查，并在自动会话下同步到 `work_tasks.config_json`，从下一轮 turn 生效；模型、浏览器、项目等仍要求先停止。
 - 暂停、取消和返工先隔离持久执行，再请求运行时停止；只操作当前业务节点，不能偷偷级联业务子任务或回滚文件。对不确定副作用的断连恢复必须需要明确重试。
 - 审批只允许当前有效的 task/run/request 组合消费一次；`serverRequest/resolved` 是失效通知，不是批准。业务问题可跨 Turn 等待，native server request 不能跨执行重放。
 - 原生 subagent 按 parentThreadId 路由输出和审批；其结束不完成父业务任务。父 Turn 完成须等待已知活动子 Agent 停止确认，未确认不得接受成功或释放目录。复用 child thread 时，新旧 Turn 的归属必须保持正确。
@@ -120,3 +123,8 @@
 - 2026-08-06: 修正旧版完整快照已污染 `updated_at` 的迁移问题，周视图改用独立 `activity_at` 并以 `created_at` 初始化老任务基线。
 - 2026-08-12: 新增 To Do 折叠态过程跟踪与结果复盘单行摘要约束。
 - 2026-08-19: 修正 To Do 排序位置连带变化污染周视图业务活动时间的问题。
+
+### 2026-10-28 主聊天输入
+
+- ChatSurface 的发送键同时检查 composition 生命周期、native isComposing、WebKit keyCode 229；不加固定冷却时间，保留普通 Enter 与 Shift+Enter。
+- useComposerAttachments 统一文件选择与剪贴板图片：items/files去重、4MB/文件和16附件先整批预检、单活跃读取、owner切换/卸载abort、函数式合并最新草稿；读取期间禁止发送但允许打字，不追加旧会话的迟到图片。图片预览仅接受既有白名单base64 URL。

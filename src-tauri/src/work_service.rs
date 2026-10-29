@@ -29,6 +29,10 @@ enum Message {
         reply: Reply,
     },
     Runtime(RuntimeEvent),
+    ResourcesSettled {
+        event: RuntimeEvent,
+        result: Result<(), String>,
+    },
     Started {
         task_id: String,
         run_id: String,
@@ -146,6 +150,7 @@ impl WorkService {
                     let _ = ready_sender.send(Err(error));
                     return;
                 }
+                let _=repository.connection.execute("UPDATE work_resource_leases SET state='uncertain',error='应用重新启动，原生命令退出尚未确认'",[]);
                 let mut scheduler = Scheduler {
                     repository,
                     runtime: None,
@@ -195,9 +200,13 @@ impl WorkService {
                                         );
                                     }
                                 }
+                                let _=scheduler.repository.connection.execute("UPDATE work_resource_leases SET state='uncertain',error=substr(?1,1,512)",[&error]);
                                 scheduler.runtime_error = Some(error);
                                 scheduler.dirty = true;
                             }
+                        }
+                        Ok(Message::ResourcesSettled{event,result}) => {
+                            if let Err(error)=scheduler.resources_settled(event,result){scheduler.runtime_error=Some(error);scheduler.dirty=true;}
                         }
                         Ok(Message::Access(reply)) => {
                             let _ = reply.send(scheduler.connect(None));
@@ -251,6 +260,10 @@ impl WorkService {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn enqueue_runtime_event_for_test(&self, event: RuntimeEvent) {
+        self.sender.send(Message::Runtime(event)).unwrap();
+    }
     pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let (reply, response) = mpsc::sync_channel(1);
         self.sender
@@ -366,6 +379,7 @@ impl Scheduler {
             if runtime.is_alive() {
                 return Ok(runtime.clone());
             }
+            self.repository.connection.execute("UPDATE work_resource_leases SET state='uncertain',error='原连接已失效，原生命令退出尚未确认'",[]).map_err(|e|e.to_string())?;
             for (id, run) in self.live.drain() {
                 if id.starts_with("chat:") || id.starts_with("extract:") {
                     self.repository.chat_finish(
@@ -509,6 +523,7 @@ impl Scheduler {
                         action,
                         TaskAction::Pause | TaskAction::Cancel | TaskAction::Rework
                     ) {
+                        self.mark_native_stop(id, run_id)?;
                         self.stop_deadlines.insert(
                             id.to_string(),
                             (run_id.to_string(), Instant::now() + Duration::from_secs(15)),
@@ -647,6 +662,7 @@ impl Scheduler {
             }
             self.runtime_error =
                 Some("停止确认超时，已关闭本产品的 Codex 连接。请核对外部效果后恢复。".into());
+            self.repository.connection.execute("UPDATE work_resource_leases SET state='uncertain',error='停止确认超时，原生命令退出尚未确认'",[]).map_err(|e|e.to_string())?;
             self.stop_deadlines.clear();
             self.dirty = true;
         }
@@ -777,9 +793,11 @@ impl Scheduler {
     }
 
     fn workspace_busy(&self, workspace: &Path) -> bool {
-        self.live
-            .values()
-            .any(|run| workspaces_overlap(&run.workspace, workspace))
+        self.native_workspace_busy(workspace)
+            || self
+                .live
+                .values()
+                .any(|run| workspaces_overlap(&run.workspace, workspace))
             || self
                 .terminals
                 .values()
@@ -913,6 +931,13 @@ impl Scheduler {
             .is_some_and(|runtime| runtime.connection_id() == event.connection_id)
         {
             return Ok(());
+        }
+        self.track_native_resources(&event)?;
+        if self.settle_native_resources(&event)? {
+            return Ok(());
+        }
+        if event.method == "runtime/disconnected" {
+            self.repository.connection.execute("UPDATE work_resource_leases SET state='uncertain',error='连接中断，原生命令退出尚未确认' WHERE connection_id=?1",[&event.connection_id]).map_err(|e|e.to_string())?;
         }
         if event
             .task_id
@@ -1549,3 +1574,5 @@ mod tests {
 }
 
 include!("chat_service.rs");
+
+include!("work_resources.rs");

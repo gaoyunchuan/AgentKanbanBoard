@@ -1,0 +1,12 @@
+{
+  "captured_at": "2026-10-28T08:55:04.468506+00:00",
+  "records": [
+    {
+      "title": "06-预约自动启动",
+      "status": "paused",
+      "wait_reason": "user_paused",
+      "scheduled_start_at": "2026-10-28T08:42:00Z",
+      "runs": 1
+    }
+  ]
+}

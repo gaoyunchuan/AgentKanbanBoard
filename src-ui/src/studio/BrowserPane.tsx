@@ -1,43 +1,74 @@
-import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { X, Globe, ArrowLeft, ArrowRight, RotateCcw, ArrowUpRight, MousePointer2, Plus } from "lucide-react";
-import { useStudio } from "./context";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { X, Globe, ArrowLeft, ArrowRight, RotateCcw, MousePointer2, Plus, Download, Upload, Power, Radio } from 'lucide-react';
+import { useStudio } from './context';
+import { useSessionBrowser } from './useSessionBrowser';
+import { BrowserSurface } from './BrowserSurface';
+import './browser.css';
 
-type Frame = { data: string; width: number; height: number; target_id: string; title: string; url: string; pages: { id: string; title: string; url: string }[] };
-export function BrowserPane({active=true}:{active?:boolean}) {
-  const s = useStudio(), c = s.conversation;
-  const [frame, setFrame] = useState<Frame>();
-  const [inputText, setInputText] = useState('');
-  const [url, setUrl] = useState('http://localhost:3000');
-  const [error, setError] = useState('');
-  const [started, setStarted] = useState(false);
-  const [waiting, setWaiting] = useState(false);
-  const [target, setTarget] = useState<string>();
-  const viewport = useRef<HTMLDivElement>(null);
-  const busy = useRef(false), alive = useRef(true), focusUrl = useRef(false);
-  const owner = useRef(c?.id); owner.current=c?.id;
-  const [startedOwners, setStartedOwners] = useState(new Set<string>());
-  const operation = async (method: string, params: Record<string, unknown> = {}) => {
-    if (!c || !s.api.native) return;
-    try { return await invoke('chat_browser', { conversationId: c.id, method, params: { target_id: target, ...params } }); }
-    catch (e) { if (alive.current && owner.current === c.id) setError(String(e)); throw e; }
-  };
-  useEffect(() => { setStarted(Boolean(c && startedOwners.has(c.id))); setFrame(undefined); setTarget(undefined); setError(''); }, [c?.id]);
-  useEffect(() => {
-    alive.current = true; let stale = false;
-    const tick = async () => { if (!active || !started || !c || !s.api.native || busy.current) return; busy.current = true; try { const box = viewport.current?.getBoundingClientRect(); const value = await invoke<Frame>('chat_browser', { conversationId: c.id, method: 'frame', params: { target_id: target, width: Math.max(320, Math.round(box?.width || 580)), height: Math.max(260, Math.round(box?.height || 700)) } }); if (!stale) { setFrame(value); if (target && value.target_id !== target) setTarget(value.target_id); if (!focusUrl.current) setUrl(value.url === 'about:blank' ? '' : value.url); setError(''); } } catch (e) { if (!stale) setError(String(e)); } finally { busy.current = false; } };
-    void tick(); const timer = setInterval(() => void tick(), 900);
-    return () => { stale = true; alive.current = false; clearInterval(timer); };
-  }, [active, started, c?.id, target, s.api.native]);
-  const start = async () => {
-    if (!c || waiting || !s.api.native) return;
-    setWaiting(true); setError('');
-    try { if (!c.thread_id && !c.config.browser_enabled) await s.command('update_conversation', { conversation_id: c.id, revision: c.revision, patch: { browser_enabled: true } }); await operation('status'); setStartedOwners(v=>new Set([...v,c.id])); if(owner.current===c.id)setStarted(true); }
-    catch { /* Inline actionable error stays visible. */ } finally { setWaiting(false); }
-  };
-  return <aside className="inspector browser-panel" aria-label="侧边浏览器"><div className="inspector-head"><Globe size={15}/>侧边浏览器</div><div className="browser-controls"><div className="browser-toolbar"><button className="iconbtn" aria-label="浏览器后退" disabled={!started} onClick={() => void operation('back').catch(() => {})}><ArrowLeft size={14}/></button><button className="iconbtn" aria-label="浏览器前进" disabled={!started} onClick={() => void operation('forward').catch(() => {})}><ArrowRight size={14}/></button><button className="iconbtn" aria-label="刷新页面" disabled={!started} onClick={() => void operation('reload').catch(() => {})}><RotateCcw size={14}/></button><form onSubmit={e => { e.preventDefault(); void operation('navigate', { url: /^https?:\/\//i.test(url) ? url : `https://${url}` }).catch(() => {}); }}><input aria-label="浏览器地址" value={url} onFocus={() => { focusUrl.current = true; }} onBlur={() => { focusUrl.current = false; }} onChange={e => setUrl(e.target.value)} placeholder="https:// 或 http://localhost" disabled={!started}/></form></div>{started && <div className="browser-tabstrip" role="tablist" aria-label="浏览器标签页">{frame?.pages.map(page=><div className={`browser-tab ${(target||frame.target_id)===page.id?'active':''}`} key={page.id}><button role="tab" aria-selected={(target||frame.target_id)===page.id} title={page.url} onClick={()=>{setTarget(page.id);void operation('activate_page',{target_id:page.id}).catch(()=>{});}}>{page.title||page.url||'新标签页'}</button><button aria-label={`关闭网页 ${page.title||page.url||'新标签页'}`} onClick={()=>void operation('close_page',{target_id:page.id}).then(value=>{if(owner.current===c?.id&&value)setTarget((value as {target_id:string}).target_id)}).catch(()=>{})}><X size={12}/></button></div>)}<button className="iconbtn" aria-label="新建浏览器标签" onClick={()=>void operation('new_page').then(value=>{if(owner.current===c?.id&&value){setTarget((value as {target_id:string}).target_id);setUrl('');}}).catch(()=>{})}><Plus size={15}/></button></div>}</div>
-    {!started ? <div className="browser-start"><Globe size={30}/><h3>同一个浏览器，共同检查结果</h3><p>使用本产品独立的 Chrome 会话。你看到的页面与 Agent 的浏览器工具连接同一实例，不读取日常浏览器的登录状态。</p>{!c ? <p>先创建或选择一个会话。</p> : c.thread_id && !c.config.browser_enabled ? <><p className="warning-box">当前 Codex Thread 创建时未启用浏览器工具。可以手动查看网页；Agent 控制需要新建同任务会话。</p><button className="textbtn outlined" onClick={() => void s.newConversation(c.task_id)}>新建同任务会话</button></> : null}<button className="textbtn primary" disabled={!c || !s.api.native || waiting} onClick={() => void start()}>{waiting ? '正在启动独立浏览器…' : '打开侧边浏览器'}</button>{!s.api.native && <p className="note">浏览器预览不启动 Chrome。请在桌面应用中验证真实浏览器。</p>}<p className="note">需要 Node.js 22、Chrome。首次 Agent 工具启动可能需要下载固定版本 Playwright MCP。</p></div> : <div className="browser-surface" ref={viewport} tabIndex={0} role="application" aria-label="远程浏览器画面，可点击并键盘输入" onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void operation('text', { text: e.key }).catch(() => {}); } else if (['Enter','Tab','Backspace','Delete','Escape','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','a'].includes(e.key)) { e.preventDefault(); void operation('key', { key: e.key, modifiers: (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0) }).catch(() => {}); } }} onPaste={e => { e.preventDefault(); void operation('text', { text: e.clipboardData.getData('text/plain') }).catch(() => {}); }} onWheel={e => { const box = e.currentTarget.getBoundingClientRect(); void operation('wheel', { x: (e.clientX - box.left)*(frame?.width||box.width)/box.width, y: (e.clientY - box.top)*(frame?.height||box.height)/box.height, dx: e.deltaX, dy: e.deltaY }).catch(() => {}); }} onClick={e => { const box = e.currentTarget.getBoundingClientRect(); e.currentTarget.focus(); if (frame) void operation('click', { x: (e.clientX - box.left) * frame.width / box.width, y: (e.clientY - box.top) * frame.height / box.height }).catch(() => {}); }}>{frame ? <img src={`data:image/jpeg;base64,${frame.data}`} alt={frame.title || '独立浏览器当前页面'} draggable={false}/> : <p className="note">正在读取真实浏览器画面…</p>}</div>}
-    {started && <form className="browser-text-entry" onSubmit={e=>{e.preventDefault();if(inputText.trim())void operation('text',{text:inputText}).then(()=>setInputText('')).catch(()=>{});}}><input aria-label="向网页输入文字" value={inputText} onChange={e=>setInputText(e.target.value)} placeholder="先点击网页输入框，再在此输入中文"/><button className="textbtn outlined" disabled={!inputText}>输入</button></form>}
-    {error && <p className="browser-error" role="alert">{error}</p>}{started && <div className="browser-footer"><MousePointer2 size={12}/>{c?.config.browser_enabled ? '你与 Agent 使用同一独立浏览器' : '当前为手动浏览；Agent 未连接此浏览器'}</div>}
+export function BrowserPane({ active = true }: { active?: boolean }) {
+  const studio = useStudio();
+  const opened = useRef(new Set<string>());
+  const remember = useCallback((owner: string) => {
+    opened.current.delete(owner); opened.current.add(owner);
+    if (opened.current.size > 4) opened.current.delete(opened.current.values().next().value!);
+  }, []);
+  const forget = useCallback((owner: string) => { opened.current.delete(owner); }, []);
+  const owner = studio.conversation?.id;
+  // 按会话重新挂载，旧异步结果与旧连接不能进入新会话；仅恢复最近打开的会话。
+  return <SessionBrowserPane key={owner || 'none'} active={active} previouslyOpened={Boolean(owner && opened.current.has(owner))} remember={remember} forget={forget}/>;
+}
+function SessionBrowserPane({ active, previouslyOpened, remember, forget }: {
+  active: boolean; previouslyOpened: boolean; remember: (owner: string) => void; forget: (owner: string) => void;
+}) {
+  const studio = useStudio(), conversation = studio.conversation;
+  const browser = useSessionBrowser(conversation?.id, studio.api.native, active, previouslyOpened);
+  const { state, started, waiting, error, operation } = browser;
+  const [url, setUrl] = useState('');
+  const focusUrl = useRef(false);
+  const hasState = Boolean(state);
+  useEffect(() => { if (started && hasState && conversation) remember(conversation.id); }, [started, hasState, conversation?.id, remember]);
+  const stop = async () => { if (await browser.stop() && conversation) forget(conversation.id); };
+  const page = state?.pages.find(value => value.id === state.target_id);
+  useEffect(() => { if (!focusUrl.current) setUrl(page?.url === 'about:blank' ? '' : page?.url || ''); }, [page?.url, state?.target_id]);
+  const pageOperation = useCallback((method: string, params: Record<string, unknown> = {}) => operation(method, { target_id: state?.target_id, ...params }), [operation, state?.target_id]);
+  const command = (method: string) => void operation(method, state?.target_id ? { target_id: state.target_id } : {});
+  return <aside className="inspector browser-panel streaming-browser" aria-label="侧边浏览器" hidden={!active}>
+    <div className="inspector-head"><Globe size={15}/><span>侧边浏览器</span>{started && <><span className={`browser-connection ${browser.painted ? 'connected' : ''}`} role="status"><Radio size={11}/>{browser.connection}</span><button className="iconbtn" aria-label="关闭浏览器保留登录状态" title="关闭浏览器，保留登录状态" onClick={() => void stop()}><Power size={14}/></button></>}</div>
+    {started ? <>
+      <div className="browser-controls">
+        <div className="browser-toolbar">
+          <button className="iconbtn" aria-label="浏览器后退" onClick={() => command('back')}><ArrowLeft size={14}/></button>
+          <button className="iconbtn" aria-label="浏览器前进" onClick={() => command('forward')}><ArrowRight size={14}/></button>
+          <button className="iconbtn" aria-label="刷新页面" onClick={() => command('reload')}><RotateCcw size={14}/></button>
+          <form onSubmit={event => { event.preventDefault(); const value = url.trim(); if (value) void operation('navigate', { target_id: state?.target_id, url: /^(https?:\/\/|about:blank$)/i.test(value) ? value : `https://${value}` }); }}>
+            <input aria-label="浏览器地址" value={url} onFocus={() => { focusUrl.current = true; }} onBlur={() => { focusUrl.current = false; }} onChange={event => setUrl(event.target.value)} placeholder="网址或 http://localhost"/>
+          </form>
+        </div>
+        <div className="browser-tabstrip" role="tablist" aria-label="浏览器标签页">
+          {state?.pages.map(value => <div className={`browser-tab ${state.target_id === value.id ? 'active' : ''}`} key={value.id}>
+            <button role="tab" aria-selected={state.target_id === value.id} title={value.url} onClick={() => void operation('activate_page', { target_id: value.id })}>{value.title || value.url || '新标签页'}</button>
+            <button aria-label={`关闭网页 ${value.title || value.url || '新标签页'}`} onClick={() => void operation('close_page', { target_id: value.id })}><X size={12}/></button>
+          </div>)}
+          <button className="iconbtn" aria-label="新建浏览器标签" onClick={() => void operation('new_page')}><Plus size={15}/></button>
+        </div>
+      </div>
+      {active && <BrowserSurface key={state?.target_id || 'waiting'} frame={browser.frame} painted={browser.painted} rendered={browser.rendered} send={browser.send} operation={pageOperation} upload={browser.upload}
+        insertText={browser.insertText}/>}
+      <div className="browser-actions">
+        <span className="browser-control-owner"><MousePointer2 size={13}/>{state?.human_control ? '你正在控制' : 'Agent 可控制'}</span>
+        {state?.human_control && <button className="textbtn outlined" onClick={() => command('release_control')}>交给 Agent</button>}
+        <span className="browser-actions-spacer"/>
+        <button className="iconbtn" title="选择本机文件，上传到网页文件输入框" aria-label="上传文件到网页" disabled={browser.upload.busy} onClick={() => command('pick_upload')}><Upload size={14}/></button>
+        <button className="iconbtn" title="打开当前会话的下载目录" aria-label="打开浏览器下载目录" onClick={() => command('open_downloads')}><Download size={14}/></button>
+        <button className="iconbtn" aria-label="重新连接浏览器画面" title="重新连接画面" onClick={browser.reconnect}><RotateCcw size={14}/></button>
+      </div>
+      {(browser.upload.message || browser.upload.error) && <div className="browser-transfer" role={browser.upload.error ? 'alert' : 'status'}>
+        <span>{browser.upload.name && <strong>{browser.upload.name} · </strong>}{browser.upload.error || browser.upload.message}</span>
+        {browser.upload.busy && <><progress max={browser.upload.total || 1} value={browser.upload.received} aria-label="文件上传进度"/><button className="textbtn outlined" aria-label="取消文件上传" onClick={browser.upload.cancel}>取消</button></>}
+      </div>}
+      <div className="browser-footer">状态随应用数据保存 · 关闭浏览器保留登录状态</div>
+      {state?.input_interrupted && <p className="browser-input-notice">之前的操作被中断，请检查页面后继续。</p>}
+    </> : <div className="browser-start"><Globe size={30}/><h3>和 Agent 共用一个浏览器</h3><p>在这里查看、操作网页，登录后可以交给 Agent 继续。每个会话拥有独立的浏览器，登录状态和标签页随应用数据保存。</p>{!conversation && <p>先选择一个会话。</p>}<button className="textbtn primary" disabled={!conversation || !studio.api.native || waiting} onClick={() => void browser.start()}>{waiting ? '正在准备浏览器…' : '打开侧边浏览器'}</button>{!studio.api.native && <p className="note">请在桌面应用中连接真实浏览器。</p>}</div>}
+    {error && <div className="browser-error" role="alert"><p>{error}</p><div className="browser-recovery"><button className="textbtn outlined" disabled={waiting} onClick={() => void browser.start('restart')}>{waiting ? '正在恢复…' : '重试连接'}</button><button className="textbtn outlined" disabled={waiting} onClick={() => void browser.prepare()}>{waiting ? '正在准备…' : '准备浏览器环境'}</button></div></div>}
   </aside>;
 }

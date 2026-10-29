@@ -1,0 +1,27 @@
+{
+  "tasks": 320,
+  "chat_states": [
+    [
+      "failed",
+      1
+    ],
+    [
+      "init",
+      3
+    ]
+  ],
+  "active_chat_runs": 0,
+  "work_states": [
+    [
+      "attention",
+      1
+    ],
+    [
+      "paused",
+      1
+    ]
+  ],
+  "active_work_runs": 0,
+  "pending_changes": 0,
+  "permissions_digest": "b761be70cdfe3523d18e5871a8db1bd6d1815babb5fa21c2af30a48f5a97f5d6"
+}

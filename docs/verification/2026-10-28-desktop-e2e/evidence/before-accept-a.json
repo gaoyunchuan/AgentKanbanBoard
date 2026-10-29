@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-10-28T08:17:03.614644+00:00",
+  "states": [
+    {
+      "title": "05-B-使用A的交付",
+      "status": "waiting",
+      "current_run_id": null,
+      "thread_id": null,
+      "wait_reason": "dependencies",
+      "run_count": 0
+    },
+    {
+      "title": "05-A-分析故障",
+      "status": "review",
+      "current_run_id": null,
+      "thread_id": "01a18191-b8e9-79e0-9582-ea46035d0cc0",
+      "wait_reason": null,
+      "run_count": 1
+    },
+    {
+      "title": "06-预约自动启动",
+      "status": "waiting",
+      "current_run_id": null,
+      "thread_id": null,
+      "wait_reason": "scheduled",
+      "run_count": 0
+    }
+  ]
+}

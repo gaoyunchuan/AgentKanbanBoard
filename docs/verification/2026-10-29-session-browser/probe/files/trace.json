@@ -1,0 +1,313 @@
+[
+  {
+    "at": "2026-10-29T07:01:16.276Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:16.305Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:files-diagnostic"
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:16.982Z",
+    "step": "state",
+    "value": {
+      "state": {
+        "human_control": true,
+        "input_interrupted": false,
+        "manifest": {
+          "active_index": 0,
+          "pages": [
+            {
+              "title": "host.docker.internal:62037/blue?marker=files-diagnostic",
+              "url": "http://host.docker.internal:62037/blue?marker=files-diagnostic"
+            }
+          ],
+          "version": 1
+        },
+        "pages": [
+          {
+            "active": true,
+            "id": "07EE287680F9DBB413C26B59E746CA5F",
+            "title": "host.docker.internal:62037/blue?marker=files-diagnostic",
+            "url": "http://host.docker.internal:62037/blue?marker=files-diagnostic"
+          }
+        ],
+        "state_path": "/private/tmp/akb-files-2830215f/browser-state/app.db/636861743a636f6e766572736174696f6e2d33303931332d313739333235373237323534313834353030302d32",
+        "stream_url": "ws://127.0.0.1:62064/88806439f7008885669afecff127d8f7",
+        "target_id": "07EE287680F9DBB413C26B59E746CA5F"
+      },
+      "container": "akb-c74b47da59c60794c433f364",
+      "root": "/tmp/akb-files-2830215f"
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:17.783Z",
+    "step": "uploaded",
+    "value": {
+      "uploaded": true
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:17.784Z",
+    "step": "host-file",
+    "value": {
+      "file": "kanban-upload-18e2edfe2032d8b0-0-剪贴板图片.png",
+      "stat": {
+        "dev": 16777230,
+        "mode": 33152,
+        "nlink": 1,
+        "uid": 502,
+        "gid": 0,
+        "rdev": 0,
+        "blksize": 4096,
+        "ino": 282312279,
+        "size": 58,
+        "blocks": 8,
+        "atimeMs": 1793257277364.6362,
+        "mtimeMs": 1793257277365.0999,
+        "ctimeMs": 1793257277369.1558,
+        "birthtimeMs": 1793257277364.6362
+      },
+      "base64": "5rWP6KeI5Zmo5paH5Lu26K+K5patLTAxYmQxMmYzLWFmZWItNGRkNi04NWExLTg1MjcyNmJlNjAxNA=="
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:18.111Z",
+    "step": "container-file",
+    "value": "uid=502 gid=20(dialout) groups=20(dialout)\ndrwx------ 1 502 dialout 96 Oct 29 07:01 /data/downloads\ndrwx------ 1 502 dialout 96 Oct 29 07:01 /data/downloads/.uploads\ntotal 4\n-rw------- 1 502 dialout 58 Oct 29 07:01 kanban-upload-18e2edfe2032d8b0-0-剪贴板图片.png\n"
+  },
+  {
+    "at": "2026-10-29T07:01:19.498Z",
+    "step": "diagnostics",
+    "value": {
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 1078748530720227200
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "origin": "http://host.docker.internal:62037/blue?marker=files-diagnostic",
+      "result": {
+        "diagnostics": [],
+        "files": [],
+        "handler": "e=>window.consume(e.target.files[0])",
+        "received": null
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.043Z",
+    "step": "console",
+    "value": {
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 1078748530720227200
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "messages": []
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.315Z",
+    "step": "errors",
+    "value": {
+      "errors": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 1078748530720227200
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.631Z",
+    "step": "raw-object",
+    "value": {
+      "result": {
+        "type": "object",
+        "subtype": "node",
+        "className": "HTMLInputElement",
+        "description": "input#file",
+        "objectId": "1041080142698716691.2.1"
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.633Z",
+    "step": "raw-object-set",
+    "value": {}
+  },
+  {
+    "at": "2026-10-29T07:01:20.634Z",
+    "step": "raw-object-value",
+    "value": {
+      "result": {
+        "type": "object",
+        "value": {
+          "files": [],
+          "diagnostics": [],
+          "received": null
+        }
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.635Z",
+    "step": "dom-enable-set",
+    "value": {}
+  },
+  {
+    "at": "2026-10-29T07:01:20.636Z",
+    "step": "dom-enable-value",
+    "value": {
+      "result": {
+        "type": "object",
+        "value": {
+          "files": [],
+          "diagnostics": [],
+          "received": null
+        }
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.637Z",
+    "step": "described",
+    "value": {
+      "node": {
+        "nodeId": 0,
+        "backendNodeId": 4,
+        "nodeType": 1,
+        "nodeName": "INPUT",
+        "localName": "input",
+        "nodeValue": "",
+        "childNodeCount": 0,
+        "attributes": [
+          "type",
+          "file",
+          "id",
+          "file"
+        ],
+        "shadowRoots": [
+          {
+            "nodeId": 0,
+            "backendNodeId": 8,
+            "nodeType": 11,
+            "nodeName": "#document-fragment",
+            "localName": "",
+            "nodeValue": "",
+            "childNodeCount": 2,
+            "shadowRootType": "user-agent"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.638Z",
+    "step": "backend-set",
+    "value": {}
+  },
+  {
+    "at": "2026-10-29T07:01:20.639Z",
+    "step": "backend-value",
+    "value": {
+      "result": {
+        "type": "object",
+        "value": {
+          "files": [],
+          "diagnostics": [],
+          "received": null
+        }
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:20.644Z",
+    "step": "ascii-set",
+    "value": {}
+  },
+  {
+    "at": "2026-10-29T07:01:20.645Z",
+    "step": "ascii-value",
+    "value": {
+      "result": {
+        "type": "object",
+        "value": {
+          "files": [
+            {
+              "name": "diagnostic.txt",
+              "size": 58
+            }
+          ],
+          "diagnostics": [
+            {
+              "event": "input",
+              "length": 1
+            },
+            {
+              "event": "change",
+              "length": 1
+            },
+            {
+              "name": "diagnostic.txt",
+              "size": 58,
+              "type": "text/plain"
+            },
+            {
+              "event": "text",
+              "text": "浏览器文件诊断-01bd12f3-afeb-4dd6-85a1-852726be6014"
+            },
+            {
+              "event": "reader-load",
+              "result": "data:text/plain;base64,5rWP6KeI5Zmo5paH5Lu26K+K5patLTAxYmQxMmYzLWFmZWItNGRkNi04NWExLTg1MjcyNmJlNjAxNA=="
+            }
+          ],
+          "received": {
+            "name": "diagnostic.txt",
+            "size": 58,
+            "type": "text/plain",
+            "data": "data:text/plain;base64,5rWP6KeI5Zmo5paH5Lu26K+K5patLTAxYmQxMmYzLWFmZWItNGRkNi04NWExLTg1MjcyNmJlNjAxNA=="
+          }
+        }
+      }
+    }
+  },
+  {
+    "at": "2026-10-29T07:01:22.641Z",
+    "step": "cleanup",
+    "value": {
+      "containers": ""
+    }
+  }
+]

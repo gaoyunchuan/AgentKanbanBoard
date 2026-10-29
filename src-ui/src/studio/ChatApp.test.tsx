@@ -10,7 +10,208 @@ afterEach(()=>{cleanup();localStorage.clear()});
 async function tasksPage(){const api=createDemoApi(),user=userEvent.setup();render(<ChatApp api={api}/>);await screen.findByText('隔离演示 · 不调用模型');await user.click(screen.getByRole('button',{name:'任务'}));await screen.findByRole('region',{name:'全局任务树'});return {api,user};}
 const row=(id:string)=>document.querySelector(`[data-task-row="${id}"]`) as HTMLElement;
 const tree=()=>screen.getByRole('region',{name:'全局任务树'});
+async function chooseOption(user:ReturnType<typeof userEvent.setup>,trigger:HTMLElement,label:string){
+  await user.click(trigger);await user.click(await screen.findByRole('option',{name:label}));
+}
 describe('task-focused workspace',()=>{
+ it('keeps the tree after creating a task and selects its details without creating a conversation',async()=>{
+   const {api,user}=await tasksPage(),before=await api.call<Workspace>('snapshot');
+   await user.click(screen.getByRole('button',{name:'新建任务'}));
+   await user.type(screen.getByRole('textbox',{name:'标题'}),'继续编辑的新任务');
+   await user.click(screen.getByRole('button',{name:'创建任务'}));
+   await waitFor(()=>expect(screen.queryByRole('dialog',{name:'新建任务'})).not.toBeInTheDocument());
+   expect(tree()).toBeInTheDocument();expect(screen.queryByRole('region',{name:'聊天会话'})).not.toBeInTheDocument();
+   const after=await api.call<Workspace>('snapshot'),created=after.tasks.find(t=>t.title==='继续编辑的新任务')!;
+   await waitFor(()=>expect(row(created.id)).toHaveFocus());expect(row(created.id)).toHaveClass('highlight');
+   expect(screen.getByRole('region',{name:'任务详情'})).toHaveTextContent(created.title);
+   expect(after.conversations).toHaveLength(before.conversations.length);
+ });
+ it('reveals a created child beneath a collapsed parent',async()=>{
+   const {api,user}=await tasksPage();
+   await user.click(screen.getByRole('button',{name:'折叠 实现部署前 Diff'}));
+   fireEvent.contextMenu(row('diff'),{clientX:400,clientY:300});
+   await user.click(screen.getByRole('menuitem',{name:'添加子任务'}));
+   await user.type(screen.getByRole('textbox',{name:'标题'}),'折叠树里的新任务');await user.click(screen.getByRole('button',{name:'创建任务'}));
+   await waitFor(()=>expect(screen.queryByRole('dialog',{name:'添加子任务'})).not.toBeInTheDocument());
+   const after=await api.call<Workspace>('snapshot'),child=after.tasks.find(t=>t.title==='折叠树里的新任务')!;
+   expect(tree()).toBeInTheDocument();await waitFor(()=>expect(row(child.id)).toHaveFocus());
+   expect(screen.getByRole('button',{name:'折叠 实现部署前 Diff'})).toBeInTheDocument();
+ });
+ it('reveals a created task when the current search excludes it and explains the filter reset',async()=>{
+   const {api,user}=await tasksPage();await user.type(screen.getByRole('textbox',{name:'搜索全局任务'}),'不存在的匹配');
+   await user.click(screen.getByRole('button',{name:'新建任务'}));await user.type(screen.getByRole('textbox',{name:'标题'}),'需要定位的新任务');await user.click(screen.getByRole('button',{name:'创建任务'}));
+   await waitFor(()=>expect(screen.queryByRole('dialog',{name:'新建任务'})).not.toBeInTheDocument());
+   const after=await api.call<Workspace>('snapshot'),created=after.tasks.find(t=>t.title==='需要定位的新任务')!;
+   expect(tree()).toBeInTheDocument();await waitFor(()=>expect(row(created.id)).toHaveFocus());
+   expect(screen.getByRole('textbox',{name:'搜索全局任务'})).toHaveValue('');expect(screen.getByRole('status')).toHaveTextContent('筛选');
+ });
+ it('switches to the page containing a newly created task beyond the first 200 rows',async()=>{
+   const api=createDemoApi(),user=userEvent.setup();
+   for(let i=0;i<201;i++)await api.call('create_task',{title:`列表任务 ${i}`});
+   render(<ChatApp api={api}/>);await user.click(screen.getByRole('button',{name:'任务'}));await screen.findByRole('region',{name:'全局任务树'});
+   await user.click(screen.getByRole('button',{name:'新建任务'}));await user.type(screen.getByRole('textbox',{name:'标题'}),'第二页的新任务');await user.click(screen.getByRole('button',{name:'创建任务'}));
+   await waitFor(()=>expect(screen.queryByRole('dialog',{name:'新建任务'})).not.toBeInTheDocument());
+   const after=await api.call<Workspace>('snapshot'),created=after.tasks.find(t=>t.title==='第二页的新任务')!;
+   expect(tree()).toHaveTextContent('2 / 2');await waitFor(()=>expect(row(created.id)).toHaveFocus());
+ });
+ it('locates consecutive new tasks when the selected task has no conversation',async()=>{
+   const {api,user}=await tasksPage();fireEvent.click(row('review'));
+   for(const title of ['连续新建一','连续新建二']){
+     await user.click(screen.getByRole('button',{name:'新建任务'}));await user.type(screen.getByRole('textbox',{name:'标题'}),title);await user.click(screen.getByRole('button',{name:'创建任务'}));
+     await waitFor(()=>expect(screen.queryByRole('dialog',{name:'新建任务'})).not.toBeInTheDocument());
+     const data=await api.call<Workspace>('snapshot'),created=data.tasks.find(t=>t.title===title)!;
+     await waitFor(()=>expect(row(created.id)).toHaveFocus());expect(screen.getByRole('region',{name:'任务详情'})).toHaveTextContent(title);
+   }
+ });
+ it.each(['最近 24 小时','周视图 · 最近 7 天','最近 30 天'])('immediately reveals a new task while preserving the %s time filter',async label=>{
+   const {api,user}=await tasksPage();await chooseOption(user,screen.getByRole('combobox',{name:'按更新时间筛选'}),label);
+   await user.click(screen.getByRole('button',{name:'新建任务'}));await user.type(screen.getByRole('textbox',{name:'标题'}),'时间筛选下立即可见');await user.click(screen.getByRole('button',{name:'创建任务'}));
+   await waitFor(()=>expect(screen.queryByRole('dialog',{name:'新建任务'})).not.toBeInTheDocument());
+   const data=await api.call<Workspace>('snapshot'),created=data.tasks.find(t=>t.title==='时间筛选下立即可见')!;
+   await waitFor(()=>expect(row(created.id)).toHaveFocus());expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveTextContent(label);
+ });
+ it('uses a styled listbox for the time filter and keeps selection behavior',async()=>{
+   const {user}=await tasksPage();
+   const trigger=screen.getByRole('combobox',{name:'按更新时间筛选'});
+   expect(trigger.tagName).toBe('BUTTON');
+   await user.click(trigger);
+   const menu=await screen.findByRole('listbox');
+   await user.click(within(menu).getByRole('option',{name:'最近 24 小时'}));
+   expect(trigger).toHaveTextContent('最近 24 小时');
+   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+ });
+ it('does not restore stale full access after another client has tightened permissions',async()=>{
+   const api=createDemoApi(),user=userEvent.setup(),data=await api.call<Workspace>('snapshot');
+   const selected=data.conversations.find(c=>c.mode==='manual')!;
+   await api.call('update_conversation',{conversation_id:selected.id,revision:selected.revision,patch:{sandbox_mode:'danger-full-access',approval_policy:'never'}});
+   render(<ChatApp api={api}/>);await user.click(await screen.findByRole('button',{name:selected.title}));await user.click(screen.getByRole('button',{name:'完全访问'}));
+   const opening=(await api.call<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)!;
+   await api.call('update_conversation',{conversation_id:selected.id,revision:opening.revision,patch:{sandbox_mode:'read-only',approval_policy:'on-request'}});
+   await waitFor(()=>expect(screen.getByRole('button',{name:'只读'})).toBeInTheDocument(),{timeout:4000});
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));
+   expect(await within(screen.getByRole('dialog',{name:'会话权限'})).findByRole('alert')).toHaveTextContent('会话版本已改变');
+   expect((await api.call<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config).toEqual(expect.objectContaining({sandbox_mode:'read-only',approval_policy:'on-request'}));
+ });
+ it('preserves an unsupported legacy policy without resubmitting it and can explicitly migrate it',async()=>{
+   const api=createDemoApi(),original=api.call.bind(api),user=userEvent.setup(),data=await original<Workspace>('snapshot');
+   const selected=data.conversations.find(c=>c.mode==='manual')!;
+   await original('update_conversation',{conversation_id:selected.id,revision:selected.revision,patch:{approval_policy:'on-failure'}});
+   const wrapped={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>{
+     if(method==='update_conversation'&&(params?.patch as Record<string,unknown>)?.approval_policy==='on-failure')throw Error('不支持的审批策略');
+     return original(method,params);
+   })} as typeof api;
+   render(<ChatApp api={wrapped}/>);await user.click(await screen.findByRole('button',{name:selected.title}));await user.click(screen.getByRole('button',{name:'自定义权限'}));
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+   expect((await original<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config.approval_policy).toBe('on-failure');
+   await user.click(screen.getByRole('button',{name:'自定义权限'}));await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'完全访问');await user.click(screen.getByRole('button',{name:'保存会话设置'}));await screen.findByRole('button',{name:'完全访问'});
+   expect((await original<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config).toEqual(expect.objectContaining({sandbox_mode:'danger-full-access',approval_policy:'never'}));
+ });
+ it('keeps mixed legacy permissions visible as custom until an explicit preset is saved',async()=>{
+   const api=createDemoApi(),user=userEvent.setup(),data=await api.call<Workspace>('snapshot');
+   const selected=data.conversations.find(c=>c.mode==='manual')!;
+   await api.call('update_conversation',{conversation_id:selected.id,revision:selected.revision,patch:{sandbox_mode:'danger-full-access',approval_policy:'on-request'}});
+   render(<ChatApp api={api}/>);await user.click(await screen.findByRole('button',{name:selected.title}));
+   expect(screen.queryByRole('button',{name:'完全访问'})).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'自定义权限'}));
+   expect(screen.getByRole('combobox',{name:'权限模式'})).toHaveTextContent('自定义（保留当前设置）');
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));
+   expect((await api.call<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config).toEqual(expect.objectContaining({sandbox_mode:'danger-full-access',approval_policy:'on-request'}));
+   await user.click(screen.getByRole('button',{name:'自定义权限'}));
+   await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'只读');
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));
+   await screen.findByRole('button',{name:'只读'});
+   expect((await api.call<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config).toEqual(expect.objectContaining({sandbox_mode:'read-only',approval_policy:'on-request'}));
+ });
+ it('enables full access atomically for only the selected existing conversation',async()=>{
+   const api=createDemoApi(),user=userEvent.setup(),before=await api.call<Workspace>('snapshot');
+   const selected=before.conversations.find(c=>c.mode==='manual')!;
+   render(<ChatApp api={api}/>);await user.click(await screen.findByRole('button',{name:selected.title}));
+   await user.click(screen.getByRole('button',{name:'按需确认'}));
+   await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'完全访问');
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));
+   await screen.findByRole('button',{name:'完全访问'});
+   const after=await api.call<Workspace>('snapshot'),current=after.conversations.find(c=>c.id===selected.id)!;
+   expect(current.config).toEqual(expect.objectContaining({sandbox_mode:'danger-full-access',approval_policy:'never'}));
+   expect(current.thread_id).toBe(selected.thread_id);
+   expect(after.conversations.filter(c=>c.id!==selected.id)).toEqual(before.conversations.filter(c=>c.id!==selected.id));
+   await user.click(screen.getByRole('button',{name:'完全访问'}));
+   await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'按需确认');
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));
+   await screen.findByRole('button',{name:'按需确认'});
+   expect((await api.call<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config).toEqual(expect.objectContaining({sandbox_mode:'workspace-write',approval_policy:'on-request'}));
+ });
+ it.each(['active','stopping','uncertain'])('keeps normal steering but fences %s resource state',async state=>{
+   const api=createDemoApi(),original=api.call.bind(api),data=await original<Workspace>('snapshot');
+   const selected=data.conversations.find(c=>c.mode==='manual')!;
+   const hold={run_id:'native-run',state,error:state==='uncertain'?'停止待核对':null};
+   const wrapped={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>{
+     const result=await original(method,params);
+     if(method==='snapshot')return {...result as Workspace,conversations:(result as Workspace).conversations.map(c=>c.id===selected.id?{...c,runtime_status:state==='active'?'running':state==='stopping'?'stopping':'failed',current_run_id:state==='uncertain'?null:'native-run',resource_hold:hold}:c)};
+     return result;
+   })} as typeof api;
+   const user=userEvent.setup();render(<ChatApp api={wrapped}/>);
+   if(state==='stopping')await user.click(await screen.findByRole('button',{name:/^阻塞/}));
+   await user.click(await screen.findByRole('button',{name:selected.title}));
+   await user.type(screen.getByRole('textbox',{name:'聊天输入'}),'补充范围');
+   if(state==='active'){expect(screen.getByRole('button',{name:'停止当前执行'})).toBeEnabled();fireEvent.keyDown(screen.getByRole('textbox',{name:'聊天输入'}),{key:'Enter'});await waitFor(()=>expect(wrapped.call).toHaveBeenCalledWith('send',expect.objectContaining({conversation_id:selected.id,text:'补充范围'})));}
+   else if(state==='stopping'){expect(screen.getByRole('button',{name:'停止当前执行'})).toBeDisabled();}
+   else {expect(screen.getByRole('button',{name:'发送消息'})).toBeDisabled();await user.click(screen.getByRole('button',{name:'已核对进程停止，解除占用'}));expect(wrapped.call).toHaveBeenCalledWith('release_resources',{conversation_id:selected.id,run_id:'native-run'});}
+ });
+ it('defaults a context-menu child to inherit its parent instead of the selected task project',async()=>{
+   const {api,user}=await tasksPage();
+   fireEvent.contextMenu(row('review'),{clientX:400,clientY:300});
+   await user.click(screen.getByRole('menuitem',{name:'添加子任务'}));
+   expect(screen.getByRole('combobox',{name:'默认项目 · 可选'})).toHaveTextContent('继承上级项目');
+   await user.type(screen.getByRole('textbox',{name:'标题'}),'继承项目的子任务');
+   await user.click(screen.getByRole('button',{name:'创建任务'}));
+   const data=await api.call<Workspace>('snapshot');
+   const child=data.tasks.find(t=>t.title==='继承项目的子任务')!;
+   expect(child.parent_id).toBe('review');
+   expect(child.project_id).toBeNull();
+ });
+ it('keeps exactly one start time field when switching delegated task inspectors',async()=>{
+   const base=createDemoApi(),user=userEvent.setup();
+   const api={...base,call:async<T,>(method:string,params?:Record<string,unknown>):Promise<T>=>{
+     const value=await base.call<T>(method,params);
+     if(method==='snapshot'){
+       const data=value as Workspace;
+       data.work_tasks=data.conversations.filter(c=>c.mode==='auto').map(c=>({task_id:c.task_id,title:c.title,status:'waiting',execution_status:'idle',revision:1,config:c.config,continuation_count:0,updated_at:c.updated_at}));
+     }
+     return value;
+   }};
+   render(<ChatApp api={api}/>);
+   await screen.findByText('隔离演示 · 不调用模型');
+   await user.click(screen.getByRole('button',{name:'任务'}));
+   await user.click(screen.getByRole('tab',{name:'属性与设置'}));
+   for(const id of ['contract','frontend','contract']){
+     await user.click(row(id));
+     expect(document.querySelectorAll('input[type="datetime-local"]')).toHaveLength(1);
+   }
+ });
+ it('shows the newly delegated automatic conversation without reopening its task',async()=>{
+   const api=createDemoApi(),user=userEvent.setup();
+   await api.call('create_task',{title:'自动执行可见性验收',project_id:'release'});
+   render(<ChatApp api={api}/>);
+   await screen.findByText('隔离演示 · 不调用模型');
+   await user.click(screen.getByRole('button',{name:'任务'}));
+   await user.click(within(screen.getByLabelText('任务侧栏')).getByRole('button',{name:'自动执行可见性验收'}));
+   await user.type(screen.getByRole('textbox',{name:'聊天输入'}),'保留这份草稿');
+   const attachment=new File(['证据内容'],'evidence.txt',{type:'text/plain'});
+   Object.defineProperty(attachment,'text',{value:async()=> '证据内容'});
+   await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement,attachment);
+   await screen.findByRole('button',{name:'移除 evidence.txt'});
+   await user.click(screen.getByRole('button',{name:'添加上下文或附件'}));
+   await user.click(screen.getByRole('button',{name:'导入任务上下文'}));
+   await user.click(await screen.findByRole('button',{name:'带入下一条消息'}));
+   await user.click(screen.getByRole('tab',{name:'属性与设置'}));
+   await user.click(screen.getByRole('button',{name:'委托给 Codex'}));
+   expect(await screen.findByRole('button',{name:'自动带入上下文'})).toBeInTheDocument();
+   expect(screen.getByRole('textbox',{name:'聊天输入'})).toHaveValue('保留这份草稿');
+   expect(screen.getByRole('button',{name:'移除 evidence.txt'})).toBeInTheDocument();
+   expect(screen.getByRole('button',{name:'移除任务上下文'})).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'新建本任务会话'}));
+   await waitFor(()=>expect(screen.queryByRole('button',{name:'自动带入上下文'})).not.toBeInTheDocument());
+ });
  it('defaults to chat without a configuration form',()=>{render(<ChatApp api={createDemoApi()}/>);expect(screen.getByRole('textbox',{name:'聊天输入'})).toBeInTheDocument();expect(screen.queryByRole('textbox',{name:'验收要求'})).not.toBeInTheDocument();});
  it('has two task columns and a permanent combined detail view',async()=>{await tasksPage();expect(tree().querySelector('.table-head')?.children).toHaveLength(2);expect(screen.getByRole('tab',{name:'上下文与结果'})).toHaveAttribute('aria-selected','true');expect(within(screen.getByLabelText('任务侧栏')).queryByText('release-console')).not.toBeInTheDocument();});
  it('opens dependencies from a task context menu, without rename or child pin actions',async()=>{const {user}=await tasksPage();fireEvent.contextMenu(row('frontend'),{clientX:400,clientY:300});const menu=screen.getByRole('menu',{name:'实现前端差异展示 任务菜单'});expect(within(menu).queryByText('重命名任务')).not.toBeInTheDocument();expect(within(menu).queryByText('置顶任务')).not.toBeInTheDocument();await user.click(within(menu).getByRole('menuitem',{name:'设置前置任务'}));const dialog=screen.getByRole('dialog',{name:'为「实现前端差异展示」设置前置任务'});expect(within(dialog).getByLabelText(/明确 Diff 接口契约/)).toBeChecked();expect(within(dialog).queryByText('整理本机运行说明')).not.toBeInTheDocument();expect(within(dialog).getByLabelText(/实现前端差异展示/)).toBeDisabled();});
@@ -34,18 +235,18 @@ describe('task-focused workspace',()=>{
    await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
    await user.click(screen.getByRole('button',{name:'全不选'}));
    await user.click(screen.getByLabelText('待办'));await user.click(screen.getByLabelText('进行中'));
-   await user.selectOptions(screen.getByRole('combobox',{name:'按更新时间筛选'}),'week');
+   await chooseOption(user,screen.getByRole('combobox',{name:'按更新时间筛选'}),'周视图 · 最近 7 天');
    await user.click(screen.getByRole('button',{name:'筛选任务项目'}));await user.click(screen.getByLabelText('release-console'));
    await user.click(screen.getByRole('button',{name:'筛选任务项目'}));
    await user.click(screen.getByRole('button',{name:'全部折叠'}));
    await user.click(screen.getByRole('button',{name:'设置'}));await user.click(screen.getByRole('button',{name:'任务'}));
    expect(screen.getByRole('button',{name:'筛选任务状态'})).toHaveTextContent('2 种状态');
-   expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveValue('week');
+   expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveTextContent('周视图 · 最近 7 天');
    expect(screen.getByRole('button',{name:'筛选任务项目'})).toHaveTextContent('1 个项目');
    expect(row('frontend')).not.toBeInTheDocument();
    await user.click(screen.getByRole('button',{name:'重置筛选'}));
    expect(row('frontend')).toBeInTheDocument();expect(row('review')).toBeInTheDocument();
-   expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveValue('all');
+   expect(screen.getByRole('combobox',{name:'按更新时间筛选'})).toHaveTextContent('全部更新时间');
  });
  it('expands and collapses filtered paths without discarding the query',async()=>{
    const {user}=await tasksPage();await user.type(screen.getByRole('textbox',{name:'搜索全局任务'}),'前端');

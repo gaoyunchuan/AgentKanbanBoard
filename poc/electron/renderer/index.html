@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Electron 浏览器 PoC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>会话</h1>
+    <div id="sessions"></div>
+    <p id="info"></p>
+  </aside>
+  <main>
+    <header id="toolbar">
+      <button id="back" aria-label="后退">←</button>
+      <button id="forward" aria-label="前进">→</button>
+      <button id="reload" aria-label="刷新">⟳</button>
+      <input id="address" placeholder="输入网址后回车" aria-label="浏览器地址">
+      <button id="open" aria-label="打开">打开</button>
+    </header>
+    <div id="status" role="status"></div>
+    <div id="stage"></div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

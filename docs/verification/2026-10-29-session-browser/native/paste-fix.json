@@ -1,0 +1,10 @@
+{
+  "captured": "2026-10-29T17:52+08:00",
+  "root_cause": "CDP Input.dispatchKeyEvent type=char 拒绝多字符text，agent-browser stream丢弃整条命令",
+  "before": { "pasted": "CuaClip验收", "remote_value": "", "page_events": ["pointerdown", "pointerup"] },
+  "after": [
+    { "pasted": "CuaClip验收", "remote_value": "CuaClip验收", "page_events": ["pointerdown", "pointerup", "input:insertText"] },
+    { "pasted": "表情😀与换行", "plus_enter": true, "remote_value": "表情😀与换行\n" }
+  ],
+  "direct_cdp_reference": "Input.dispatchKeyEvent {type:'char', text:'你hao'} => Invalid 'text' parameter; document.execCommand('insertText') inserts full text with one input event"
+}

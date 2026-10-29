@@ -1,0 +1,143 @@
+Window: "Codex Thread Kanban", App: Codex Thread Kanban.
+0 standard window Codex Thread Kanban, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Codex Thread Kanban, URL: tauri://localhost
+			3 button 切换侧栏
+			4 text AgentKanban
+			5 container 主导航
+				6 button 会话
+				7 button 任务
+				8 button 项目
+				9 button 需要你
+				10 button 设置
+				11 text 我
+			12 container 导航侧栏
+				13 text Codex
+				14 button 新聊天
+				15 button 新任务
+				16 text field (settable) 搜索会话
+				17 button (expanded) 置顶 0, Secondary Actions: Collapse
+				18 button (expanded) 活跃 2, Secondary Actions: Collapse
+				19 button 浏览器验收 A
+				20 button 浏览器验收 A 会话菜单
+				21 button 浏览器验收 B
+				22 button 浏览器验收 B 会话菜单
+				23 button (collapsed) 阻塞 0, Secondary Actions: Expand
+				24 button (collapsed) 完成 0, Secondary Actions: Expand
+				25 button 本机 Codex 已连接
+			26 container
+				27 button 浏览器验收 A
+				28 heading 浏览器验收 A, Value: 1
+					29 text 浏览器验收 A
+				30 button (collapsed) 切换本任务会话, Secondary Actions: Expand
+				31 button 新建本任务会话, Help: 新建本任务会话（不是子任务）
+				32 button 提取结果, Help: 提取当前会话结果并追加到任务
+				33 button 变更, Help: 本轮变更
+				34 button 文件与终端
+				35 button 侧边浏览器
+				36 button 任务详情
+				37 container 聊天会话
+					38 text 只用本会话 session_browser 工具完成隔离验收：先列出自己的页面，读取当前页面 #secret-marker 的文本，再点击 #text 输入框，回复该标记和当前 URL。不要调用其他工具，不访问其他浏览器，不修改文件。
+					39 text Codex
+					40 text 我会只用本会话的 session_browser：先列出页面，再读取标记、点击输入框，最后回复标记和当前 URL。
+					41 button 复制回答, Help: 复制内容
+					42 summary session_browser completed, Value: off
+						43 text session_browser
+						44 text completed
+					45 summary session_browser completed, Value: off
+						46 text session_browser
+						47 text completed
+					48 summary session_browser completed, Value: off
+						49 text session_browser
+						50 text completed
+					51 text Codex
+					52 container
+						53 text 标记： saved-56677ad7-cebe-47b7-a661-23262be7188c
+					54 container
+						55 text 当前 URL： http://host.docker.internal:53162/blue?marker=saved-56677ad7-cebe-47b7-a661-23262be7188c
+					56 container
+						57 text 已点击  #text  输入框。
+					58 button 复制回答, Help: 复制内容
+					59 text 只调用本会话 session_browser 的 act，action=get_value，selector=#text，返回原始值。用于核对我刚才在侧边浏览器粘贴的文本。不要改网页。
+					60 text Codex
+					61 container
+						62 text 我会只读取  #text  的当前值，不改动页面。
+					63 button 复制回答, Help: 复制内容
+					64 summary session_browser completed, Value: off
+						65 text session_browser
+						66 text completed
+					67 text Codex
+					68 text ""
+					69 button 复制回答, Help: 复制内容
+					70 text 执行升级恢复验收，仅用本会话 session_browser：先 snapshot，selector=#secret-marker，读取 DOM- 开头的真实标记（不要从 URL 推断）；再 act，action=evaluate，value=window.readStore()，读取 Cookie、localStorage、IndexedDB。回复原始值，不修改页面，不访问其他浏览器。
+					71 text Codex
+					72 container
+						73 text 我会按顺序读取 DOM 标记和  window.readStore()  的结果，并返回原始值，不改动页面。
+					74 button 复制回答, Help: 复制内容
+					75 summary session_browser completed, Value: off
+						76 text session_browser
+						77 text completed
+					78 summary session_browser completed, Value: off
+						79 text session_browser
+						80 text completed
+					81 text Codex
+					82 container
+						83 text json {
+  "marker": "DOM-97f55847-8266-4011-8d39-27514ce827fb",
+  "cookie": "probe=saved-56677ad7-cebe-47b7-a661-23262be7188c",
+  "idb": "saved-56677ad7-cebe-47b7-a661-23262be7188c",
+  "local": "saved-56677ad7-cebe-47b7-a661-23262be7188c"
+}
+					84 button 复制回答, Help: 复制内容
+					85 text 本轮结束
+					86 button (disabled) 浏览器隔离验证, Help: 真实会话目录已固定：/private/tmp/akb-browser-product-6e94ecf1/project
+					87 text 此计算机
+					88 text entry area (settable) 聊天输入, Value: [text entry area: 聊天输入], Placeholder: 随心输入
+						89 text 随心输入
+					90 button 添加上下文或附件
+					91 button 按需确认
+					92 button Codex 默认模型
+					93 button (disabled) 发送消息, Help: Enter 发送，Shift+Enter 换行
+					94 text 本轮结束不等于任务完成。
+				95 container 右侧工作区
+					96 splitter 调整右侧宽度, Value: 50
+					97 tab group (selectable) 右侧工具标签
+						98 tab (selectable) 任务详情
+						99 tab (selected) 浏览器
+						100 button 关闭浏览器标签
+						101 button 收起右侧工作区
+					102 container 侧边浏览器
+						103 text 侧边浏览器
+						104 text 实时连接
+						105 button 关闭浏览器保留登录状态, Help: 关闭浏览器，保留登录状态
+						106 button 浏览器后退
+						107 button 浏览器前进
+						108 button 刷新页面
+						109 text field (settable) 浏览器地址, Value: http://host.docker.internal:53162/typing, Placeholder: 网址或 http://localhost
+						110 tab group (selectable) 浏览器标签页
+							111 tab (selectable) host.docker.internal:53162/red?marker=saved-56677ad7-cebe-47b7-a661-23262be7188c, Help: http://host.docker.internal:53162/red?marker=saved-56677ad7-cebe-47b7-a661-23262be7188c
+							112 button 关闭网页 host.docker.internal:53162/red?marker=saved-56677ad7-cebe-47b7-a661-23262be7188c
+							113 tab (selected) host.docker.internal:53162/typing, Help: http://host.docker.internal:53162/typing
+							114 button 关闭网页 host.docker.internal:53162/typing
+							115 button 新建浏览器标签
+						116 container 远程浏览器画面，可点击并键盘输入
+							117 image 独立浏览器当前页面
+							118 text entry area (settable) 网页键盘输入, Value: [text entry area: 网页键盘输入]
+						119 text 你正在控制
+						120 button 交给 Agent
+						121 button 上传文件到网页, Help: 选择本机文件，上传到网页文件输入框
+						122 button 打开浏览器下载目录, Help: 打开当前会话的下载目录
+						123 button 重新连接浏览器画面, Help: 重新连接画面
+						124 text 状态随应用数据保存 · 关闭浏览器保留登录状态
+	125 close button
+	126 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	127 minimize button
+128 menu bar
+	129 Codex Thread Kanban
+	130 File
+	131 Edit
+	132 View
+	133 Window
+	134 Help
+
+The focused UI element is 118 text entry area (settable) 网页键盘输入, Value: [text entry area: 网页键盘输入]

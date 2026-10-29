@@ -31,6 +31,8 @@ export type StudioState = {
   openTask: (id: string) => void;
   openConversation: (id: string) => void;
   locateTask: (id: string) => void;
+  taskReveal: string | null;
+  completeTaskReveal: (id: string) => void;
   inspectTask: (id: string, panel?: Panel) => void;
   changeTaskState: (task: StudioTask, state: "todo" | "in_progress" | "completed" | "cancelled") => void;
   newConversation: (taskId: string) => Promise<void>;

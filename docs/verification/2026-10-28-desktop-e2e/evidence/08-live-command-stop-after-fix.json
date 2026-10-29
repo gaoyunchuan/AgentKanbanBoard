@@ -1,0 +1,70 @@
+{
+  "stable": true,
+  "samples": [
+    {
+      "time": 1793179626.3055098,
+      "bytes": 5775,
+      "holds": [],
+      "run": [
+        {
+          "id": "chat-run-96699-1793179584029268000-1",
+          "status": "interrupted",
+          "ended_at": "2026-10-28T09:26:58Z",
+          "error": null
+        }
+      ]
+    },
+    {
+      "time": 1793179626.811311,
+      "bytes": 5775,
+      "holds": [],
+      "run": [
+        {
+          "id": "chat-run-96699-1793179584029268000-1",
+          "status": "interrupted",
+          "ended_at": "2026-10-28T09:26:58Z",
+          "error": null
+        }
+      ]
+    },
+    {
+      "time": 1793179627.318502,
+      "bytes": 5775,
+      "holds": [],
+      "run": [
+        {
+          "id": "chat-run-96699-1793179584029268000-1",
+          "status": "interrupted",
+          "ended_at": "2026-10-28T09:26:58Z",
+          "error": null
+        }
+      ]
+    },
+    {
+      "time": 1793179627.8238878,
+      "bytes": 5775,
+      "holds": [],
+      "run": [
+        {
+          "id": "chat-run-96699-1793179584029268000-1",
+          "status": "interrupted",
+          "ended_at": "2026-10-28T09:26:58Z",
+          "error": null
+        }
+      ]
+    },
+    {
+      "time": 1793179628.329704,
+      "bytes": 5775,
+      "holds": [],
+      "run": [
+        {
+          "id": "chat-run-96699-1793179584029268000-1",
+          "status": "interrupted",
+          "ended_at": "2026-10-28T09:26:58Z",
+          "error": null
+        }
+      ]
+    }
+  ]
+}

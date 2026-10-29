@@ -1,0 +1,25 @@
+[
+  {
+    "policy": "on-request",
+    "thread_id": "01a18206-f1ab-7340-843c-d4b03647a292",
+    "requests": [
+      {
+        "method": "mcpServer/elicitation/request",
+        "mode": "form",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "tool_calls": 1,
+    "output": "我会调用一次权限检查，然后原样返回标记。\nPERMISSION-CHECK-OK"
+  },
+  {
+    "policy": "never",
+    "thread_id": "01a18207-2a14-7c52-bbd1-00524fb0f68a",
+    "requests": [],
+    "tool_calls": 1,
+    "output": "我会调用一次权限检查，并原样返回标记。\nPERMISSION-CHECK-OK"
+  }
+]

@@ -8,13 +8,16 @@ impl Scheduler {
                 snapshot["runtime"]=self.call("list",json!({}))?["runtime"].clone();
                 Ok(snapshot)
             }
+            "release_resources" => self.release_checked_resources(req(&value,"conversation_id")?,req(&value,"run_id")?),
             "settings" => self.repository.studio_settings(),
             "save_settings" => {
                 let paths = strings(&value,"excluded_project_dirs")?;
                 if let Some(expected)=value.get("expected_excluded_project_dirs") {
                     if expected != &json!(self.repository.project_exclusions()?) { return Err("设置已改变，请刷新后重试".into()); }
                 }
-                self.repository.save_project_exclusions(&paths)?;self.dirty=true;self.repository.studio_settings()
+                self.repository.save_project_exclusions(&paths)?;
+                if let Some(mode)=value.get("delegation_permission").and_then(Value::as_str) { self.repository.save_delegation_permission(mode)?; }
+                self.dirty=true;self.repository.studio_settings()
             }
             "detail" => self.repository.chat_detail(req(&value,"conversation_id")?),
             "browser_owner" => {
@@ -30,6 +33,10 @@ impl Scheduler {
                         self.repository.connection.execute("UPDATE work_tasks SET status='paused',wait_reason='stopping_sessions' WHERE task_id=?1",[&tid]).map_err(|e|e.to_string())?;
                     }
                     self.chat_request_change(&tid,"completed",json!({}))?;
+                }
+                if matches!(value["action"].as_str(),Some("rework"|"resume"|"retry")) {
+                    // 明确恢复或返工只重开自动主会话，历史人工会话继续归档。
+                    self.repository.connection.execute("UPDATE chat_conversations SET closed=0,revision=revision+1 WHERE task_id=?1 AND mode='auto'",[&tid]).map_err(|e|e.to_string())?;
                 }
                 Ok(response)
             }
@@ -77,7 +84,10 @@ impl Scheduler {
                 let task_id=req(&value,"task_id")?;
                 self.repository.chat_require_task(task_id)?;
                 let todo=self.repository.list_todo_tasks().map_err(|e|e.to_string())?.into_iter().find(|t|t.id==task_id).ok_or("任务不存在")?;
-                let mut config=self.repository.get_work_task(task_id)?.map(|w|w.config).unwrap_or_default();
+                let existing=self.repository.get_work_task(task_id)?.map(|w|w.config);
+                let mut config=existing.clone().unwrap_or_default();
+                // 默认权限只用于首次委托；已存在的执行配置保持原样，避免重委派时悄悄放宽权限。
+                if existing.is_none() { self.repository.apply_delegation_defaults(&mut config)?; }
                 if config.workspace.is_empty(){config.workspace=self.repository.chat_project_workspace(task_id)?;}
                 config.prompt=if todo.process_tracking.trim().is_empty(){todo.title.clone()}else{todo.process_tracking};
                 config.acceptance=value.get("acceptance").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).map(str::to_string).unwrap_or_else(||if config.acceptance.is_empty(){"完成当前任务要求；明确说明实际验证与尚未完成事项，保留可核对的产物。".into()}else{config.acceptance.clone()});
@@ -206,7 +216,7 @@ impl Scheduler {
         }
     }
     fn chat_task_busy(&self,tid:&str)->Result<bool,String>{
-        if self.live.contains_key(tid){return Ok(true)}
+        if self.live.contains_key(tid)||self.repository.task_resources_pending(tid)?{return Ok(true)}
         for c in self.repository.chat_conversations()?.into_iter().filter(|c|c.task_id==tid){
             if self.live.contains_key(&format!("chat:{}",c.id))||self.repository.chat_active_run(&c.id)?.is_some_and(|r|self.live.contains_key(&format!("extract:{}",r.id))){return Ok(true)}
         }
@@ -220,6 +230,7 @@ impl Scheduler {
                 self.repository.connection.execute("UPDATE chat_requests SET status='expired' WHERE run_id=?1 AND status='pending'",[&run.id]).map_err(|e|e.to_string())?;
                 self.repository.connection.execute("UPDATE chat_conversations SET runtime_status='stopping' WHERE id=?1 AND current_run_id=?2",rusqlite::params![cid,run.id]).map_err(|e|e.to_string())?;
                 let key=if run.kind=="extract"{format!("extract:{}",run.id)}else{format!("chat:{cid}")};
+                self.mark_native_stop(&key,&run.id)?;
                 self.stop_deadlines.insert(key.clone(),(run.id.clone(),Instant::now()+Duration::from_secs(15)));
                 if let Some(rt)=&self.runtime {if let Err(e)=rt.interrupt(&key,&run.id){rt.shutdown();self.runtime_error=Some(e);}}
             }
@@ -256,7 +267,9 @@ impl Scheduler {
                 if kind=="reopen" || kind=="todo" || kind=="in_progress" {
                     let previous: String=transaction.query_row("SELECT status FROM todo_tasks WHERE id=?1",[&tid],|r|r.get(0)).map_err(|e|e.to_string())?;
                     transaction.execute("UPDATE todo_tasks SET status=?3,actual_end_date=NULL,updated_at=?2,activity_at=?2 WHERE id=?1",rusqlite::params![tid,now,if kind=="in_progress" {"in_progress"} else {"todo"}]).map_err(|e|e.to_string())?;
-                    transaction.execute("UPDATE work_tasks SET status=?2,wait_reason=CASE WHEN ?2='paused' THEN 'user' ELSE NULL END,last_error=NULL,continuation_count=0,result_summary=NULL,generation=generation+1,revision=revision+1 WHERE task_id=?1",rusqlite::params![tid,"queued"]).map_err(|e|e.to_string())?;
+                    // 改回待办表示暂停；只有明确恢复或改为进行中才允许再次调度。
+                    let work_status=if kind=="todo" {"paused"} else {"queued"};
+                    transaction.execute("UPDATE work_tasks SET status=?2,wait_reason=CASE WHEN ?2='paused' THEN 'user' ELSE NULL END,last_error=NULL,continuation_count=0,result_summary=NULL,generation=generation+1,revision=revision+1 WHERE task_id=?1",rusqlite::params![tid,work_status]).map_err(|e|e.to_string())?;
                     if ["completed","cancelled"].contains(&previous.as_str()) { transaction.execute("UPDATE task_results SET usable=0,error=COALESCE(error,'任务重新打开：保留为历史结果') WHERE task_id=?1",[&tid]).map_err(|e|e.to_string())?; }
                     transaction.execute("UPDATE chat_conversations SET closed=0 WHERE id=COALESCE((SELECT id FROM chat_conversations WHERE task_id=?1 AND mode='auto'),(SELECT id FROM chat_conversations WHERE task_id=?1 ORDER BY created_at LIMIT 1))",[&tid]).map_err(|e|e.to_string())?;
                 } else {

@@ -1,0 +1,50 @@
+Window: "Codex Thread Kanban", App: Codex Thread Kanban.
+0 standard window Codex Thread Kanban, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Codex Thread Kanban, URL: tauri://localhost
+			3 button 切换侧栏
+			4 text AgentKanban
+			5 container 主导航
+				6 button 会话
+				7 button 任务
+				8 button 项目
+				9 button 需要你
+				10 button 设置
+				11 text 我
+			12 container 导航侧栏
+				13 text Codex
+				14 button 新聊天
+				15 button 新任务
+				16 text field (settable) 搜索会话
+				17 button (expanded) 置顶 0, Secondary Actions: Collapse
+				18 button (expanded) 活跃 0, Secondary Actions: Collapse
+				19 button (collapsed) 阻塞 0, Secondary Actions: Expand
+				20 button (collapsed) 完成 0, Secondary Actions: Expand
+				21 button 本机 Codex 已连接
+			22 container 聊天会话
+				23 heading 你想让我们在 哪个项目 中构建什么？, Value: 2
+					24 text 你想让我们在 
+					25 button 哪个项目
+					26 text  中构建什么？
+				27 text 直接聊天。任务属性和结果在右侧按需打开。
+				28 button 选择项目, Help: 选择会话项目
+				29 text 此计算机
+				30 text entry area (settable) 聊天输入, Value: [text entry area: 聊天输入], Placeholder: 随心输入
+					31 text (settable) 你hao
+				32 button 添加上下文或附件
+				33 button 按需确认
+				34 button Codex 默认模型
+				35 button 发送消息, Help: Enter 发送，Shift+Enter 换行
+				36 text 发送后才创建真实 Codex 会话。
+	37 close button
+	38 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	39 minimize button
+40 menu bar
+	41 Codex Kanban Composer Test
+	42 File
+	43 Edit
+	44 View
+	45 Window
+	46 Help
+
+The focused UI element is 30 text entry area (settable) 聊天输入, Value: [text entry area: 聊天输入], Placeholder: 随心输入

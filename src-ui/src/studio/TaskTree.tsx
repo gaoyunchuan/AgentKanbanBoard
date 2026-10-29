@@ -6,7 +6,7 @@ import { ancestors, flattenedTasks, taskConversations, taskLabel, type StudioTas
 import { HoverInfo } from './components';
 import { StatusIcon } from './TaskStatusIcon';
 import { TaskFilters } from './TaskFilterBar';
-import { queryTasks } from './taskFilters';
+import { queryTasks, TASK_PAGE_SIZE } from './taskFilters';
 
 type Menu = { task: StudioTask; x: number; y: number; status?: boolean };
 export function TaskMenu({ menu, close }: { menu: Menu; close: () => void }) {
@@ -40,13 +40,26 @@ export function TaskTree() {
   const pageRef=useRef<HTMLElement>(null), [now,setNow]=useState(Date.now);
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer)},[]);
   const [menu,setMenu] = useState<Menu>();
+  const [revealedTask,setRevealedTask]=useState<string>();
   const [editing,setEditing] = useState<{id:string; text:string; original:string}>();
   const editingRef=useRef(editing);editingRef.current=editing;
   const editInput = useRef<HTMLInputElement>(null), clickTimer=useRef<ReturnType<typeof setTimeout>>();
   const editLock = useRef(false), indented = useRef<string>(), mounted=useRef(true);
-  const {rows, matched}=useMemo(()=>queryTasks(s.data.tasks,s.taskQuery,now),[s.data.tasks,s.taskQuery,now]);
-  const lastPage=Math.max(0,Math.ceil(rows.length/200)-1), currentPage=Math.min(page,lastPage);
+  // 数据或筛选更新时使用当下时间；30秒 tick 只负责自然过期，不能把新任务当成未来数据。
+  const {rows, matched}=useMemo(()=>queryTasks(s.data.tasks,s.taskQuery,Date.now()),[s.data.tasks,s.taskQuery,now]);
+  const lastPage=Math.max(0,Math.ceil(rows.length/TASK_PAGE_SIZE)-1), currentPage=Math.min(page,lastPage);
   useLayoutEffect(()=>{if(pageRef.current)pageRef.current.scrollTop=s.taskQuery.scroll;},[s.taskQuery.scroll]);
+  useEffect(()=>{
+    const id=s.taskReveal;if(!id)return;
+    // 弹窗先恢复原入口焦点，再定位新行；请求消费后轮询不会再次抢滚动或焦点。
+    const frame=requestAnimationFrame(()=>{
+      const target=Array.from(pageRef.current?.querySelectorAll<HTMLElement>('[data-task-row]')??[]).find(row=>row.dataset.taskRow===id);
+      if(!target)return;
+      target.scrollIntoView({block:'center',inline:'nearest'});target.focus({preventScroll:true});
+      setRevealedTask(id);s.completeTaskReveal(id);
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[s.taskReveal,s.completeTaskReveal,currentPage,rows]);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;clearTimeout(clickTimer.current)}},[]);
   useEffect(()=>{if(editing){editInput.current?.focus();editInput.current?.select()}},[editing?.id]);
   const edit = (t:StudioTask) => {clearTimeout(clickTimer.current);indented.current=undefined;s.inspectTask(t.id);setEditing({id:t.id,text:t.title,original:t.title})};
@@ -92,7 +105,7 @@ export function TaskTree() {
     <div className="page-header"><div><h2>全部任务</h2><p>单击名称打开会话，双击编辑；单击行空白联动详情。右键设置任务或状态。</p></div></div>
     <TaskFilters/>
     <div className="table-head"><span>任务</span><span>关联会话</span></div>
-    {rows.slice(currentPage*200,(currentPage+1)*200).map(({task:t,depth,contextOnly})=><div key={t.id} data-task-row={t.id} className={`task-row ${depth?'child':''} ${contextOnly?'context-only':''} ${t.id===s.task?.id?'highlight':''} ${!t.parent_id&&t.pinned?'root-pinned':''}`} onClick={()=>s.inspectTask(t.id)} onContextMenu={e=>openMenu(e,t)} onKeyDown={e=>{if(e.key==='F10'&&e.shiftKey){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();setMenu({task:t,x:r.left+30,y:r.top+20})}}}>
+    {rows.slice(currentPage*TASK_PAGE_SIZE,(currentPage+1)*TASK_PAGE_SIZE).map(({task:t,depth,contextOnly})=><div key={t.id} data-task-row={t.id} tabIndex={-1} className={`task-row ${depth?'child':''} ${contextOnly?'context-only':''} ${t.id===s.task?.id?'highlight':''} ${t.id===revealedTask?'revealed-task':''} ${!t.parent_id&&t.pinned?'root-pinned':''}`} onClick={()=>s.inspectTask(t.id)} onContextMenu={e=>openMenu(e,t)} onKeyDown={e=>{if(e.key==='F10'&&e.shiftKey){e.preventDefault();const r=e.currentTarget.getBoundingClientRect();setMenu({task:t,x:r.left+30,y:r.top+20})}}}>
       <div className="task-title" style={{paddingLeft:depth*17}}>
         <button className="collapse" aria-label={`${collapsed.has(t.id)?'展开':'折叠'} ${t.title}`} disabled={!s.data.tasks.some(x=>x.parent_id===t.id)} onClick={e=>{e.stopPropagation();setCollapsed(current=>{const next=new Set(current);if(next.has(t.id))next.delete(t.id);else next.add(t.id);return next})}}>{s.data.tasks.some(x=>x.parent_id===t.id)?collapsed.has(t.id)?<ChevronRight size={13}/>:<ChevronDown size={13}/>:<span className="tree-spacer"/>}</button>
         <button className="task-status-control" aria-label={`${t.title}：${taskLabel(t)}，点击完成，右键改状态`} title="点击完成 · 右键设置状态" onClick={e=>{e.stopPropagation();if(t.status!=='completed')s.changeTaskState(t,'completed')}} onContextMenu={e=>openMenu(e,t,true)}><StatusIcon status={t.status} blocked={Boolean(t.missing_dependencies.length)}/></button>

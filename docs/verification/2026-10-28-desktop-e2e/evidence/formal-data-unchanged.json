@@ -1,0 +1,27 @@
+{
+  "todo_tasks": {
+    "rows_before": 319,
+    "rows_now": 319,
+    "content_equal": true
+  },
+  "work_tasks": {
+    "rows_before": 2,
+    "rows_now": 2,
+    "content_equal": true
+  },
+  "chat_conversations": {
+    "rows_before": 4,
+    "rows_now": 4,
+    "content_equal": true
+  },
+  "task_results": {
+    "rows_before": 0,
+    "rows_now": 0,
+    "content_equal": true
+  },
+  "chat_runs": {
+    "rows_before": 2,
+    "rows_now": 2,
+    "content_equal": true
+  }
+}

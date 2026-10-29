@@ -1,0 +1,629 @@
+Window: "Codex Thread Kanban", App: Codex Kanban Task Reveal Test.
+0 standard window Codex Thread Kanban, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Codex Thread Kanban, URL: tauri://localhost
+			3 button 切换侧栏
+			4 text AgentKanban
+			5 container 主导航
+				6 button 会话
+				7 button 任务
+				8 button 项目
+				9 button 需要你
+				10 button 设置
+				11 text 我
+			12 container 任务侧栏 (showing 0-100 of 329 items)
+				13 text 任务
+				14 button 新聊天
+				15 button 新任务
+				16 button 全部任务树 320
+				17 text field (settable) 搜索左侧任务
+				18 button (expanded) 置顶 6, Secondary Actions: Collapse
+				19 button 运维系统：GPU机器处理流程细化： 交付前、维修后元数据变更、整机虚机能否重启物理机。
+				20 button tx CPU故障事件未告警问题
+				21 button agentgrid计费
+				22 button scheduled-eveents 实例恢复接口支持本地盘弃盘迁移
+				23 button 云助手支持拉取文件到中心
+				24 button 实例可用性指标治理
+				25 button (expanded) 活跃 33, Secondary Actions: Collapse
+				26 button 异构机器，基研发送的故障，该怎么处理？需要有个结论。
+				27 button GPU机器处理流程细化，提供规范流程与接口
+				28 button 扩容系统流程
+				29 button 存量节点治理
+				30 button 用户可以主动发起强制恢复
+				31 button 质量链路验证
+				32 button 计费功能开发
+				33 button 交付前、维修后元数据变更
+				34 button 框架
+				35 button 禁用节点治理
+				36 button JKE指标提供完成，业务方Joybuilder进行验收
+				37 button 热迁失败后产品处理策略： 需要执行强制恢复
+				38 button 一些机器没有装host-probe
+				39 button GPU虚机如果是整机，是否可以重启物理机
+				40 button GPU机器维修流程
+				41 button 各个模块儿的评审
+				42 button 计费生产切换topic
+				43 button 本地盘的gpu资源是可以被自动强制恢复
+				44 button 开发
+				45 button 集成联调
+				46 button 上线
+				47 button 管理IP可达性探测—1天一次就行，需求方：志伟
+				48 button 异构实现带外探测 from 方文奇
+				49 button scale，异常节点运维接口，直接做故障恢复
+				50 button GPU运维流程梳理，目标是全部走系统
+				51 button NetworkLinkUpEth1 需要配置告警
+				52 button 爱诗POC JKE指标改进提升
+				53 button BMC不通告警，异构BMC故障居多
+				54 button 支持本地系统盘的探测和故障恢复 https://joyspace.jd.com/pages/dEO1uHhUjFjOyEm6vQ9n
+				55 button MM
+				56 button 日常任务
+				57 button 运维系统--授权流程可观测
+				58 button E2E-新建后留在任务树
+				59 button (collapsed) 阻塞 1, Secondary Actions: Expand
+				60 button (expanded) 完成 280, Secondary Actions: Collapse
+				61 button 顺便修复了东南亚crash不生效问题
+				62 button 产品评审
+				63 button OTEL服务部署
+				64 button agentgrid可观测性0-产品功能文档
+				65 button openllmetry 未严格遵循gen_ai 标签名称。 虽然能正常展示调用链，但是调用链的SPAN没有被打标成gen_ai的span，也就没办法高亮了
+				66 button 方案确认： 大数据账号的故障事件直接提工单
+				67 button 指标梳理
+				68 button 本地构建发布
+				69 button 自动构建镜像
+				70 button agent-grid-python: simple app
+				71 button host-stat 是因为dataIP 不通，导致全部主机被禁用 --> 找亚林加路由
+				72 button 服务部署
+				73 button 数据留存多长时间： 期望永久
+				74 button 胡柳说17点反馈排期，周三前如果无法完成，就需要升级老板给推动了
+				75 button 运维流程自动化 -> ops页面：资源 + metric 创建 运维计划
+				76 button 支持提报工单
+				77 button 云助手 线上域名申请与配置
+				78 button 申请的七层、4层都不行，得找基研确认下原因
+				79 button 管控Agent上线
+				80 button 原因：nexus内场账号 这个账号下的GPU实例是本地盘，计划迁移前置校验失败，自动避免。从而不断生成脏数据。
+				81 button 临时方案： 直接 jvirt-metrics-alertmanager 中排除这个账号
+				82 button 参考 [边缘可用区](https://www.notion.so/28805abab81a802f9073fe62811bba83?pvs=21) 建设 11.199.140.75 11.199.140.73 11.199.140.74
+				83 button 监控日志trace现状
+				84 button 有一套基础的lib库，已经提供了通用的指标库
+				85 button host-stat改造
+				86 button 上线
+				87 button http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-baab3dd4be09c88f6&moduleRefId=module-km58rnwiuw
+				88 button feautre
+				89 button ~~梳理历史逻辑，和金龙确认原来的设计~~
+				90 button 目前采用了整机冷迁。 L20这个情况其实都是占用的整机。 所以可以满足本次的需求。
+				91 button hostPowerOn一直失败。 因为配置的host_manager 这个服务的地址是不可达的 172.19.16.86:11123。 需要换成什么？
+				92 button scheduled-events支持冷迁接口
+				93 button 支持抢夺优先级
+				94 button 华北：GPU故障事件链路验证
+				95 button 虚机 i-mg8184whqh 验证故障注入
+				96 button scheduled-events 现在的职责逐步增加，需要复用failover的能力越来越多（alert、 屏蔽、 coldMigrate， hpc的reboot、repair）
+				97 button crash演练
+				98 button create webterminal session ， region 参数放到 url中
+				99 button LocalDiskFailure.Fault 只有在探测源是sli， 且故障次数达到了4次的情况下，才会发送云事件
+				100 button 草稿 https://joyspace.jd.com/pages/ywiFKV7WofhDeKE8D2KD
+				101 button sre confirm 可能会很多 → 告警切换到failover，以复用现在的屏蔽能力 January 15, 2026
+				102 button recover 流程。 自测完成了。 但是 RecoverInstanceDryRun 是本地mock的，写死的false， 相当于recover现在永远不会启用。 January 15, 2026
+				103 button 配合配置GPU聚合任务
+				104 button 需要运维人工确认的故障类型，系统不会自动创建事件，走后台人工创建
+				105 button 计费评审
+				106 button 服务部署
+				107 button 问题修复上线，通知亚林
+				108 button 扫出来一批时间很长的机器，先分析原因清理一波： 加庆跟进中
+				109 button Scheduled-events: 支持按照host_ip拉取故障起始时间
+				110 button 线上演练
+				111 button 删除事件不需要补sli
+				112 button 预发环境建设
+			113 container
+				114 heading 任务, Value: 1
+					115 text 任务
+				116 button 已删除
+				117 button 新建任务
+				118 container 全局任务树 (showing 42-142 of 142 items)
+					119 container
+						120 button 折叠 原因：nexus内场账号 这个账号下的GPU实例是本地盘，计划迁移前置校验失败，自动避免。从而不断生成脏数据。
+						121 button 原因：nexus内场账号 这个账号下的GPU实例是本地盘，计划迁移前置校验失败，自动避免。从而不断生成脏数据。：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						122 button 原因：nexus内场账号 这个账号下的GPU实例是本地盘，计划迁移前置校验失败，自动避免。从而不断生成脏数据。
+						123 text 尚无会话
+						124 button (disabled) 为 原因：nexus内场账号 这个账号下的GPU实例是本地盘，计划迁移前置校验失败，自动避免。从而不断生成脏数据。 新建会话, Help: 新建同任务会话
+					125 container
+						126 button 临时方案： 直接 jvirt-metrics-alertmanager 中排除这个账号：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						127 button 临时方案： 直接 jvirt-metrics-alertmanager 中排除这个账号
+						128 text 尚无会话
+						129 button (disabled) 为 临时方案： 直接 jvirt-metrics-alertmanager 中排除这个账号 新建会话, Help: 新建同任务会话
+					130 container
+						131 button 与 田源 确认，后续仍然会有本地盘的GPU机器， 所以仍需一个正式方案来避免本地盘GPU机器生成运维计划：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						132 button 与 田源 确认，后续仍然会有本地盘的GPU机器， 所以仍需一个正式方案来避免本地盘GPU机器生成运维计划
+						133 text 尚无会话
+						134 button (disabled) 为 与 田源 确认，后续仍然会有本地盘的GPU机器， 所以仍需一个正式方案来避免本地盘GPU机器生成运维计划 新建会话, Help: 新建同任务会话
+					135 container
+						136 button 折叠 江苏南京机房建设
+						137 button 江苏南京机房建设：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						138 button 江苏南京机房建设
+						139 text 尚无会话
+						140 button (disabled) 为 江苏南京机房建设 新建会话, Help: 新建同任务会话
+					141 container
+						142 button Help: 点击完成 · 右键设置状态, 参考 [边缘可用区](https://www.notion.so/28805abab81a802f9073fe62811bba83?pvs=21) 建设 11.199.140.75 11.199.140.73 11.199.140.74：已完成，点击完成，右键改状态
+						143 button 参考 [边缘可用区](https://www.notion.so/28805abab81a802f9073fe62811bba83?pvs=21) 建设 11.199.140.75 11.199.140.73 11.199.140.74
+						144 text 尚无会话
+						145 button (disabled) Help: 新建同任务会话, 为 参考 [边缘可用区](https://www.notion.so/28805abab81a802f9073fe62811bba83?pvs=21) 建设 11.199.140.75 11.199.140.73 11.199.140.74 新建会话
+					146 container
+						147 button 折叠 系统现状与基研运维系统的对接
+						148 button 系统现状与基研运维系统的对接：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						149 button 系统现状与基研运维系统的对接
+						150 text 尚无会话
+						151 button (disabled) 为 系统现状与基研运维系统的对接 新建会话, Help: 新建同任务会话
+					152 container
+						153 button 折叠 监控日志trace现状
+						154 button 监控日志trace现状：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						155 button 监控日志trace现状
+						156 text 尚无会话
+						157 button (disabled) 为 监控日志trace现状 新建会话, Help: 新建同任务会话
+					158 container
+						159 button 有一套基础的lib库，已经提供了通用的指标库：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						160 button 有一套基础的lib库，已经提供了通用的指标库
+						161 text 尚无会话
+						162 button (disabled) 为 有一套基础的lib库，已经提供了通用的指标库 新建会话, Help: 新建同任务会话
+					163 container
+						164 button GPU在failover里面应该有独立的一套标识，其故障熔断也需要和CPU机器区分开来。：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						165 button GPU在failover里面应该有独立的一套标识，其故障熔断也需要和CPU机器区分开来。
+						166 text 尚无会话
+						167 button (disabled) 为 GPU在failover里面应该有独立的一套标识，其故障熔断也需要和CPU机器区分开来。 新建会话, Help: 新建同任务会话
+					168 container
+						169 button 云助手模糊查询超时,前端只等待10s：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						170 button 云助手模糊查询超时,前端只等待10s
+						171 text 尚无会话
+						172 button (disabled) 为 云助手模糊查询超时,前端只等待10s 新建会话, Help: 新建同任务会话
+					173 container
+						174 button 折叠 problem_gauge 支持
+						175 button problem_gauge 支持：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						176 button problem_gauge 支持
+						177 text 尚无会话
+						178 button (disabled) 为 problem_gauge 支持 新建会话, Help: 新建同任务会话
+					179 container
+						180 button 折叠 host-stat改造
+						181 button host-stat改造：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						182 button host-stat改造
+						183 text 尚无会话
+						184 button (disabled) 为 host-stat改造 新建会话, Help: 新建同任务会话
+					185 container
+						186 button 折叠 上线
+						187 button 上线：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						188 button 上线
+						189 text 尚无会话
+						190 button (disabled) 为 上线 新建会话, Help: 新建同任务会话
+					191 container
+						192 button Help: 点击完成 · 右键设置状态, http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-baab3dd4be09c88f6&moduleRefId=module-km58rnwiuw：已完成，点击完成，右键改状态
+						193 button http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-baab3dd4be09c88f6&moduleRefId=module-km58rnwiuw
+						194 text 尚无会话
+						195 button (disabled) Help: 新建同任务会话, 为 http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-baab3dd4be09c88f6&moduleRefId=module-km58rnwiuw 新建会话
+					196 container
+						197 button Help: 点击完成 · 右键设置状态, http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-aaae09523288eb3d3&moduleRefId=module-6sf1zz62og：已完成，点击完成，右键改状态
+						198 button http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-aaae09523288eb3d3&moduleRefId=module-6sf1zz62og
+						199 text 尚无会话
+						200 button (disabled) Help: 新建同任务会话, 为 http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-aaae09523288eb3d3&moduleRefId=module-6sf1zz62og 新建会话
+					201 container
+						202 button Help: 点击完成 · 右键设置状态, http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-7b418ecbb37767214&moduleRefId=module-gk0mkh6orn：已完成，点击完成，右键改状态
+						203 button http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-7b418ecbb37767214&moduleRefId=module-gk0mkh6orn
+						204 text 尚无会话
+						205 button (disabled) Help: 新建同任务会话, 为 http://mate-service.jcloud.com/lineManagement/taskDetail?type=detail&id=wf-7b418ecbb37767214&moduleRefId=module-gk0mkh6orn 新建会话
+					206 container
+						207 button 和飞哥联调：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						208 button 和飞哥联调
+						209 text 尚无会话
+						210 button (disabled) 为 和飞哥联调 新建会话, Help: 新建同任务会话
+					211 container
+						212 button 折叠 GPU云主机：授权、冷迁接口 → https://joyspace.jd.com/pages/fHRA95Au188lVM0pQrm1
+						213 button GPU云主机：授权、冷迁接口 → https://joyspace.jd.com/pages/fHRA95Au188lVM0pQrm1：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						214 button GPU云主机：授权、冷迁接口 → https://joyspace.jd.com/pages/fHRA95Au188lVM0pQrm1
+						215 text 尚无会话
+						216 button (disabled) 为 GPU云主机：授权、冷迁接口 → https://joyspace.jd.com/pages/fHRA95Au188lVM0pQrm1 新建会话, Help: 新建同任务会话
+					217 container
+						218 button 折叠 feautre
+						219 button feautre：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						220 button feautre
+						221 text 尚无会话
+						222 button (disabled) 为 feautre 新建会话, Help: 新建同任务会话
+					223 container
+						224 button ~~梳理历史逻辑，和金龙确认原来的设计~~：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						225 button ~~梳理历史逻辑，和金龙确认原来的设计~~
+						226 text 尚无会话
+						227 button (disabled) 为 ~~梳理历史逻辑，和金龙确认原来的设计~~ 新建会话, Help: 新建同任务会话
+					228 container
+						229 button scheduled-events支持授权：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						230 button scheduled-events支持授权
+						231 text 尚无会话
+						232 button (disabled) 为 scheduled-events支持授权 新建会话, Help: 新建同任务会话
+					233 container
+						234 button captain 需要把事件类型改为 Maintenance：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						235 button captain 需要把事件类型改为 Maintenance
+						236 text 尚无会话
+						237 button (disabled) 为 captain 需要把事件类型改为 Maintenance 新建会话, Help: 新建同任务会话
+					238 container
+						239 button 折叠 failover支持冷迁:
+						240 button failover支持冷迁:：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						241 button failover支持冷迁:
+						242 text 尚无会话
+						243 button (disabled) 为 failover支持冷迁: 新建会话, Help: 新建同任务会话
+					244 container
+						245 button 折叠 目前采用了整机冷迁。 L20这个情况其实都是占用的整机。 所以可以满足本次的需求。
+						246 button 目前采用了整机冷迁。 L20这个情况其实都是占用的整机。 所以可以满足本次的需求。：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						247 button 目前采用了整机冷迁。 L20这个情况其实都是占用的整机。 所以可以满足本次的需求。
+						248 text 尚无会话
+						249 button (disabled) 为 目前采用了整机冷迁。 L20这个情况其实都是占用的整机。 所以可以满足本次的需求。 新建会话, Help: 新建同任务会话
+					250 container
+						251 button hostPowerOn一直失败。 因为配置的host_manager 这个服务的地址是不可达的 172.19.16.86:11123。 需要换成什么？：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						252 button hostPowerOn一直失败。 因为配置的host_manager 这个服务的地址是不可达的 172.19.16.86:11123。 需要换成什么？
+						253 text 尚无会话
+						254 button (disabled) 为 hostPowerOn一直失败。 因为配置的host_manager 这个服务的地址是不可达的 172.19.16.86:11123。 需要换成什么？ 新建会话, Help: 新建同任务会话
+					255 container
+						256 button hostPowerOn是已废弃的服务，改为使用Recover接口。：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						257 button hostPowerOn是已废弃的服务，改为使用Recover接口。
+						258 text 尚无会话
+						259 button (disabled) 为 hostPowerOn是已废弃的服务，改为使用Recover接口。 新建会话, Help: 新建同任务会话
+					260 container
+						261 button 后续需要支持实例级别的冷迁。 但是物理机何时disable需要梳理。 理清这块儿的机制：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						262 button 后续需要支持实例级别的冷迁。 但是物理机何时disable需要梳理。 理清这块儿的机制
+						263 text 尚无会话
+						264 button (disabled) 为 后续需要支持实例级别的冷迁。 但是物理机何时disable需要梳理。 理清这块儿的机制 新建会话, Help: 新建同任务会话
+					265 container
+						266 button 折叠 api-mp 支持冷迁接口
+						267 button api-mp 支持冷迁接口：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						268 button api-mp 支持冷迁接口
+						269 text 尚无会话
+						270 button (disabled) 为 api-mp 支持冷迁接口 新建会话, Help: 新建同任务会话
+					271 container
+						272 button 折叠 scheduled-events支持冷迁接口
+						273 button scheduled-events支持冷迁接口：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						274 button scheduled-events支持冷迁接口
+						275 text 尚无会话
+						276 button (disabled) 为 scheduled-events支持冷迁接口 新建会话, Help: 新建同任务会话
+					277 container
+						278 button 支持抢夺优先级：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						279 button 支持抢夺优先级
+						280 text 尚无会话
+						281 button (disabled) 为 支持抢夺优先级 新建会话, Help: 新建同任务会话
+					282 container
+						283 button 对外发布接口：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						284 button 对外发布接口
+						285 text 尚无会话
+						286 button (disabled) 为 对外发布接口 新建会话, Help: 新建同任务会话
+					287 container
+						288 button scheduled-events: 故障通知， 按产品要求每个环节都得发送：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						289 button scheduled-events: 故障通知， 按产品要求每个环节都得发送
+						290 text 尚无会话
+						291 button (disabled) 为 scheduled-events: 故障通知， 按产品要求每个环节都得发送 新建会话, Help: 新建同任务会话
+					292 container
+						293 button scheduled-events: failover层任务失败时，任务状态是不是也是失败？：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						294 button scheduled-events: failover层任务失败时，任务状态是不是也是失败？
+						295 text 尚无会话
+						296 button (disabled) 为 scheduled-events: failover层任务失败时，任务状态是不是也是失败？ 新建会话, Help: 新建同任务会话
+					297 container
+						298 button hang住的情况也要验证到：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						299 button hang住的情况也要验证到
+						300 text 尚无会话
+						301 button (disabled) 为 hang住的情况也要验证到 新建会话, Help: 新建同任务会话
+					302 container
+						303 button 折叠 线上演练
+						304 button 线上演练：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						305 button 线上演练
+						306 text 尚无会话
+						307 button (disabled) 为 线上演练 新建会话, Help: 新建同任务会话
+					308 container
+						309 button 折叠 华北：GPU故障事件链路验证
+						310 button 华北：GPU故障事件链路验证：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						311 button 华北：GPU故障事件链路验证
+						312 text 尚无会话
+						313 button (disabled) 为 华北：GPU故障事件链路验证 新建会话, Help: 新建同任务会话
+					314 container
+						315 button 虚机 i-mg8184whqh 验证故障注入：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						316 button 虚机 i-mg8184whqh 验证故障注入
+						317 text 尚无会话
+						318 button (disabled) 为 虚机 i-mg8184whqh 验证故障注入 新建会话, Help: 新建同任务会话
+					319 container
+						320 button 虚机 → tsdb → vmalert → captain → scheduled-events → failover 链路验证：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						321 button 虚机 → tsdb → vmalert → captain → scheduled-events → failover 链路验证
+						322 text 尚无会话
+						323 button (disabled) 为 虚机 → tsdb → vmalert → captain → scheduled-events → failover 链路验证 新建会话, Help: 新建同任务会话
+					324 container
+						325 button 折叠 为什么改造这么费劲？
+						326 button 为什么改造这么费劲？：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						327 button 为什么改造这么费劲？
+						328 text 尚无会话
+						329 button (disabled) 为 为什么改造这么费劲？ 新建会话, Help: 新建同任务会话
+					330 container
+						331 button Help: 点击完成 · 右键设置状态, scheduled-events 现在的职责逐步增加，需要复用failover的能力越来越多（alert、 屏蔽、 coldMigrate， hpc的reboot、repair）：已完成，点击完成，右键改状态
+						332 button scheduled-events 现在的职责逐步增加，需要复用failover的能力越来越多（alert、 屏蔽、 coldMigrate， hpc的reboot、repair）
+						333 text 尚无会话
+						334 button (disabled) 为 scheduled-events 现在的职责逐步增加，需要复用failover的能力越来越多（alert、 屏蔽、 coldMigrate， hpc的reboot、repair） 新建会话, Help: 新建同任务会话
+					335 container
+						336 button 需要保证不改变原vm的处理逻辑，需要梳理各个状态的处理逻辑，代码分散，理解难度高：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						337 button 需要保证不改变原vm的处理逻辑，需要梳理各个状态的处理逻辑，代码分散，理解难度高
+						338 text 尚无会话
+						339 button (disabled) 为 需要保证不改变原vm的处理逻辑，需要梳理各个状态的处理逻辑，代码分散，理解难度高 新建会话, Help: 新建同任务会话
+					340 container
+						341 button 需求还是偏上层的，设计方案时，需要先理解当前实现，也需要一定时间：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						342 button 需求还是偏上层的，设计方案时，需要先理解当前实现，也需要一定时间
+						343 text 尚无会话
+						344 button (disabled) 为 需求还是偏上层的，设计方案时，需要先理解当前实现，也需要一定时间 新建会话, Help: 新建同任务会话
+					345 container
+						346 button OpenAPI触发主动迁移事件：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						347 button OpenAPI触发主动迁移事件
+						348 text 尚无会话
+						349 button (disabled) 为 OpenAPI触发主动迁移事件 新建会话, Help: 新建同任务会话
+					350 container
+						351 button 折叠 边缘可用区
+						352 button 边缘可用区：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						353 button 边缘可用区
+						354 text 尚无会话
+						355 button (disabled) 为 边缘可用区 新建会话, Help: 新建同任务会话
+					356 container
+						357 button crash演练：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						358 button crash演练
+						359 text 尚无会话
+						360 button (disabled) 为 crash演练 新建会话, Help: 新建同任务会话
+					361 container
+						362 button 物理机ping不可达：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						363 button 物理机ping不可达
+						364 text 尚无会话
+						365 button (disabled) 为 物理机ping不可达 新建会话, Help: 新建同任务会话
+					366 container
+						367 button 支持hang住探测：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						368 button 支持hang住探测
+						369 text 尚无会话
+						370 button (disabled) 为 支持hang住探测 新建会话, Help: 新建同任务会话
+					371 container
+						372 button 折叠 webterminal:
+						373 button webterminal:：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						374 button webterminal:
+						375 text 尚无会话
+						376 button (disabled) 为 webterminal: 新建会话, Help: 新建同任务会话
+					377 container
+						378 button create webterminal session ， region 参数放到 url中：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						379 button create webterminal session ， region 参数放到 url中
+						380 text 尚无会话
+						381 button (disabled) 为 create webterminal session ， region 参数放到 url中 新建会话, Help: 新建同任务会话
+					382 container
+						383 button webterminal前端建连规范：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						384 button webterminal前端建连规范
+						385 text 尚无会话
+						386 button (disabled) 为 webterminal前端建连规范 新建会话, Help: 新建同任务会话
+					387 container
+						388 button 接口文档、前端对接wss流程文档：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						389 button 接口文档、前端对接wss流程文档
+						390 text 尚无会话
+						391 button (disabled) 为 接口文档、前端对接wss流程文档 新建会话, Help: 新建同任务会话
+					392 container
+						393 button 创建了超过10个的Session：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						394 button 创建了超过10个的Session
+						395 text 尚无会话
+						396 button (disabled) 为 创建了超过10个的Session 新建会话, Help: 新建同任务会话
+					397 container
+						398 button 测试环境免登部署：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						399 button 测试环境免登部署
+						400 text 尚无会话
+						401 button (disabled) 为 测试环境免登部署 新建会话, Help: 新建同任务会话
+					402 container
+						403 button 支持ssh登录功能。 且在前端集成文档中提供相关的协议：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						404 button 支持ssh登录功能。 且在前端集成文档中提供相关的协议
+						405 text 尚无会话
+						406 button (disabled) 为 支持ssh登录功能。 且在前端集成文档中提供相关的协议 新建会话, Help: 新建同任务会话
+					407 container
+						408 button 预发环境建设：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						409 button 预发环境建设
+						410 text 尚无会话
+						411 button (disabled) 为 预发环境建设 新建会话, Help: 新建同任务会话
+					412 container
+						413 button 后台暴露ssh登录方式：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						414 button 后台暴露ssh登录方式
+						415 text 尚无会话
+						416 button (disabled) 为 后台暴露ssh登录方式 新建会话, Help: 新建同任务会话
+					417 container
+						418 button 生产环境验证：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						419 button 生产环境验证
+						420 text 尚无会话
+						421 button (disabled) 为 生产环境验证 新建会话, Help: 新建同任务会话
+					422 container
+						423 button 长连接：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						424 button 长连接
+						425 text 尚无会话
+						426 button (disabled) 为 长连接 新建会话, Help: 新建同任务会话
+					427 container
+						428 button 错误提示：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						429 button 错误提示
+						430 text 尚无会话
+						431 button (disabled) 为 错误提示 新建会话, Help: 新建同任务会话
+					432 container
+						433 button 批量查询状态接口：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						434 button 批量查询状态接口
+						435 text 尚无会话
+						436 button (disabled) 为 批量查询状态接口 新建会话, Help: 新建同任务会话
+					437 container
+						438 button 接口发布：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						439 button 接口发布
+						440 text 尚无会话
+						441 button (disabled) 为 接口发布 新建会话, Help: 新建同任务会话
+					442 container
+						443 button 公网域名：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						444 button 公网域名
+						445 text 尚无会话
+						446 button (disabled) 为 公网域名 新建会话, Help: 新建同任务会话
+					447 container
+						448 button 计算质量链路分享：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						449 button 计算质量链路分享
+						450 text 尚无会话
+						451 button (disabled) 为 计算质量链路分享 新建会话, Help: 新建同任务会话
+					452 container
+						453 button 折叠 failover所有事件都会给用户发消息吗？
+						454 button failover所有事件都会给用户发消息吗？：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						455 button failover所有事件都会给用户发消息吗？
+						456 text 尚无会话
+						457 button (disabled) 为 failover所有事件都会给用户发消息吗？ 新建会话, Help: 新建同任务会话
+					458 container
+						459 button LocalDiskFailure.Fault 只有在探测源是sli， 且故障次数达到了4次的情况下，才会发送云事件：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						460 button LocalDiskFailure.Fault 只有在探测源是sli， 且故障次数达到了4次的情况下，才会发送云事件
+						461 text 尚无会话
+						462 button (disabled) 为 LocalDiskFailure.Fault 只有在探测源是sli， 且故障次数达到了4次的情况下，才会发送云事件 新建会话, Help: 新建同任务会话
+					463 container
+						464 button i-4hnqretpwd 来源是idc：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						465 button i-4hnqretpwd 来源是idc
+						466 text 尚无会话
+						467 button (disabled) 为 i-4hnqretpwd 来源是idc 新建会话, Help: 新建同任务会话
+					468 container
+						469 button 结论：只有故障恢复的才必发通知。 本地盘不会触发自动恢复，不会触发通知（触发条件很难达到）：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						470 button 结论：只有故障恢复的才必发通知。 本地盘不会触发自动恢复，不会触发通知（触发条件很难达到）
+						471 text 尚无会话
+						472 button (disabled) 为 结论：只有故障恢复的才必发通知。 本地盘不会触发自动恢复，不会触发通知（触发条件很难达到） 新建会话, Help: 新建同任务会话
+					473 container
+						474 button 折叠 异构计算故障恢复自动化处理流程
+						475 button 异构计算故障恢复自动化处理流程：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						476 button 异构计算故障恢复自动化处理流程
+						477 text 尚无会话
+						478 button (disabled) 为 异构计算故障恢复自动化处理流程 新建会话, Help: 新建同任务会话
+					479 container
+						480 button 草稿 https://joyspace.jd.com/pages/ywiFKV7WofhDeKE8D2KD：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						481 button 草稿 https://joyspace.jd.com/pages/ywiFKV7WofhDeKE8D2KD
+						482 text 尚无会话
+						483 button (disabled) 为 草稿 https://joyspace.jd.com/pages/ywiFKV7WofhDeKE8D2KD 新建会话, Help: 新建同任务会话
+					484 container
+						485 button 明确整体流程 January 21, 2026：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						486 button 明确整体流程 January 21, 2026
+						487 text 尚无会话
+						488 button (disabled) 为 明确整体流程 January 21, 2026 新建会话, Help: 新建同任务会话
+					489 container
+						490 button 折叠 schedule-events: 指标震荡问题处理
+						491 button schedule-events: 指标震荡问题处理：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						492 button schedule-events: 指标震荡问题处理
+						493 text 尚无会话
+						494 button (disabled) 为 schedule-events: 指标震荡问题处理 新建会话, Help: 新建同任务会话
+					495 container
+						496 button sre confirm 可能会很多 → 告警切换到failover，以复用现在的屏蔽能力 January 15, 2026：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						497 button sre confirm 可能会很多 → 告警切换到failover，以复用现在的屏蔽能力 January 15, 2026
+						498 text 尚无会话
+						499 button (disabled) 为 sre confirm 可能会很多 → 告警切换到failover，以复用现在的屏蔽能力 January 15, 2026 新建会话, Help: 新建同任务会话
+					500 container
+						501 button Help: 点击完成 · 右键设置状态, 云事件会很多，给用户造成打扰 → 引入redis， 在scheduled-events 服务内实现 key= 「资源 + metric」 的消息收敛机制。 如果 1天内 已经发送过了云事件，则不再发送。 如果有事件执行到终态了，执行上游解冻的同时，也执行本服务的相关key的解冻 January 15, 2026：已取消，点击完成，右键改状态
+						502 button 云事件会很多，给用户造成打扰 → 引入redis， 在scheduled-events 服务内实现 key= 「资源 + metric」 的消息收敛机制。 如果 1天内 已经发送过了云事件，则不再发送。 如果有事件执行到终态了，执行上游解冻的同时，也执行本服务的相关key的解冻 January 15, 2026
+						503 text 尚无会话
+						504 button (disabled) Help: 新建同任务会话, 为 云事件会很多，给用户造成打扰 → 引入redis， 在scheduled-events 服务内实现 key= 「资源 + metric」 的消息收敛机制。 如果 1天内 已经发送过了云事件，则不再发送。 如果有事件执行到终态了，执行上游解冻的同时，也执行本服务的相关key的解冻 January 15, 2026 新建会话
+					505 container
+						506 button metric-alertmanager 规则钝化： 避免震荡 January 15, 2026：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						507 button metric-alertmanager 规则钝化： 避免震荡 January 15, 2026
+						508 text 尚无会话
+						509 button (disabled) 为 metric-alertmanager 规则钝化： 避免震荡 January 15, 2026 新建会话, Help: 新建同任务会话
+					510 container
+						511 button Inquiring之后自动提报工单。 January 16, 2026：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						512 button Inquiring之后自动提报工单。 January 16, 2026
+						513 text 尚无会话
+						514 button (disabled) 为 Inquiring之后自动提报工单。 January 16, 2026 新建会话, Help: 新建同任务会话
+					515 container
+						516 button 折叠 failover:
+						517 button failover:：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						518 button failover:
+						519 text 尚无会话
+						520 button (disabled) 为 failover: 新建会话, Help: 新建同任务会话
+					521 container
+						522 button Help: 点击完成 · 右键设置状态, recover 流程。 自测完成了。 但是 RecoverInstanceDryRun 是本地mock的，写死的false， 相当于recover现在永远不会启用。 January 15, 2026：已取消，点击完成，右键改状态
+						523 button recover 流程。 自测完成了。 但是 RecoverInstanceDryRun 是本地mock的，写死的false， 相当于recover现在永远不会启用。 January 15, 2026
+						524 text 尚无会话
+						525 button (disabled) Help: 新建同任务会话, 为 recover 流程。 自测完成了。 但是 RecoverInstanceDryRun 是本地mock的，写死的false， 相当于recover现在永远不会启用。 January 15, 2026 新建会话
+					526 container
+						527 button 支持资源+metric粒度的告警通知屏蔽能力 January 14, 2026：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						528 button 支持资源+metric粒度的告警通知屏蔽能力 January 14, 2026
+						529 text 尚无会话
+						530 button (disabled) 为 支持资源+metric粒度的告警通知屏蔽能力 January 14, 2026 新建会话, Help: 新建同任务会话
+					531 container
+						532 button HpcWaitSre之前需要有一个查询工单状态的环节，工单状态为结束的，自动做简单的恢复验证，无论结果如何，都要进入HpcWaitSre环节：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						533 button HpcWaitSre之前需要有一个查询工单状态的环节，工单状态为结束的，自动做简单的恢复验证，无论结果如何，都要进入HpcWaitSre环节
+						534 text 尚无会话
+						535 button (disabled) 为 HpcWaitSre之前需要有一个查询工单状态的环节，工单状态为结束的，自动做简单的恢复验证，无论结果如何，都要进入HpcWaitSre环节 新建会话, Help: 新建同任务会话
+					536 container
+						537 button 异构实例简单的恢复验证原子能力（核心metric，云助手任务结果），检查结果需要发咚咚卡片。 张成/腾讯事件 需求。 January 16, 2026：已取消，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						538 button 异构实例简单的恢复验证原子能力（核心metric，云助手任务结果），检查结果需要发咚咚卡片。 张成/腾讯事件 需求。 January 16, 2026
+						539 text 尚无会话
+						540 button (disabled) 为 异构实例简单的恢复验证原子能力（核心metric，云助手任务结果），检查结果需要发咚咚卡片。 张成/腾讯事件 需求。 January 16, 2026 新建会话, Help: 新建同任务会话
+					541 container
+						542 button 折叠 大数据
+						543 button 大数据：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						544 button 大数据
+						545 text 尚无会话
+						546 button (disabled) 为 大数据 新建会话, Help: 新建同任务会话
+					547 container
+						548 button 配合配置GPU聚合任务：已完成，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						549 button 配合配置GPU聚合任务
+						550 text 尚无会话
+						551 button (disabled) 为 配合配置GPU聚合任务 新建会话, Help: 新建同任务会话
+					552 container
+						553 button Help: 点击完成 · 右键设置状态, 看板优化V2 http://grafana-proxy.ark.jd.com/d/B6p5aWIvk/aishu-ju-hu-k8sji-qun-jian-kong-v2?orgId=71：已完成，点击完成，右键改状态
+						554 button 看板优化V2 http://grafana-proxy.ark.jd.com/d/B6p5aWIvk/aishu-ju-hu-k8sji-qun-jian-kong-v2?orgId=71
+						555 text 尚无会话
+						556 button (disabled) Help: 新建同任务会话, 为 看板优化V2 http://grafana-proxy.ark.jd.com/d/B6p5aWIvk/aishu-ju-hu-k8sji-qun-jian-kong-v2?orgId=71 新建会话
+					557 container
+						558 button 折叠 MM
+						559 button MM：待办，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						560 button MM
+						561 button MM
+						562 button 为 MM 新建会话, Help: 新建同任务会话
+					563 container
+						564 button 用户可以主动发起强制恢复：待办，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						565 button 用户可以主动发起强制恢复
+						566 text 尚无会话
+						567 button 为 用户可以主动发起强制恢复 新建会话, Help: 新建同任务会话
+					568 container
+						569 button 本地盘的gpu资源是可以被自动强制恢复：待办，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						570 button 本地盘的gpu资源是可以被自动强制恢复
+						571 text 尚无会话
+						572 button 为 本地盘的gpu资源是可以被自动强制恢复 新建会话, Help: 新建同任务会话
+					573 container
+						574 button 折叠 日常任务
+						575 button 日常任务：待办，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						576 button 日常任务
+						577 text 尚无会话
+						578 button 为 日常任务 新建会话, Help: 新建同任务会话
+					579 container
+						580 button 云助手Webterminal不可用：进行中，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						581 button 云助手Webterminal不可用
+						582 button 云助手Webterminal不可用
+						583 button 为 云助手Webterminal不可用 新建会话, Help: 新建同任务会话
+					584 container
+						585 button 运维系统--授权流程可观测：待办，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						586 button 运维系统--授权流程可观测
+						587 text 尚无会话
+						588 button 为 运维系统--授权流程可观测 新建会话, Help: 新建同任务会话
+					589 container
+						590 button E2E-新建后留在任务树：待办，点击完成，右键改状态, Help: 点击完成 · 右键设置状态
+						591 button E2E-新建后留在任务树
+						592 text 尚无会话
+						593 button 为 E2E-新建后留在任务树 新建会话, Help: 新建同任务会话
+					594 text 符合筛选  320  项 · 当前展开  320  项（含层级路径）
+					595 button 上一页
+					596 text 2  /  2
+					597 button (disabled) 下一页
+				598 container 右侧工作区
+					599 splitter 调整右侧宽度, Value: 50
+					600 tab group (selectable) 右侧工具标签
+						601 tab (selected) 任务详情
+					602 container 任务详情
+						603 text E2E-新建后留在任务树
+						604 tab group (selectable) 任务详情标签
+							605 tab (selected) 上下文与结果
+							606 tab (selectable) 属性与设置
+						607 text E2E-新建后留在任务树
+						608 heading 上下文, Value: 3
+							609 text 上下文
+						610 button 编辑
+						611 text 尚未添加上下文。简单任务可以只有标题。
+						612 button 查看完整执行上下文
+						613 heading 结果 0, Value: 3
+							614 text 结果  0
+						615 text 自动任务在交接点保存结果；也可以在会话中点击提取结果。
+	616 close button
+	617 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	618 minimize button
+619 menu bar
+	620 Codex Kanban Task Reveal Test
+	621 File
+	622 Edit
+	623 View
+	624 Window
+	625 Help
+
+The focused UI element is 589 container

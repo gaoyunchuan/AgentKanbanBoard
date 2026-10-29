@@ -1,0 +1,49 @@
+{
+  "formal_state_unchanged": true,
+  "database": {
+    "tasks": 320,
+    "chat_states": [
+      [
+        "failed",
+        1
+      ],
+      [
+        "init",
+        3
+      ]
+    ],
+    "active_chat_runs": 0,
+    "work_states": [
+      [
+        "attention",
+        1
+      ],
+      [
+        "paused",
+        1
+      ]
+    ],
+    "active_work_runs": 0,
+    "pending_changes": 0,
+    "permissions_digest": "b761be70cdfe3523d18e5871a8db1bd6d1815babb5fa21c2af30a48f5a97f5d6"
+  },
+  "signatures_verified": true,
+  "installed_equals_built": true,
+  "tested_code_equals_installed": true,
+  "sha256": {
+    "built": "3800909e344bb3d307556bf1c31ba6aa3ad03b2baed6a43b1a506d4c126d02e0",
+    "installed": "3800909e344bb3d307556bf1c31ba6aa3ad03b2baed6a43b1a506d4c126d02e0",
+    "tested": "31b98a2162b1bb7743c54cb5baa850c6759ad0d50eb8612c96189929f6e99442"
+  },
+  "unsigned_sha256": {
+    "built": "7833b2cacd9f7e4a75b094fd59e21154988938ae8d1324767936f6d18af83c87",
+    "installed": "7833b2cacd9f7e4a75b094fd59e21154988938ae8d1324767936f6d18af83c87",
+    "tested": "7833b2cacd9f7e4a75b094fd59e21154988938ae8d1324767936f6d18af83c87"
+  },
+  "source_sha256": {
+    "src-ui/src/studio/ChatSurface.tsx": "791a5b12d301b50ca5569b94f0b3063628c77bc75b9b1075cc4c43786f4dac69",
+    "src-ui/src/studio/ChatApp.tsx": "6fb5aacfcded9a563ab2c8d639dd64efba5b9faec9011e4adaee09787210335f",
+    "src-ui/src/studio/useComposerAttachments.ts": "7a55338f1746b120b6a994a6b5917acc3bfa4c8fe1f4c52b32bbf97e805ea44c",
+    "src-ui/src/studio/Composer.test.tsx": "0e8e388add0272510cfe377e475a7fe36a3ef398c1dc8d07ef8d27bf107f485f"
+  }
+}

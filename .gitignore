@@ -8,3 +8,6 @@ src-ui/node_modules/
 src-ui/dist/
 src-tauri/gen/
 src-tauri/target/
+
+.build/
+poc/electron/node_modules/

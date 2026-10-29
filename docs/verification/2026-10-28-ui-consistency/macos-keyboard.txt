@@ -1,0 +1,28 @@
+The following is a diff from the previous accessibility tree for Window: "Codex Thread Kanban" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 51-53, 57
+~			49 container 模型与推理强度
+~				50 container
++					51 heading 模型与推理强度, Value: 2
++						52 text 模型与推理强度
++					53 button 关闭对话框
+~				54 text 先创建或选择一个会话。未设置时使用 Codex 默认模型及按需确认权限。
+~				55 text 可用模型
+~				56 combo box (collapsed, settable) 可用模型, Secondary Actions: Expand, Value: GPT-5.6-Luna
+
++					57 text GPT-5.6-Luna
+~				58 text 推理强度
++				59 combo box (collapsed, settable) 推理强度, Secondary Actions: Expand, Value: 模型默认
+
++					60 text 模型默认
++				61 text 模型列表由当前连接返回；选择模型不授予额外权限。
++				62 container
++					63 button 取消
++					64 button (disabled) 保存会话设置
+The focused UI element is 56 combo box (collapsed, settable) 可用模型, Secondary Actions: Expand, Value: GPT-5.6-Luna
+
+
+Escape 后：
+The following is a diff from the previous accessibility tree for Window: "Codex Thread Kanban" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 57
++					65 text GPT-5.6-Luna
+The focused UI element is 56 combo box (collapsed, settable) 可用模型, Secondary Actions: Expand, Value: GPT-5.6-Luna

@@ -1,0 +1,41 @@
+[
+  {
+    "policy": "on-request",
+    "thread_id": "01a18208-bcd0-7630-8c64-d6b1d6bd8ea6",
+    "requests": [
+      {
+        "method": "mcpServer/elicitation/request",
+        "mode": "form",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "tool_calls": 1,
+    "output": "我会调用一次权限检查，然后原样返回标记。\nPERMISSION-CHECK-OK"
+  },
+  {
+    "policy": "never",
+    "thread_id": "01a18208-bcd0-7630-8c64-d6b1d6bd8ea6",
+    "requests": [],
+    "tool_calls": 1,
+    "output": "我会调用一次权限检查，然后原样返回标记。\nPERMISSION-CHECK-OK"
+  },
+  {
+    "policy": "on-request",
+    "thread_id": "01a18208-bcd0-7630-8c64-d6b1d6bd8ea6",
+    "requests": [
+      {
+        "method": "mcpServer/elicitation/request",
+        "mode": "form",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
+    "tool_calls": 1,
+    "output": "我会调用一次权限检查，然后原样返回标记。\nPERMISSION-CHECK-OK"
+  }
+]

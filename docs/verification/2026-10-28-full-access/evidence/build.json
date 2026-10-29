@@ -1,0 +1,12 @@
+{
+  "built_app": "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-tauri/target/release/bundle/macos/Codex Thread Kanban.app",
+  "binary_sha256": "8a1b73069e66255f5df42952920c5acefdd8601d3cba4c985d54355021c2fcff",
+  "tested_bundle_identifier": "local.codex.thread-kanban.permissions-test",
+  "unsigned_code_payload_sha256": "4ec9b091fe033d97f1486a3b993bba88c963c63469d585e13581f2869e2f2857",
+  "tested_code_payload_matches": true,
+  "note": "独立测试bundle改标识并重新签名，签名区不同；移除签名后的代码逐字节一致",
+  "codesign_verify": true,
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "installed_binary_matches": true,
+  "formal_installation": "已获用户确认停止目标执行，安装并重新启动"
+}

@@ -10,7 +10,7 @@ export function createDemoApi(): StudioApi {
     tasks: [task('diff', '实现部署前 Diff', null, [], 'in_progress'), task('contract', '明确 Diff 接口契约', 'diff', [], 'in_progress'), task('frontend', '实现前端差异展示', 'diff', ['contract']), task('regression', '补齐集成验证', 'diff', ['frontend']), task('review', '整理本机运行说明', null)],
     conversations: [], work_tasks: [], runtime: { connected: false }
   };
-  let exclusions:string[]=[];
+  let exclusions:string[]=[], delegation='on-request';
   const visibleProjects=()=>data.projects.filter(p=>!exclusions.some(root=>p.path===root||p.path.startsWith(root.replace(/\/$/,'')+'/')));
   const details = new Map<string, ConversationDetail>(), archived: StudioTask[] = [];
   const makeConversation = (taskId: string, mode: 'manual' | 'auto' = 'manual') => {
@@ -31,8 +31,8 @@ export function createDemoApi(): StudioApi {
     const tid = String(p.task_id || ''), cid = String(p.conversation_id || '');
     const t = data.tasks.find(t => t.id === tid), c = data.conversations.find(c => c.id === cid);
     let result: unknown = { saved: true };
-    if (method === 'snapshot') { refresh(); result = {...data,projects:visibleProjects(),settings:{excluded_project_dirs:exclusions}}; }
-    else if (method === 'save_settings') {if(JSON.stringify(p.expected_excluded_project_dirs)!==JSON.stringify(exclusions))throw new Error('设置已改变');exclusions=p.excluded_project_dirs as string[];result={excluded_project_dirs:exclusions};}
+    if (method === 'snapshot') { refresh(); result = {...data,projects:visibleProjects(),settings:{excluded_project_dirs:exclusions,delegation_permission:delegation}}; }
+    else if (method === 'save_settings') {if(JSON.stringify(p.expected_excluded_project_dirs)!==JSON.stringify(exclusions))throw new Error('设置已改变');exclusions=p.excluded_project_dirs as string[];if(typeof p.delegation_permission==='string')delegation=p.delegation_permission;result={excluded_project_dirs:exclusions,delegation_permission:delegation};}
     else if (method === 'detail') result = details.get(cid) || { conversation: c, events: [], runs: [], interactions: [], results: [] };
     else if (method === 'context') result = { task: t, task_tree: data.tasks.filter(x => rootId(data.tasks, x.id) === rootId(data.tasks, tid)).map(x => ({ id: x.id, title: x.title, parent_id: x.parent_id })), ancestors: ancestors(data.tasks, tid), dependencies: t?.blocked_by.map(id => ({ id, results: data.tasks.find(t => t.id === id)?.results })) };
     else if (method === 'create_task') { const id = `task-${seq++}`; const created = task(id, String(p.title), p.parent_id ? String(p.parent_id) : null); created.project_id = p.project_id ? String(p.project_id) : null; if(p.after_id){const after=data.tasks.find(t=>t.id===p.after_id)!;for(const row of data.tasks)if(row.parent_id===after.parent_id&&row.position>after.position)row.position++;created.position=after.position+1;}data.tasks.push(created); refresh(); result = { task_id: id }; }

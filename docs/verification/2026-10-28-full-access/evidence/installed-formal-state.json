@@ -1,0 +1,42 @@
+{
+  "work": [
+    {
+      "task_id": "619c9ac9-8b7d-4359-96db-6e08992f46d9",
+      "status": "attention",
+      "current_run_id": null
+    },
+    {
+      "task_id": "task-55441-1793167180339021000-2",
+      "status": "paused",
+      "current_run_id": null
+    }
+  ],
+  "conversations": [
+    {
+      "id": "conversation-83849-1793104155885563000-1",
+      "mode": "manual",
+      "sandbox_mode": "workspace-write",
+      "approval_policy": "on-request"
+    },
+    {
+      "id": "main:619c9ac9-8b7d-4359-96db-6e08992f46d9",
+      "mode": "auto",
+      "sandbox_mode": "workspace-write",
+      "approval_policy": "on-request"
+    },
+    {
+      "id": "conversation-49726-1793158689221403000-4",
+      "mode": "manual",
+      "sandbox_mode": "workspace-write",
+      "approval_policy": "on-request"
+    },
+    {
+      "id": "main:task-55441-1793167180339021000-2",
+      "mode": "auto",
+      "sandbox_mode": "workspace-write",
+      "approval_policy": "on-request"
+    }
+  ],
+  "pending_work_requests": 0,
+  "resource_holds": 0
+}

@@ -1,5 +1,9 @@
 pub mod app_server;
 pub mod browser_bridge;
+pub mod browser_files;
+pub mod browser_mcp;
+pub mod browser_stream;
+pub mod browser_state;
 pub mod chat_store;
 pub mod codex_errors;
 pub mod config;

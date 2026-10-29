@@ -15,6 +15,7 @@ export type TaskQuery = {
   scroll: number;
 };
 export const TASK_QUERY_KEY = 'agentkanban.task-query.v1';
+export const TASK_PAGE_SIZE = 200;
 export const emptyTaskQuery = (): TaskQuery => ({
   text: '', states: TASK_STATES.map(([id]) => id), projects: [], updated: 'all', collapsed: [], page: 0, scroll: 0,
 });
@@ -67,4 +68,14 @@ export function queryTasks(tasks: StudioTask[], query: TaskQuery, now: number) {
     !paths.get(task.id)?.some(parent => collapsed.has(parent.id))
   ).map(row => ({ ...row, contextOnly: !matched.has(row.task.id) }));
   return { rows, matched, visible };
+}
+
+/** 定位先展开祖先，再计算真实页码；仅当筛选遮住目标时切回全部任务。 */
+export function taskQueryForReveal(tasks: StudioTask[], query: TaskQuery, id: string, now: number) {
+  const parents=new Set(ancestors(tasks,id).map(t=>t.id));
+  let next={...query,collapsed:query.collapsed.filter(parent=>!parents.has(parent)),scroll:0};
+  const filtersReset=!queryTasks(tasks,next,now).visible.has(id);
+  if(filtersReset)next={...emptyTaskQuery(),collapsed:next.collapsed};
+  const index=queryTasks(tasks,next,now).rows.findIndex(row=>row.task.id===id);
+  return {query:{...next,page:Math.max(0,Math.floor(index/TASK_PAGE_SIZE))},filtersReset};
 }

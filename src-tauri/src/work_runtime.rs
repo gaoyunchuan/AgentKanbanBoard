@@ -103,6 +103,15 @@ struct Registry {
     uncertain_runs: HashSet<String>,
 }
 
+fn native_cleanup_timeout(deadline: std::time::Instant) -> Result<Duration, String> {
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        Err("原生命令停止确认超时，目录继续保持占用".into())
+    } else {
+        Ok(remaining.min(Duration::from_secs(2)))
+    }
+}
+
 struct RuntimeShared {
     server: AppServer,
     connection_id: String,
@@ -219,9 +228,6 @@ impl CodexRuntime {
     ) -> Result<StartedTask, String> {
         let attachments = validate_attachments(attachments)?;
         validate_config(&mut config)?;
-        if config.browser_enabled {
-            crate::browser_bridge::ensure(&config.task_id)?;
-        }
         if !self.is_alive() {
             return Err("Codex app-server 已断开，请恢复连接后再开始任务".into());
         }
@@ -262,7 +268,7 @@ impl CodexRuntime {
             }
         }
 
-        let mut params = thread_params(&config);
+        let mut params = execution_thread_params(&config)?;
         if config.task_id.starts_with("extract:") {
             // Disable inherited connectors as well as local tools. Failure to read
             // configuration is not permission to run an unrestricted summarizer.
@@ -338,9 +344,12 @@ impl CodexRuntime {
 
         // This release has exactly one continuation authority: our task scheduler.
         // A previously imported or interrupted session may still contain a native Goal.
-        if let Err(error) = self.pause_inherited_goal(&thread_id) {
-            self.shared.server.shutdown();
-            return Err(error);
+        // 只读摘要使用 ephemeral Thread，服务端禁止其持有 Goal；只对持久会话核对续跑状态。
+        if !config.task_id.starts_with("extract:") {
+            if let Err(error) = self.pause_inherited_goal(&thread_id) {
+                self.shared.server.shutdown();
+                return Err(error);
+            }
         }
         self.shared.emit(
             Some(Binding {
@@ -398,6 +407,109 @@ impl CodexRuntime {
             // on that old lease; the host claims a fresh run for the saved message.
             Err("本轮执行已结束，请等待任务状态同步后继续；下一轮由任务调度器启动".into())
         }
+    }
+
+    pub(crate) fn cleanup_native_terminals(
+        &self,
+        task_id: &str,
+        run_id: &str,
+        threads: &[String],
+    ) -> Result<(), String> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            let mut found = false;
+            for thread_id in threads {
+                self.check_terminal_owner(task_id, run_id, thread_id)?;
+                let terminals = self.list_native_terminals(thread_id, deadline)?;
+                found |= !terminals.is_empty();
+                for process_id in terminals {
+                    // unified exec 使用不透明 ID，不能交给手动 command/exec/terminate。
+                    self.check_terminal_owner(task_id, run_id, thread_id)?;
+                    self.shared.server.request_with_timeout(
+                        "thread/backgroundTerminals/terminate",
+                        json!({"threadId":thread_id,"processId":process_id}),
+                        native_cleanup_timeout(deadline)?,
+                    )?;
+                }
+            }
+            if !found {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("原生命令停止后仍在终端列表中".into());
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    fn check_terminal_owner(
+        &self,
+        task_id: &str,
+        run_id: &str,
+        thread_id: &str,
+    ) -> Result<(), String> {
+        let registry = self.shared.lock_registry()?;
+        let slot = registry
+            .tasks
+            .get(task_id)
+            .filter(|s| s.binding.run_id == run_id)
+            .ok_or("执行归属已经改变，不能清理旧运行")?;
+        if slot.binding.thread_id == thread_id
+            || registry
+                .descendants
+                .get(thread_id)
+                .is_some_and(|b| b.task_id == task_id && b.run_id == run_id)
+        {
+            Ok(())
+        } else {
+            Err("原生终端不属于当前执行，已拒绝清理".into())
+        }
+    }
+
+    fn list_native_terminals(
+        &self,
+        thread_id: &str,
+        deadline: std::time::Instant,
+    ) -> Result<Vec<String>, String> {
+        let mut cursor: Option<String> = None;
+        let mut seen = HashSet::new();
+        let mut terminals = Vec::new();
+        // 服务端分页与异常游标都必须有上界，不能无限阻塞停止确认。
+        for _ in 0..32 {
+            let page = self.shared.server.request_with_timeout(
+                "thread/backgroundTerminals/list",
+                json!({"threadId":thread_id,"cursor":cursor,"limit":100}),
+                native_cleanup_timeout(deadline)?,
+            )?;
+            let data = page
+                .get("data")
+                .and_then(Value::as_array)
+                .ok_or("原生终端列表返回无效，不能确认已退出")?;
+            if data.len() > 100 {
+                return Err("原生终端列表超过单页上限".into());
+            }
+            for item in data {
+                let id = item
+                    .get("processId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .ok_or("原生终端缺少进程 ID")?;
+                terminals.push(id.to_owned());
+            }
+            cursor = match page.get("nextCursor") {
+                Some(Value::Null) => None,
+                Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
+                _ => return Err("原生终端分页返回无效".into()),
+            };
+            match &cursor {
+                None => return Ok(terminals),
+                Some(value) if !seen.insert(value.clone()) => {
+                    return Err("原生终端分页游标重复".into())
+                }
+                _ => {}
+            }
+        }
+        Err("原生终端列表超过分页上限".into())
     }
 
     pub fn interrupt(&self, task_id: &str, run_id: &str) -> Result<(), String> {
@@ -1566,6 +1678,20 @@ fn sandbox_policy(mode: &str, workspace: &str) -> Value {
     }
 }
 
+fn execution_thread_params(config: &TaskExecutionConfig) -> Result<Value, String> {
+    let mut params = thread_params(config);
+    if !config.task_id.starts_with("extract:") {
+        // 工具入口在 Thread 启动/恢复时始终存在，Chrome 到实际浏览器操作才懒启动。
+        // 因此旧 browser_enabled 不再决定能否访问面板，也不让 Docker 缺失阻塞普通聊天。
+        let server = crate::browser_mcp::server_config(&config.task_id)?;
+        if params.get("config").is_none() { params["config"] = json!({}); }
+        params["config"]["mcp_servers.agentkanban_browser"] = server;
+        let instructions = params["developerInstructions"].as_str().unwrap_or_default();
+        params["developerInstructions"] = json!(format!("{instructions}\n本应用的侧边浏览器请使用 session_browser 工具：它已经绑定当前会话。先列出页面，再读取或操作目标。连接失败时如实报告，不要寻找日常Chrome/Arc或另起浏览器冒充当前页面。人工接管期间等待交还控制。"));
+    }
+    Ok(params)
+}
+
 fn thread_params(config: &TaskExecutionConfig) -> Value {
     let mut params = json!({
         "cwd": config.workspace,
@@ -1586,26 +1712,12 @@ fn thread_params(config: &TaskExecutionConfig) -> Value {
     if let Some(model) = &config.model {
         params["model"] = json!(model);
     }
-    if config.browser_enabled && !config.task_id.starts_with("extract:") {
-        // This override is captured when the thread is first loaded. The task store
-        // freezes browser configuration after thread creation; a warm resume cannot
-        // silently change its MCP servers. Playwright attaches to the same isolated browser as the side panel.
-        params["config"] = json!({
-            "mcp_servers.agentkanban_browser": {
-                "command": "npx",
-                "args": ["-y", "@playwright/mcp@0.0.83", "--cdp-endpoint", crate::browser_bridge::endpoint(&config.task_id).unwrap_or_default()],
-                "enabled": true,
-                "required": true,
-                "startup_timeout_sec": 60,
-                "tool_timeout_sec": 120
-            }
-        });
-    }
+
     params
 }
 
-fn thread_start_timeout(config: &TaskExecutionConfig) -> Duration {
-    Duration::from_secs(if config.browser_enabled { 90 } else { 30 })
+fn thread_start_timeout(_config: &TaskExecutionConfig) -> Duration {
+    Duration::from_secs(30)
 }
 
 fn validate_response(method: &str, result: &Value) -> Result<(), String> {
@@ -1708,38 +1820,66 @@ mod tests {
     }
 
     #[test]
-    fn browser_is_opt_in_and_pins_a_required_isolated_headed_mcp() {
+    fn browser_tools_are_available_without_starting_chrome_and_on_old_threads() {
         let mut config = test_config();
-        assert!(thread_params(&config).get("config").is_none());
-        assert_eq!(thread_start_timeout(&config), Duration::from_secs(30));
-        config.browser_enabled = true;
-        assert_eq!(
-            thread_params(&config)["config"]["mcp_servers.agentkanban_browser"],
-            json!({
-                "command":"npx",
-                "args":["-y","@playwright/mcp@0.0.83","--cdp-endpoint",""],
-                "enabled":true,"required":true,"startup_timeout_sec":60,"tool_timeout_sec":120
-            })
-        );
-        assert_eq!(thread_start_timeout(&config), Duration::from_secs(90));
-        let mut legacy = serde_json::to_value(config).unwrap();
-        legacy.as_object_mut().unwrap().remove("browser_enabled");
-        assert!(
-            !serde_json::from_value::<TaskExecutionConfig>(legacy)
-                .unwrap()
-                .browser_enabled
-        );
+        for enabled in [false, true] {
+            config.browser_enabled = enabled;
+            let params = execution_thread_params(&config).unwrap();
+            let server = &params["config"]["mcp_servers.agentkanban_browser"];
+            assert!(server["url"].as_str().unwrap().starts_with("http://127.0.0.1:"));
+            assert_eq!(server["required"], false);
+            assert!(server.get("command").is_none());
+        }
+        config.thread_id = Some("existing-thread".into());
+        assert!(execution_thread_params(&config).unwrap()["config"]["mcp_servers.agentkanban_browser"]["url"].is_string());
+        config.task_id = "extract:result".into();
+        assert!(execution_thread_params(&config).unwrap()["config"].get("mcp_servers.agentkanban_browser").is_none());
     }
 
     fn receive_method(receiver: &mpsc::Receiver<RuntimeEvent>, method: &str) -> RuntimeEvent {
         loop {
-            let event = receiver
-                .recv_timeout(Duration::from_secs(3))
-                .expect("runtime event");
-            if event.method == method {
-                return event;
-            }
+            let event = receiver.recv_timeout(Duration::from_secs(3)).expect("runtime event");
+            if event.method == method { return event; }
         }
+    }
+
+    #[test]
+    fn ephemeral_extraction_starts_without_unsupported_goal_query() {
+        // 来自真实 0.164 app-server：临时 Thread 不支持 Goal，不能因此断开共享连接。
+        let script = r#"
+import sys, json
+goal_queries=0
+for line in sys.stdin:
+    m=json.loads(line)
+    method=m.get('method')
+    if method=='initialize': result={}
+    elif method=='config/read': result={'config':{'mcp_servers':{}}}
+    elif method=='thread/start':
+        assert m['params']['ephemeral'] is True
+        result={'thread':{'id':'summary'}}
+    elif method=='thread/goal/get':
+        goal_queries+=1
+        print(json.dumps({'id':m['id'],'error':{'code':-32600,'message':'ephemeral thread does not support goals: summary'}}),flush=True)
+        continue
+    elif method=='turn/start': result={'turn':{'id':'summary-turn','status':'inProgress'}}
+    elif method=='model/list': result={'data':[],'goalQueries':goal_queries}
+    else: continue
+    print(json.dumps({'id':m['id'],'result':result}),flush=True)
+"#;
+        let mut command = std::process::Command::new("python3");
+        command.args(["-u", "-c", script]);
+        let (server, events) = AppServer::spawn_command(command).unwrap();
+        let runtime = CodexRuntime::from_server(server, events, Arc::new(|_| {})).unwrap();
+        let mut config = test_config();
+        config.task_id = "extract:summary".into();
+        let started = runtime.start_task(config).unwrap();
+        assert_eq!(started.turn_id.as_deref(), Some("summary-turn"));
+        assert!(runtime.is_alive());
+        assert_eq!(
+            runtime.rpc_read("model/list", json!({})).unwrap()["goalQueries"],
+            0
+        );
+        runtime.shutdown();
     }
 
     fn active_goal_fixture(mode: &str) -> (CodexRuntime, mpsc::Receiver<RuntimeEvent>) {

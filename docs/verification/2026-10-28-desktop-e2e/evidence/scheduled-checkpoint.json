@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-10-28T08:26:44.975846+00:00",
+  "records": [
+    {
+      "title": "06-预约自动启动",
+      "scheduled_start_at": "2026-10-28T08:19:00Z",
+      "status": "completed",
+      "thread_id": "01a18197-5144-7413-baf5-0dbfe27362ac",
+      "run_id": "run-18e2a3a72b127ea8-7",
+      "started_at": "2026-10-28T08:19:00Z",
+      "ended_at": "2026-10-28T08:19:32Z",
+      "run_status": "completed"
+    }
+  ]
+}

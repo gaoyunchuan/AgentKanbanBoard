@@ -1,0 +1,46 @@
+{
+  "conversations": [
+    {
+      "id": "conversation-5099-1793256349949789000-2",
+      "title": "浏览器验收 A",
+      "thread_id": "01a1867f-cea6-7ee2-9760-b14743e534cb",
+      "config": {
+        "agent_id": "codex",
+        "delegated_by": "user",
+        "workspace": "/private/tmp/akb-browser-product-6e94ecf1/project",
+        "prompt": "",
+        "acceptance": "",
+        "review_policy": "human",
+        "blocked_by": [],
+        "model": null,
+        "reasoning_effort": null,
+        "instructions": "",
+        "approval_policy": "on-request",
+        "sandbox_mode": "workspace-write",
+        "browser_enabled": false
+      },
+      "status": "idle"
+    },
+    {
+      "id": "conversation-5099-1793256349951743000-4",
+      "title": "浏览器验收 B",
+      "thread_id": null,
+      "config": {
+        "agent_id": "codex",
+        "delegated_by": "user",
+        "workspace": "/private/tmp/akb-browser-product-6e94ecf1/project",
+        "prompt": "",
+        "acceptance": "",
+        "review_policy": "human",
+        "blocked_by": [],
+        "model": null,
+        "reasoning_effort": null,
+        "instructions": "",
+        "approval_policy": "on-request",
+        "sandbox_mode": "workspace-write",
+        "browser_enabled": false
+      },
+      "status": "init"
+    }
+  ]
+}

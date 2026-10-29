@@ -1,0 +1,79 @@
+Window: "Codex Thread Kanban", App: Codex Kanban Permissions Test.
+0 standard window Codex Thread Kanban, Secondary Actions: Raise
+	1 scroll area
+		2 HTML content Description: Codex Thread Kanban, URL: tauri://localhost
+			3 button 切换侧栏
+			4 text AgentKanban
+			5 container 主导航
+				6 button 会话
+				7 button 任务
+				8 button 项目
+				9 button 需要你
+				10 button 设置
+				11 text 我
+			12 container 导航侧栏
+				13 text Codex
+				14 button 新聊天
+				15 button 新任务
+				16 text field (settable) 搜索会话
+				17 button (expanded) 置顶 0, Secondary Actions: Collapse
+				18 button (expanded) 活跃 1, Secondary Actions: Collapse
+				19 button E2E-Permissions
+				20 button E2E-Permissions 会话菜单
+				21 button (collapsed) 阻塞 0, Secondary Actions: Expand
+				22 button (collapsed) 完成 0, Secondary Actions: Expand
+				23 button 本机 Codex 已连接
+			24 container
+				25 button E2E-Permissions
+				26 heading E2E-Permissions, Value: 1
+					27 text E2E-Permissions
+				28 button (collapsed) 切换本任务会话, Secondary Actions: Expand
+				29 button 新建本任务会话, Help: 新建本任务会话（不是子任务）
+				30 button (disabled) 提取结果, Help: 提取当前会话结果并追加到任务
+				31 button 变更, Help: 本轮变更
+				32 button 文件与终端
+				33 button 侧边浏览器
+				34 button 任务详情
+				35 container 聊天会话
+					36 text Call the local kanban_permission_fixture permission_check tool exactly once and return its marker. Use no other tools.
+					37 summary permission_check inProgress, Value: off
+						38 text permission_check
+						39 text inProgress
+					40 container 需要你的批准
+						41 heading 需要你的批准, Value: 3
+							42 text 需要你的批准
+						43 text Allow the kanban_permission_fixture MCP server to run tool "permission_check"?
+						44 summary 查看本次请求详情, Value: off
+							45 text 查看本次请求详情
+						46 text 此工具请求表单信息。请根据字段要求填写 JSON：
+						47 text {
+  "properties": {},
+  "type": "object"
+}
+						48 text entry area (settable) 工具请求表单, Value: [text entry area: 工具请求表单]
+							49 text (settable) {}
+						50 button 允许本次
+						51 button 拒绝
+						52 text 对应当前任务的这次请求；过期请求不会用于新的执行。
+					53 text 待你确认
+					54 button (disabled) 权限验收, Help: 真实会话目录已固定：/private/tmp/agent-kanban-permissions-20261028
+					55 text 此计算机
+					56 text entry area (settable) 聊天输入, Value: [text entry area: 聊天输入], Placeholder: 随心输入
+						57 text 随心输入
+					58 button 添加上下文或附件
+					59 button 按需确认
+					60 button Codex 默认模型
+					61 button 停止当前执行, Help: 停止当前执行，不完成任务
+					62 text 本轮结束不等于任务完成。
+	63 close button
+	64 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	65 minimize button
+66 menu bar
+	67 Codex Kanban Permissions Test
+	68 File
+	69 Edit
+	70 View
+	71 Window
+	72 Help
+
+The focused UI element is 56 text entry area (settable) 聊天输入, Value: [text entry area: 聊天输入], Placeholder: 随心输入

@@ -3,9 +3,10 @@
 ## Current Knowledge
 
 - 桌面包仍沿用 `Codex Thread Kanban` 名称，产品能力已扩展为个人任务工作台；构建与许可证入口保持不变。
-- Codex CLI/app-server、账户登录、Chrome 和 Node.js/npx 是运行环境依赖，不随应用安装包打包。仅旧只读导入看板不需要应用拥有 app-server 会话。
+- Codex CLI/app-server、账户登录、Node.js 22+、Python3 和 Docker 是运行环境依赖；浏览器使用应用私有 agent-browser 与 Docker Chrome，不读取个人 Chrome/Arc。仅旧只读导入看板不需要应用拥有 app-server 会话。
 - 可通过工作台连接设置保存 Codex 可执行文件路径；`CODEX_APP_SERVER_PATH` 仅作为尚未保存配置时的默认路径。传入程序路径，不能把 `app-server` 参数拼进路径字段。
-- 浏览器 opt-in 使用固定版本 Playwright MCP，首次可能通过 npx 下载；需要 Node.js 18+ 和 Chrome，目标桌面进程必须能找到 npx。Thread/MCP 启动成功不等于已经完成真实 Chrome 验收。
+- 2026-10-29：浏览器改为固定 agent-browser 0.40.0 sidecar＋固定 Docker 镜像，构建助手仅执行 `prepare.py --binary-only`，无需启动 Docker；首次运行准备镜像使用 `--image-only`，不修改全局 CLI/Docker 配置。运行脚本和 sidecar 随 APP resources 打包。Thread/MCP 启动成功不等于真实网页操作通过。
+- 浏览器 profile、下载和原子页面清单由实际 SQLite 文件路径派生到同级 `browser-state/<数据库文件名>/<owner编码>/`。安装或升级只替换 APP；不得删除或迁移该目录，也不得放入 APP bundle、构建目录或容器可写层。
 - macOS 构建/安装助手与假 app-server 子进程测试都需要 Python 3；原生构建还需要 Xcode Command Line Tools。Linux 缺少 GTK/WebKit 等 Tauri 系统库时，不能把只编译独立 Rust harness 的结果描述成完整桌面构建通过。
 - `make test` 与 `make build-dmg` 可验证代码和包装；真实 Codex 账户、权限和浏览器仍需独立验收，具体见 `docs/task-workbench.md`。
 

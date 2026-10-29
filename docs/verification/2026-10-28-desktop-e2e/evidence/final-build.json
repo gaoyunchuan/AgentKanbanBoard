@@ -1,0 +1,11 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "built_app": "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-tauri/target/release/bundle/macos/Codex Thread Kanban.app",
+  "binary_sha256": "a112517ed010a27caaa1e661e6c031e013ce3f2d2accaacb5ab6740b7f18ed0f",
+  "binary_matches": true,
+  "codesign_verify_exit": 0,
+  "rust_lib_tests": 136,
+  "frontend_tests": 81,
+  "other_rust_tests": 2,
+  "python_tests": 18
+}

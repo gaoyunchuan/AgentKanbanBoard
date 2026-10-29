@@ -1,0 +1,39 @@
+{
+  "result": {
+    "type": "object",
+    "value": {
+      "value": "你hao\n",
+      "events": [
+        {
+          "type": "pointerdown",
+          "value": ""
+        },
+        {
+          "type": "pointerup",
+          "value": ""
+        },
+        {
+          "type": "input",
+          "inputType": "insertText",
+          "value": "你"
+        },
+        {
+          "type": "input",
+          "inputType": "insertText",
+          "value": "你hao"
+        },
+        {
+          "type": "keydown",
+          "key": "Enter",
+          "code": "Enter",
+          "value": "你hao"
+        },
+        {
+          "type": "input",
+          "inputType": "insertLineBreak",
+          "value": "你hao\n"
+        }
+      ]
+    }
+  }
+}

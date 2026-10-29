@@ -243,6 +243,40 @@ fn main() {
     let app = tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();
+            // 运行状态跟随真实数据库目录；升级只替换APP，不迁移或清理这些文件。
+            let repository = codex_kanban::repository::Repository::open_default()
+                .map_err(std::io::Error::other)?;
+            let root = repository
+                .browser_state_root()
+                .map_err(std::io::Error::other)?;
+            // macOS直接启动隔离验收包时NSBundle可能尚未给出resourcePath，使用真实exe位置兜底。
+            let resources = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|p| p.join("browser"))
+                .or_else(|| {
+                    std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent()?.parent().map(|p| p.join("Resources/browser")))
+                })
+                .unwrap_or_else(|| {
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("target/missing-resources")
+                });
+            let development = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap();
+            let (agent, scripts) = if resources.join("session_browser.mjs").is_file() {
+                (resources.join("agent-browser"), resources)
+            } else {
+                (
+                    development.join(".build/browser/agent-browser"),
+                    development.join("scripts"),
+                )
+            };
+            codex_kanban::browser_bridge::configure(root, agent, scripts)
+                .map_err(std::io::Error::other)?;
             let service = WorkService::spawn(Arc::new(move || {
                 let _ = handle.emit("workbench/changed", ());
             }))
@@ -267,6 +301,7 @@ fn main() {
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<WorkService>().shutdown();
+            codex_kanban::browser_mcp::shutdown();
             codex_kanban::browser_bridge::shutdown_all();
         }
     });

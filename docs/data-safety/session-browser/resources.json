@@ -1,0 +1,222 @@
+{
+  "status": "local_verification_only_release_blocked",
+  "scope": "本机隔离验收已实施；正式容量受C05持久盘无硬quota阻塞，见capacity.md。永久状态保留来自用户明确要求。",
+  "resources": [
+    {
+      "resource_id": "local.session_browser.runtime",
+      "resource_type": "docker_and_sidecar",
+      "owner": "SessionBrowserManager",
+      "namespace": "app_instance/conversation/epoch",
+      "cardinality": {
+        "max_items": 4,
+        "max_tabs_per_item": 16,
+        "max_tabs_total": 64
+      },
+      "retention": {
+        "permanent": false,
+        "mechanism": "关闭浏览器/APP退出回收；异常退出下次启动精确标签对账"
+      },
+      "rate": {
+        "max_concurrent_starts": 4,
+        "max_start_attempts": 1
+      },
+      "capacity": {
+        "cpu_per_container": 2,
+        "memory_per_container_bytes": 2147483648,
+        "memory_total_bytes": 8589934592,
+        "pids_per_container": 256,
+        "enforcement": "Docker cgroup已实施；16页为显式新建拒绝/列表检查，不宣称popup硬quota"
+      },
+      "backpressure": {
+        "behavior_at_limit": "拒绝新增浏览器或页，普通聊天继续",
+        "automatic_action_retries": 0
+      },
+      "cleanup_recovery": {
+        "ownership_identifiable": true,
+        "mechanism": "只清理本APP实例namespace和owner标签的容器及本机sidecar，禁止全局close-all"
+      },
+      "observability": {
+        "status": "implemented_with_unverified_limits",
+        "evidence": "capacity.md及../../verification/2026-10-29-session-browser/product/trace.json"
+      }
+    },
+    {
+      "resource_id": "local.session_browser.stream",
+      "resource_type": "websocket_frames",
+      "owner": "BrowserPane/本机薄桥",
+      "namespace": "app_instance/conversation/epoch/target/viewport",
+      "cardinality": {
+        "max_foreground_streams": 1,
+        "max_connections": 4,
+        "max_frames_in_flight": 1,
+        "max_pending_frames": 1
+      },
+      "retention": {
+        "permanent": false,
+        "mechanism": "隐藏/断连立即释放；默认不录屏"
+      },
+      "rate": {
+        "max_frames_per_second": 30
+      },
+      "capacity": {
+        "max_width": 1600,
+        "max_height": 1200,
+        "max_ws_message_bytes": 2097152,
+        "unmeasured": "WK/CLI总内存及最终p95/fps见C01，不宣称32MiB硬上界"
+      },
+      "backpressure": {
+        "behavior_at_limit": "最终绘制ACK；丢旧帧、超大降画质或报错，输入独立",
+        "automatic_action_retries": 0
+      },
+      "cleanup_recovery": {
+        "ownership_identifiable": true,
+        "mechanism": "关闭owner观看连接与解码对象，不保存帧历史"
+      },
+      "observability": {
+        "status": "implemented_with_unverified_limits",
+        "evidence": "capacity.md及../../verification/2026-10-29-session-browser/product/trace.json"
+      }
+    },
+    {
+      "resource_id": "local.session_browser.commands",
+      "resource_type": "bounded_requests",
+      "owner": "SessionBrowserManager/本机MCP桥",
+      "namespace": "app_instance/conversation/epoch",
+      "cardinality": {
+        "max_owners": 4,
+        "max_mutations_in_flight_per_owner": 1,
+        "max_mutations_queued_per_owner": 8,
+        "max_input_items_per_owner": 32,
+        "max_mcp_requests_in_flight": 32
+      },
+      "retention": {
+        "permanent": false,
+        "deadline_seconds": 20,
+        "startup_deadline_seconds": 60,
+        "mechanism": "完成/取消/超时移除，owner失效清队列"
+      },
+      "rate": {},
+      "capacity": {
+        "max_input_bytes": 16384,
+        "input_upper_bound_bytes": 2097152,
+        "max_mcp_request_bytes": 1048576,
+        "max_mcp_result_bytes": 524288
+      },
+      "backpressure": {
+        "behavior_at_limit": "owner9请求许可，MCP32连接，控制消息16KiB；未实施120events/s或移动合并",
+        "automatic_action_retries": 0
+      },
+      "cleanup_recovery": {
+        "ownership_identifiable": true,
+        "mechanism": "精确owner清队列，未知副作用不重放，无每历史Thread常驻worker"
+      },
+      "observability": {
+        "status": "implemented_with_unverified_limits",
+        "evidence": "capacity.md及../../verification/2026-10-29-session-browser/product/trace.json"
+      }
+    },
+    {
+      "resource_id": "local.session_browser.persistent_state",
+      "resource_type": "bind_mount_profile_downloads_manifest",
+      "owner": "Docker Chrome/文件适配",
+      "namespace": "actual_database_directory/database_filename/owner",
+      "cardinality": {
+        "max_items": 16,
+        "max_running": 4,
+        "max_transfers_per_owner": 1
+      },
+      "retention": {
+        "permanent": true,
+        "mechanism": "profile/已保存下载仅显式用户清理；关闭/升级不删；cache与未完成传输独立清理"
+      },
+      "rate": {
+        "max_chunks_in_flight": 4
+      },
+      "capacity": {
+        "manifest_max_bytes": 262144,
+        "manifest_total_bytes": 4194304,
+        "max_file_bytes": 67108864,
+        "chunk_bytes": 65536,
+        "transfer_buffer_total_bytes": 1048576,
+        "enforcement": "manifest与上传暂存有硬限制；完整profile及普通下载无硬quota/低空间守卫，C05阻塞正式容量结论"
+      },
+      "backpressure": {
+        "behavior_at_limit": "目录/上传暂存超限拒绝；不自动删profile，持久盘空间保护待补",
+        "automatic_action_retries": 0
+      },
+      "cleanup_recovery": {
+        "ownership_identifiable": true,
+        "mechanism": "容器回收只删运行对象；持久目录按真实DB/owner保留，OS文件锁单写，manifest原子写；损坏不覆盖"
+      },
+      "observability": {
+        "status": "implemented_with_unverified_limits",
+        "evidence": "capacity.md及../../verification/2026-10-29-session-browser/product/trace.json"
+      }
+    },
+    {
+      "resource_id": "local.session_browser.bridge_state",
+      "resource_type": "metadata_and_tickets",
+      "owner": "SessionBrowserManager",
+      "namespace": "app_instance/conversation/epoch",
+      "cardinality": {
+        "max_owners": 4,
+        "max_tabs": 64
+      },
+      "retention": {
+        "permanent": false,
+        "mechanism": "HMAC由进程密钥与owner计算；进程退出失效，不维护历史票据表"
+      },
+      "rate": {},
+      "capacity": {
+        "max_metadata_bytes_per_tab": "不单独保证；受manifest256KiB和桥响应限额保护",
+        "metadata_upper_bound_bytes": 524288
+      },
+      "backpressure": {
+        "behavior_at_limit": "拒绝新票据/请求；不代理任意endpoint",
+        "automatic_action_retries": 0
+      },
+      "cleanup_recovery": {
+        "ownership_identifiable": true,
+        "mechanism": "loopback桥内精确撤销已注册owner，不依赖云身份服务"
+      },
+      "observability": {
+        "status": "implemented_with_unverified_limits",
+        "evidence": "capacity.md及../../verification/2026-10-29-session-browser/product/trace.json"
+      }
+    },
+    {
+      "resource_id": "local.session_browser.diagnostics",
+      "resource_type": "bounded_stderr_and_docker_logs",
+      "owner": "SessionBrowserManager",
+      "namespace": "app_instance/browser_logs",
+      "cardinality": {
+        "max_stream_records_per_process": 128,
+        "max_resize_records_per_process": 32,
+        "docker_log_files_per_container": 2
+      },
+      "retention": {
+        "permanent": false,
+        "mechanism": "stderr仅有界摘要；Docker日志按2m轮转；无7天自动清理承诺"
+      },
+      "rate": {
+        "max_entries_per_second": 10
+      },
+      "capacity": {
+        "docker_log_max_size": "2m",
+        "runtime_cache": "可重建缓存跨版本清理待证"
+      },
+      "backpressure": {
+        "behavior_at_limit": "轮转/丢重复诊断，不记录票据Cookie剪贴板正文",
+        "automatic_action_retries": 0
+      },
+      "cleanup_recovery": {
+        "ownership_identifiable": true,
+        "mechanism": "只清理本APP浏览器诊断目录"
+      },
+      "observability": {
+        "status": "implemented_with_unverified_limits",
+        "evidence": "capacity.md及../../verification/2026-10-29-session-browser/product/trace.json"
+      }
+    }
+  ]
+}

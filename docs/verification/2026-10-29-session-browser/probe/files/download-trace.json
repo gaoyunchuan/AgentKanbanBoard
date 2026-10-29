@@ -1,0 +1,94 @@
+[
+  {
+    "at": "2026-10-29T07:10:21.162Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/blue"
+    }
+  },
+  {
+    "at": "2026-10-29T07:10:21.200Z",
+    "step": "fixture-ws",
+    "value": {
+      "text": "hmr:downloads-diagnostic"
+    }
+  },
+  {
+    "at": "2026-10-29T07:10:22.128Z",
+    "step": "setup",
+    "value": {
+      "root": "/tmp/akb-download-b41f6406",
+      "state": {
+        "human_control": true,
+        "input_interrupted": false,
+        "manifest": {
+          "active_index": 0,
+          "pages": [
+            {
+              "title": "host.docker.internal:52150/blue?marker=downloads-diagnostic",
+              "url": "http://host.docker.internal:52150/blue?marker=downloads-diagnostic"
+            }
+          ],
+          "version": 1
+        },
+        "pages": [
+          {
+            "active": true,
+            "id": "2BEBCD0C22B80BAA266CCAF68ECF7176",
+            "title": "host.docker.internal:52150/blue?marker=downloads-diagnostic",
+            "url": "http://host.docker.internal:52150/blue?marker=downloads-diagnostic"
+          }
+        ],
+        "state_path": "/private/tmp/akb-download-b41f6406/browser-state/app.db/636861743a636f6e766572736174696f6e2d34353934322d313739333235373831373938333638393030302d32",
+        "stream_url": "ws://127.0.0.1:52172/5643d96d06624b6d7a7796a0db0d3817",
+        "target_id": "2BEBCD0C22B80BAA266CCAF68ECF7176"
+      },
+      "container": "akb-47ee89d9aa1f9498e0484e63"
+    }
+  },
+  {
+    "at": "2026-10-29T07:10:22.532Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/download"
+    }
+  },
+  {
+    "at": "2026-10-29T07:10:24.210Z",
+    "step": "closed-configuration",
+    "value": []
+  },
+  {
+    "at": "2026-10-29T07:10:24.414Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/download"
+    }
+  },
+  {
+    "at": "2026-10-29T07:10:24.505Z",
+    "step": "live-configuration",
+    "value": [
+      {
+        "name": "browser-download.txt",
+        "content": "browser-download-evidence"
+      }
+    ]
+  },
+  {
+    "at": "2026-10-29T07:10:24.669Z",
+    "step": "fixture-http",
+    "value": {
+      "method": "GET",
+      "path": "/download"
+    }
+  },
+  {
+    "at": "2026-10-29T07:10:26.298Z",
+    "step": "after-live-disconnected",
+    "value": []
+  }
+]
