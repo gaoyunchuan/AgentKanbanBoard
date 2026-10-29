@@ -13,6 +13,7 @@
 - 侧边浏览器：打开会话 → 原生视图出现 → 地址栏导航 example.com，CDP 目标为 https://example.com/（Example Domain）。
 - 聊天：新建会话选择 AgentKanbanBoard 项目，发送“回归冒烟：请只回复 OK”，生成新会话与 Thread，assistant 消息完成。
 - 任务视图：树加载 322 任务；设置页显示“委托任务默认权限 = 完全访问”。
+- Agent MCP 端到端：在会话中要求“只用 session_browser 读取页面标题”，批准 list_pages/snapshot 后，Agent 回复“页面标题：Example Domain”，证明 Agent 与面板操作同一原生页面。
 - 自动化：src-ui 181 项、Rust 193 项、Node 9 项、打包助手 19 项通过。
 
 ## 已知边界（仍需继续收敛）
