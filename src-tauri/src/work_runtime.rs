@@ -1685,7 +1685,12 @@ fn execution_thread_params(config: &TaskExecutionConfig) -> Result<Value, String
         // 因此旧 browser_enabled 不再决定能否访问面板，也不让 Docker 缺失阻塞普通聊天。
         // Electron 外壳可注入自己的 MCP 网关，让 Agent 操作与面板同一批原生页面。
         let server = match std::env::var("AKB_BROWSER_MCP_URL") {
-            Ok(url) if !url.is_empty() => json!({"url":url,"enabled":true,"required":false,"startup_timeout_sec":10,"tool_timeout_sec":60}),
+            Ok(url) if !url.is_empty() => {
+                // 带上任务标识，Electron 网关可绑定到该任务对应的会话，而不是最近激活的会话。
+                let separator = if url.contains('?') { '&' } else { '?' };
+                let task_url = format!("{url}{separator}task={}", config.task_id);
+                json!({"url":task_url,"enabled":true,"required":false,"startup_timeout_sec":10,"tool_timeout_sec":60})
+            },
             _ => crate::browser_mcp::server_config(&config.task_id)?,
         };
         if params.get("config").is_none() { params["config"] = json!({}); }

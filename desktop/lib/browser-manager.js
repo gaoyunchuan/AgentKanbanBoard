@@ -50,6 +50,12 @@ class BrowserManager {
     if (tab) { try { this.window.contentView.removeChildView(tab.view); } catch {} }
   }
 
+  activateConversation(conversationId) {
+    const conversation = this.ensure(conversationId);
+    if (!conversation.tabs.size) this.newTab(conversationId, 'about:blank');
+    else this.activate(conversationId, conversation.activeId);
+  }
+
   layout() {
     const conversation = this.activeConversation && this.conversations.get(this.activeConversation);
     if (!conversation) return;

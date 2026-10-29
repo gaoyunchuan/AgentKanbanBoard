@@ -66,9 +66,17 @@ app.whenReady().then(async () => {
   });
   const browsers = new BrowserManager(window);
   // Agent 的 session_browser 工具直接操作面板里的原生页面。
-  const mcp = await startBrowserMcp(browsers, () => browsers.activeConversation);
+  let backend;
+  const mcp = await startBrowserMcp(browsers, async taskId => {
+    if (!taskId || !backend) return null;
+    try {
+      const snapshot = await backend.call('chat_command', { method: 'snapshot', params: {} });
+      const conversation = (snapshot.conversations || []).find(item => item.task_id === taskId);
+      return conversation ? conversation.id : null;
+    } catch { return null; }
+  });
   if (process.env.AKB_DEBUG_PORT) console.log('browser-mcp', mcp.url);
-  const backend = startSidecar(mcp.url);
+  backend = startSidecar(mcp.url);
   const uiFile = path.join(__dirname, 'ui/index.html');
   window.loadFile(existsSync(uiFile) ? uiFile : path.resolve(__dirname, '../src-ui/dist/index.html'));
 

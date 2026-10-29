@@ -17,8 +17,8 @@
 
 ## 已知边界（仍需继续收敛）
 
-- MCP 浏览器网关当前作用于“最近激活会话”；多任务并行时 Agent 可能操作到错误会话，需要按 task_id 绑定。
-- 原生浏览器的拖拽/粘贴图片上传（upload_begin/chunk/finish）尚未迁移，文件选择上传与下载目录已实现。
+- MCP 网关已按 task_id 绑定会话；同一时刻仍由单个 Electron 浏览器管理器承载，多任务并行时需继续观察切换行为。
+- 拖拽/粘贴由原生 Chromium 处理；文件选择上传与下载目录已实现，toolbar 的 upload_begin/chunk 协议不再使用。
 - 权限确认弹窗、企业登录、系统级通知等尚未在 Electron 外壳做专项回归。
 - Tauri 目录保留为后端库与旧外壳构建入口；DMG 打包仍走 Tauri 脚本，Electron 采用 electron-packager 开发制品。
 
@@ -26,3 +26,8 @@
 
 - 新版：~/Applications/Codex Thread Kanban.app（Electron）
 - 旧版备份：~/Applications/Codex Thread Kanban.backup-5f90a42a-3ab0-43b0-9b78-65b219ecf887.app（Tauri）
+## 第二轮补齐
+
+- MCP 网关 URL 带 task 参数，Electron 通过会话快照解析 task_id → conversation，Agent 操作绑定到对应会话，而不是最近激活会话。
+- 原生浏览器支持打开下载目录与文件选择上传（DOM.setFileInputFiles）；拖拽/粘贴由原生 Chromium 直接处理。
+- 最新安装包：2026-10-29 22:5x 重建，旧版继续备份为 Codex Thread Kanban.backup-fa85bfeb-5c04-4169-b7b4-76b094cd5470.app。

@@ -15,9 +15,9 @@ async function evaluate(manager, conversationId, expression) {
   return reply.result ? reply.result.value : undefined;
 }
 
-async function callTool(manager, activeConversation, args) {
-  const conversationId = activeConversation();
+async function callTool(manager, conversationId, args) {
   if (!conversationId) throw new Error('请先打开该会话的侧边浏览器');
+  manager.activateConversation(conversationId);
   const operation = args.operation;
   if (operation === 'list_pages' || operation === 'status') return manager.handle(conversationId, 'status');
   if (operation === 'navigate' || operation === 'open_page') return manager.handle(conversationId, 'navigate', { url: args.url });
@@ -57,7 +57,7 @@ async function callTool(manager, activeConversation, args) {
   throw new Error('不支持的页面操作');
 }
 
-function startBrowserMcp(manager, activeConversation) {
+function startBrowserMcp(manager, resolveConversation) {
   const token = randomBytes(16).toString('hex');
   const tool = {
     name: 'session_browser',
@@ -73,7 +73,9 @@ function startBrowserMcp(manager, activeConversation) {
     },
   };
   const server = http.createServer(async (request, response) => {
-    if (request.url !== '/mcp/' + token) { response.writeHead(404).end(); return; }
+    const incoming = new URL(request.url, 'http://127.0.0.1');
+    if (incoming.pathname !== '/mcp/' + token) { response.writeHead(404).end(); return; }
+    const taskId = incoming.searchParams.get('task');
     let body = '';
     for await (const chunk of request) body += chunk;
     let message;
@@ -85,7 +87,8 @@ function startBrowserMcp(manager, activeConversation) {
       if (message.method === 'tools/call') {
         if (message.params?.name !== 'session_browser') throw new Error('未知工具');
         try {
-          const value = await callTool(manager, activeConversation, message.params.arguments || {});
+          const conversationId = (await resolveConversation(taskId)) || manager.activeConversation;
+          const value = await callTool(manager, conversationId, message.params.arguments || {});
           return { content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value };
         } catch (error) {
           return { content: [{ type: 'text', text: String(error.message || error) }], isError: true };
