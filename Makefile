@@ -8,7 +8,7 @@ DMG_DIR := src-tauri/target/release/bundle/dmg
 DMG_STAGING := src-tauri/target/release/bundle/dmg-staging
 DMG_PATH := $(DMG_DIR)/$(APP_NAME)_$(APP_VERSION)_$(APP_ARCH)_development.dmg
 
-.PHONY: build build-app build-dmg install-local run-local deps test test-local-tools
+.PHONY: build build-app build-dmg install-local run-local deps test test-local-tools electron-local
 
 # 本机使用可直接 make run-local；build 保留为开发 DMG 构建入口。
 build: build-dmg
@@ -31,6 +31,10 @@ install-local: build-app
 
 run-local: install-local
 	$(PYTHON) scripts/macos_local.py open
+
+# Electron 版正式外壳：构建 UI、sidecar、打包并安装到 ~/Applications。
+electron-local:
+	$(PYTHON) scripts/electron_local.py
 
 build-dmg: build-app
 	rm -rf "$(DMG_STAGING)"

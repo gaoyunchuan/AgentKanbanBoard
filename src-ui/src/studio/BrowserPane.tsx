@@ -5,6 +5,26 @@ import { useSessionBrowser } from './useSessionBrowser';
 import { BrowserSurface } from './BrowserSurface';
 import './browser.css';
 
+// Electron 外壳里页面由原生 Chromium 视图渲染；这个占位只负责把面板矩形同步给主进程。
+function NativeBrowserSurface({ active, conversationId }: { active: boolean; conversationId?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const akb = (window as any).akb;
+    if (!akb || !conversationId) return;
+    if (!active) { akb.hide(); return; }
+    const element = ref.current;
+    if (!element) return;
+    const sync = () => {
+      const box = element.getBoundingClientRect();
+      akb.rect({ conversationId, rect: { x: box.x, y: box.y, width: box.width, height: box.height } });
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(element); sync();
+    return () => { observer.disconnect(); akb.hide(); };
+  }, [active, conversationId]);
+  return <div className="browser-native-slot" ref={ref} aria-label="原生浏览器画面"/>;
+}
+
 export function BrowserPane({ active = true }: { active?: boolean }) {
   const studio = useStudio();
   const opened = useRef(new Set<string>());
@@ -21,6 +41,7 @@ function SessionBrowserPane({ active, previouslyOpened, remember, forget }: {
   active: boolean; previouslyOpened: boolean; remember: (owner: string) => void; forget: (owner: string) => void;
 }) {
   const studio = useStudio(), conversation = studio.conversation;
+  const nativeBrowser = typeof window !== 'undefined' && Boolean((window as any).akb?.browser);
   const browser = useSessionBrowser(conversation?.id, studio.api.native, active, previouslyOpened);
   const { state, started, waiting, error, operation } = browser;
   const [url, setUrl] = useState('');
@@ -30,6 +51,7 @@ function SessionBrowserPane({ active, previouslyOpened, remember, forget }: {
   const stop = async () => { if (await browser.stop() && conversation) forget(conversation.id); };
   const page = state?.pages.find(value => value.id === state.target_id);
   useEffect(() => { if (!focusUrl.current) setUrl(page?.url === 'about:blank' ? '' : page?.url || ''); }, [page?.url, state?.target_id]);
+  useEffect(() => { if (nativeBrowser && !active) (window as any).akb?.hide(); }, [nativeBrowser, active]);
   const pageOperation = useCallback((method: string, params: Record<string, unknown> = {}) => operation(method, { target_id: state?.target_id, ...params }), [operation, state?.target_id]);
   const command = (method: string) => void operation(method, state?.target_id ? { target_id: state.target_id } : {});
   return <aside className="inspector browser-panel streaming-browser" aria-label="侧边浏览器" hidden={!active}>
@@ -52,8 +74,10 @@ function SessionBrowserPane({ active, previouslyOpened, remember, forget }: {
           <button className="iconbtn" aria-label="新建浏览器标签" onClick={() => void operation('new_page')}><Plus size={15}/></button>
         </div>
       </div>
-      {active && <BrowserSurface key={state?.target_id || 'waiting'} frame={browser.frame} painted={browser.painted} rendered={browser.rendered} send={browser.send} operation={pageOperation} upload={browser.upload}
-        insertText={browser.insertText}/>}
+      {active && (nativeBrowser
+        ? <NativeBrowserSurface active conversationId={conversation?.id}/>
+        : <BrowserSurface key={state?.target_id || 'waiting'} frame={browser.frame} painted={browser.painted} rendered={browser.rendered} send={browser.send} operation={pageOperation} upload={browser.upload}
+          insertText={browser.insertText}/>)}
       <div className="browser-actions">
         <span className="browser-control-owner"><MousePointer2 size={13}/>{state?.human_control ? '你正在控制' : 'Agent 可控制'}</span>
         {state?.human_control && <button className="textbtn outlined" onClick={() => command('release_control')}>交给 Agent</button>}

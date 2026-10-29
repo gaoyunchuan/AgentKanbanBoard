@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  // 相对资源路径同时兼容 Tauri 与 Electron 的本地文件加载。
+  base: "./",
   plugins: [react()],
   test: {
     environment: "jsdom",

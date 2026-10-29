@@ -25,3 +25,7 @@
 - 2026-10-26: 补充 npm 10/11 对 Vitest 嵌套 Vite 8 的 esbuild 可选 peer 锁节点验证要求。
 - 2026-10-26: 记录任务工作台的运行时依赖、固定浏览器 MCP 与真实桌面验收边界；保留现有 DMG 命名和构建入口。
 - 2026-08-05: 记录 macOS DMG 构建链路、npm 锁文件完整性约束和验收命令。
+## Electron 外壳（2026-10-29）
+
+- 正式桌面外壳已切换为 Electron（desktop/），通过 akb_sidecar 复用 Rust WorkService；侧边浏览器使用 WebContentsView 原生 Chromium，Agent 通过本机 MCP 网关操作同一批页面。构建安装入口为 `python3 scripts/electron_local.py`（等价 `make electron-local`）。
+- Electron 包内资源：`desktop/ui`（前端 dist）与 `Contents/Resources/akb_sidecar`；`akb_sidecar` 由 `cargo build --release --bin akb_sidecar` 生成。Tauri 目录保留为后端库与旧外壳构建入口，不再作为正式安装包。

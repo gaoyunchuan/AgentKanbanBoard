@@ -20,6 +20,7 @@
 .studio .streaming-browser .browser-surface {min-height: 180px; flex: 1; background: #fff; position: relative; overflow: hidden; touch-action: none;}
 .studio .streaming-browser .browser-frame {position: absolute; inset: 0; opacity: 0; pointer-events: none;}
 .studio .streaming-browser .browser-frame.visible {opacity: 1;}
+.studio .streaming-browser .browser-native-slot {flex: 1; min-height: 180px; background: #fff;}
 .studio .streaming-browser .browser-surface:focus-within {box-shadow: inset 0 0 0 2px #7c9fd45c;}
 .studio .streaming-browser .browser-keyboard {position: absolute; left: 1px; top: 1px; width: 1px; height: 1px; min-height: 0; padding: 0; margin: 0; border: 0; opacity: 0; resize: none; pointer-events: none;}
 .studio .streaming-browser .browser-input-diagnostics {position: absolute; left: 4px; right: 4px; top: 4px; max-height: 110px; overflow: auto; z-index: 4; background: #fffffff0; color: #59677b; font: 10px/1.4 monospace; pointer-events: none; overflow-wrap: anywhere;}

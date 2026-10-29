@@ -1683,7 +1683,11 @@ fn execution_thread_params(config: &TaskExecutionConfig) -> Result<Value, String
     if !config.task_id.starts_with("extract:") {
         // 工具入口在 Thread 启动/恢复时始终存在，Chrome 到实际浏览器操作才懒启动。
         // 因此旧 browser_enabled 不再决定能否访问面板，也不让 Docker 缺失阻塞普通聊天。
-        let server = crate::browser_mcp::server_config(&config.task_id)?;
+        // Electron 外壳可注入自己的 MCP 网关，让 Agent 操作与面板同一批原生页面。
+        let server = match std::env::var("AKB_BROWSER_MCP_URL") {
+            Ok(url) if !url.is_empty() => json!({"url":url,"enabled":true,"required":false,"startup_timeout_sec":10,"tool_timeout_sec":60}),
+            _ => crate::browser_mcp::server_config(&config.task_id)?,
+        };
         if params.get("config").is_none() { params["config"] = json!({}); }
         params["config"]["mcp_servers.agentkanban_browser"] = server;
         let instructions = params["developerInstructions"].as_str().unwrap_or_default();

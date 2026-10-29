@@ -11,3 +11,6 @@ src-tauri/target/
 
 .build/
 poc/electron/node_modules/
+desktop/node_modules/
+desktop/dist-electron/
+desktop/ui/
