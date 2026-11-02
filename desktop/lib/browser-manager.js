@@ -20,11 +20,16 @@ function normalizeUrl(value) {
   return url.href;
 }
 
+function browserPreferences(partition) {
+  return { partition, nodeIntegration: false, contextIsolation: true, sandbox: true };
+}
+
 class BrowserManager {
   constructor(window, options = {}) {
     this.window = window;
     this.conversations = new Map();
     this.activeConversation = null;
+    this.visible = false;
     this.rect = options.rect || { x: 0, y: 0, width: 0, height: 0 };
     this.downloads = options.downloads || path.join(process.env.HOME || '', '.codex-kanban', 'downloads');
     fs.mkdirSync(this.downloads, { recursive: true });
@@ -39,15 +44,20 @@ class BrowserManager {
   }
   setRect(conversationId, rect) {
     if (!rect || !Number.isFinite(rect.x) || rect.width < 2 || rect.height < 2) return;
+    this.hide();
+    this.activeConversation = conversationId;
+    this.visible = true;
     this.rect = { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
     const conversation = this.conversations.get(conversationId);
     if (conversation && conversation.activeId) this.activate(conversationId, conversation.activeId);
   }
 
   hide() {
-    const conversation = this.activeConversation && this.conversations.get(this.activeConversation);
-    const tab = conversation && conversation.tabs.get(conversation.activeId);
-    if (tab) { try { this.window.contentView.removeChildView(tab.view); } catch {} }
+    // 网页激活可来自 Agent；只有可见面板的矩形上报拥有原生视图显示权。
+    this.visible = false;
+    for (const conversation of this.conversations.values()) for (const tab of conversation.tabs.values()) {
+      try { this.window.contentView.removeChildView(tab.view); } catch {}
+    }
   }
 
   activateConversation(conversationId) {
@@ -57,6 +67,7 @@ class BrowserManager {
   }
 
   layout() {
+    if (!this.visible) return;
     const conversation = this.activeConversation && this.conversations.get(this.activeConversation);
     if (!conversation) return;
     const tab = conversation.tabs.get(conversation.activeId);
@@ -67,23 +78,25 @@ class BrowserManager {
   ensure(conversationId) {
     let conversation = this.conversations.get(conversationId);
     if (!conversation) {
-      conversation = { partition: partitionFor(conversationId), tabs: new Map(), activeId: null, next: 1 };
+      conversation = { partition: partitionFor(conversationId), tabs: new Map(), activeId: null, next: 1, revision: 0 };
       this.conversations.set(conversationId, conversation);
     }
     return conversation;
   }
 
-  newTab(conversationId, url) {
+  newTab(conversationId, url, options = {}) {
     const conversation = this.ensure(conversationId);
     const id = 'tab-' + conversation.next++;
-    const view = new WebContentsView({ webPreferences: { partition: conversation.partition, contextIsolation: true, sandbox: true } });
+    const view = new WebContentsView({ ...(options.webContents ? { webContents: options.webContents } : {}), webPreferences: { ...options.webPreferences, ...browserPreferences(conversation.partition) } });
     view.webContents.session.setDownloadPath(this.downloads);
     conversation.tabs.set(id, { id, view, url: 'about:blank', title: '' });
+    view.webContents.setWindowOpenHandler(details => this.openWindow(conversationId, details));
+    view.webContents.on('destroyed', () => this.removeTab(conversationId, id));
     const update = () => {
       const tab = conversation.tabs.get(id);
       if (!tab) return;
       tab.url = tab.view.webContents.getURL(); tab.title = tab.view.webContents.getTitle();
-      if (conversation.activeId === id && this.activeConversation === conversationId) this.window.webContents.send('browser:changed', this.state(conversationId));
+      this.emitState(conversationId);
     };
     for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) view.webContents.on(event, update);
     this.activate(conversationId, id);
@@ -91,22 +104,70 @@ class BrowserManager {
     return id;
   }
 
+  openWindow(conversationId, details) {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) return { action: 'deny' };
+    try { normalizeUrl(details.url); } catch { return { action: 'deny' }; }
+    return {
+      action: 'allow', outlivesOpener: true,
+      // 已创建的 guest 无法事后改权限，必须在 Electron 创建前固定沙箱与同会话 partition。
+      overrideBrowserWindowOptions: { webPreferences: browserPreferences(conversation.partition) },
+      createWindow: options => this.createWindowTab(conversationId, details, options),
+    };
+  }
+
+  createWindowTab(conversationId, details, options) {
+    // Electron 38 要求返回它预创建的同一个 guest，才能保留 opener、POST 及页面引用。
+    const id = this.newTab(conversationId, undefined, options);
+    const contents = this.conversations.get(conversationId).tabs.get(id).view.webContents;
+    if (!options.webContents) {
+      // 中键等 OpenURLFromTab 路径没有 guest，自定义 createWindow 需负责原始导航。
+      const loadOptions = { httpReferrer: details.referrer };
+      if (details.postBody) {
+        loadOptions.postData = details.postBody.data;
+        loadOptions.extraHeaders = 'content-type: ' + details.postBody.contentType + (details.postBody.boundary ? '; boundary=' + details.postBody.boundary : '');
+      }
+      contents.loadURL(details.url, loadOptions).catch(() => {});
+    }
+    return contents;
+  }
+
+  removeTab(conversationId, id) {
+    const conversation = this.conversations.get(conversationId);
+    const entry = conversation && conversation.tabs.get(id);
+    if (!entry) return;
+    try { this.window.contentView.removeChildView(entry.view); } catch {}
+    conversation.tabs.delete(id);
+    if (conversation.activeId === id) {
+      const next = conversation.tabs.keys().next().value;
+      conversation.activeId = next || null;
+      if (next) this.activate(conversationId, next);
+    }
+    this.emitState(conversationId);
+  }
+
   activate(conversationId, id) {
     const conversation = this.ensure(conversationId);
     if (!conversation.tabs.has(id)) throw new Error('页面不存在');
     for (const other of conversation.tabs.values()) { try { this.window.contentView.removeChildView(other.view); } catch {} }
     const tab = conversation.tabs.get(id);
-    this.window.contentView.addChildView(tab.view);
+    if (this.visible && this.activeConversation === conversationId) this.window.contentView.addChildView(tab.view);
     conversation.activeId = id;
     tab.view.setBounds(this.rect);
-    this.activeConversation = conversationId;
+    this.emitState(conversationId);
+  }
+
+  emitState(conversationId) {
+    const conversation=this.conversations.get(conversationId);
+    if(conversation) conversation.revision++;
+    this.window.webContents.send('browser:changed', {...this.state(conversationId), conversation_id:conversationId});
   }
 
   state(conversationId) {
     const conversation = this.conversations.get(conversationId);
     if (!conversation) return { pages: [], target_id: null, stream_url: null, human_control: false, state_path: null, input_interrupted: false };
     const pages = [...conversation.tabs.values()].map(tab => ({ id: tab.id, title: tab.title || tab.url, url: tab.url, active: tab.id === conversation.activeId }));
-    return { pages, target_id: conversation.activeId, stream_url: null, human_control: false, state_path: null, input_interrupted: false };
+    return { revision: conversation.revision, pages, target_id: conversation.activeId, stream_url: null, human_control: false, state_path: null, input_interrupted: false };
   }
 
   handle(conversationId, method, params = {}) {
@@ -114,7 +175,6 @@ class BrowserManager {
     const tab = () => conversation.tabs.get(conversation.activeId);
     switch (method) {
       case 'status': case 'list_pages': {
-        if (!conversation.tabs.size) this.newTab(conversationId, 'about:blank');
         return this.state(conversationId);
       }
       case 'new_page': case 'open_page': this.newTab(conversationId, params.url || 'about:blank'); return this.state(conversationId);
@@ -123,8 +183,8 @@ class BrowserManager {
       case 'close_page': {
         const target = params.target_id || conversation.activeId;
         const entry = conversation.tabs.get(target);
-        if (entry) { try { this.window.contentView.removeChildView(entry.view); } catch {} try { entry.view.webContents.close(); } catch {} conversation.tabs.delete(target); }
-        if (conversation.activeId === target) { const next = conversation.tabs.keys().next().value; conversation.activeId = next || null; if (next) this.activate(conversationId, next); }
+        this.removeTab(conversationId, target);
+        if (entry) { try { entry.view.webContents.close(); } catch {} }
         return this.state(conversationId);
       }
       case 'reload': { const current = tab(); if (current) current.view.webContents.reload(); return this.state(conversationId); }
@@ -160,8 +220,9 @@ class BrowserManager {
   disposeConversation(conversationId) {
     const conversation = this.conversations.get(conversationId);
     if (!conversation) return;
-    for (const tab of conversation.tabs.values()) { try { this.window.contentView.removeChildView(tab.view); } catch {} try { tab.view.webContents.close(); } catch {} }
+    // 先解除归属，避免逐个关闭触发 destroyed 时又激活待销毁的兄弟页面。
     this.conversations.delete(conversationId);
+    for (const tab of conversation.tabs.values()) { try { this.window.contentView.removeChildView(tab.view); } catch {} try { tab.view.webContents.close(); } catch {} }
     if (this.activeConversation === conversationId) this.activeConversation = null;
   }
 

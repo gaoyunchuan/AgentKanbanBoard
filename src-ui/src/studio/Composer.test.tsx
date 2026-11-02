@@ -20,6 +20,7 @@ async function composer() {
   const conversation = data.conversations.find(c => c.mode === 'manual')!;
   const calls = vi.spyOn(api, 'call');
   render(<ChatApp api={api}/>);
+  await user.click(screen.getByRole('button', { name: '会话' }));
   await user.click(await screen.findByRole('button', { name: conversation.title }));
   const input = screen.getByRole('textbox', { name: '聊天输入' });
   const sends = () => calls.mock.calls.filter(([method]) => method === 'send');

@@ -1,0 +1,26 @@
+{
+  "baseline": "b6ec96d18e367fc2bea5fadd835992308e985b35",
+  "scope": "main 分支未提交源码；不包含先前任务的门禁结论",
+  "sha256": {
+    "src-ui/src/studio/RightDock.tsx": "d6dee8a332460d544aeab8ce50c4eb88da773bcfdd4183b3e288b12741c6bd75",
+    "src-ui/src/studio/dockTabs.ts": "3647bd3fde188984685e0dc29bae07a0a955e9a639f897659e2b4f5a5c3bd280",
+    "src-ui/src/studio/WorkspaceFiles.tsx": "f376d801f0c275e1991315eb0ad99c1a71179bd17e0b1b89abf2f9cf262f79d5",
+    "src-ui/src/studio/WorkspaceTerminal.tsx": "32ecc9a425d561807385dfb6bf0ff5f31233370a9a2d9f5a814583d6b2cda13e",
+    "src-ui/src/studio/BrowserPane.tsx": "530167f762a4080d42919f24504879b3e114c6a666d392ae3885f5650e0d443f",
+    "src-ui/src/studio/useSessionBrowser.ts": "c21938176ee8b54de1604f4e756ea250d93d6ea6596e9024a316648d2f88e9de",
+    "src-ui/src/studio/ChatApp.tsx": "ee44831dda3ec91a619b5159b5f6fd700a353c1ce16edc3a700e52b69f057f15",
+    "src-ui/src/studio/ChatSurface.tsx": "db41e94bd8cb7e634b430ca1635c09b930270bc0540e75208fbf9676ccc0716c",
+    "src-ui/src/studio/context.tsx": "c294b22c26356933123c3de2c618c0abc8a34648686ece59cfa1adb831e65b8c",
+    "src-ui/src/studio/workspace-tools.css": "75b1d3dec56f158e9dec2a62f38d5ab7300df2a08969835d94204e737eb485e6",
+    "src-tauri/src/workspace_terminal.rs": "ab1358b600fb0ae340a52dc3cb6c7808ba7c5a1578150aeb693da39338405165",
+    "src-tauri/src/work_runtime.rs": "e071c7c85b3468a5d9162c59a5105ab2ecc600cf49c6e0abbfe2ad3463528409",
+    "src-tauri/src/work_service.rs": "19dcd84f15bbe488be64432e8c3ef3c0428f868dea14bec6c805235b52f0e07d",
+    "src-tauri/src/app_server.rs": "44aa1e46033d606f341921ea8cc2e65fa10ba14a3be03fa70902c2f256e6b5d0",
+    "src-tauri/src/bin/akb_sidecar.rs": "7250164ff6f48c79cf96bcf90f3167f059bba6f001edced22a0627dad7fb3cec",
+    "desktop/main.js": "0816720d477956b5b78db25c1a1676f814cda8f4df98d0bc11f3e3ae0aa4389c",
+    "desktop/preload.js": "322e0128df8623db499a50a24a7353fa077b44c4a9906b8b785e4ecfd6c3fd11",
+    "desktop/lib/browser-manager.js": "f2bffb00c9ad78f4cc3129e043d24c200320739901c57249f83f08e9fc86b52f",
+    "src-ui/package.json": "4420f4f20dab1cf92a9d357b99e8a69ad2faa315238a6e7cf629a944c2590f5b",
+    "src-ui/package-lock.json": "cde8c9a159b8f7bf4e49ca69af060f17d3f07de551c77d7de3b237231345696c"
+  }
+}

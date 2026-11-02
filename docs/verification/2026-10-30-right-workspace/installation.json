@@ -1,0 +1,11 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "install_log": "已保留旧版本：/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-b7b9acb5-09c8-4b57-a4e0-b42d44e3d58a.app\n已安装：/Users/gaoyunchuan/Applications/Codex Thread Kanban.app\n",
+  "codesign_strict": true,
+  "source_and_installed_match": true,
+  "sidecar_sha256": "2c6aa93a37ee642e897cd0c7eb3fab715f105e1502981e2f7bb9f54b91d19b98",
+  "ui_index_sha256": "4be6bc24b589f149481e193164478c43dd9cb43d22aaa06ba9f33c71289ab413",
+  "previous_app_and_owned_processes_stopped": true,
+  "active_tasks_before_install": 0,
+  "restarted": true
+}

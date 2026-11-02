@@ -1,0 +1,12 @@
+{
+  "app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "processes": [
+    "47307 /Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/MacOS/Codex Thread Kanban",
+    "47360 /Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/Resources/akb_sidecar"
+  ],
+  "uiSha256": "4779282ac904aa96fdbc67793aeb49f9ee726dec270c8e8257296d119c6cf957",
+  "sidecarSha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+  "signatureVerified": true,
+  "backup": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-b78a0a89-dc6a-422d-8326-5a6deff39d48.app",
+  "interruptedTask": "云助手Webterminal不可用，本次未重放业务操作"
+}

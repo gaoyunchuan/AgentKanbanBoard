@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-02T11:34:25.592268+08:00",
+  "app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "signature_verified": true,
+  "ui_files_verified": 65,
+  "sidecar_sha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+  "main_process": [
+    "21308 /Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/MacOS/Codex Thread Kanban"
+  ],
+  "sidecar_process": [
+    "21338 /Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/Resources/akb_sidecar"
+  ],
+  "source_sha256": {
+    "ChatApp.tsx": "be2a41344aa1cc0b75bc2d7ec5e35258d119665b194cf1a3ba27d276450b766c",
+    "ChatSurface.tsx": "e4a863b233e5db02c1fb73f1ba44dcf457f1cb8324f26171db068acab5700a89",
+    "Dialogs.tsx": "ebb408957748d24c6a8e9b38ca5e585cd33e73936ecbab0ebefa2f19c1828c6e",
+    "context.tsx": "a721528bb6e601f2d6795b2caca3465dcc563d76cdd4e8b8fd6181d9291a7158",
+    "ChatModelDraft.test.tsx": "3fa30a9b1b0712808752ea4b17239c4b09f963babbcc28500f2d4d5a0517f639"
+  },
+  "tests": {
+    "files": 27,
+    "passed": 240,
+    "model_draft_cases": 10
+  },
+  "native_ui": {
+    "draft_before_first_send": true,
+    "save_enabled": true,
+    "tested_model": "gpt-6-astra",
+    "tested_reasoning": "high",
+    "composer_display_verified": true,
+    "reopen_and_poll_preserve_selection": true,
+    "default_model_and_effort_restored_after_test": true,
+    "real_messages_sent": false
+  },
+  "pre_feature_backup": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-c9eb62f2-8ce0-497b-8383-527a81e4666e.app",
+  "last_backup": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-161758bc-3b2c-4f13-ab73-49d10a9e0e34.app",
+  "build_outputs_cleaned": [
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-ui/dist",
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/ui",
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/dist-electron",
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-tauri/target"
+  ]
+}

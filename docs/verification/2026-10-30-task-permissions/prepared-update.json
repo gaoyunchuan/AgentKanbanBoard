@@ -1,0 +1,18 @@
+{
+  "prepared_app": "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/dist-electron/Codex Thread Kanban-darwin-arm64/Codex Thread Kanban.app",
+  "sidecar_sha256": "2f130ee736b9d80ce22933c0b86ee5f8aa4cd37b37bffd0ea62f8b97ea766eb9",
+  "built_packaged_sidecar_match": true,
+  "codesign_strict_verified": true,
+  "signing": "ad-hoc",
+  "installed": true,
+  "restarted": true,
+  "native_isolated_attempt": "Computer Use 无法解析独立测试副本，未计为桌面通过；已有浏览器界面和真实后端隔离回放证据",
+  "停止授权已收到": true,
+  "切换前等待停止确认的正式任务": [
+    {
+      "title": "接口调用示例代码及文档说明",
+      "status": "waiting",
+      "current_run_id": "run-18e330bd55e30578-1"
+    }
+  ]
+}

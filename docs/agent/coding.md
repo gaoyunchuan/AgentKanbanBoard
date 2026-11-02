@@ -2,13 +2,68 @@
 
 ## Current Knowledge
 
+### 2026-11-02 首次发送前的模型设置
+
+- 任务树默认选择只允许在 `taskScreen=tree` 时补全；从任务页进入新聊天后，轮询不能选回首个任务并替换草稿。
+- `Draft.modelConfig` 按当前草稿键保存模型和推理强度；新聊天或任务尚无会话时允许保存，只更新草稿。`Dialogs` 按打开时冻结保存目标，模型表单优先读取草稿配置；`ChatSurface` 同步显示选择。已有会话沿用版本检查与运行中禁止改模型。
+- 首次发送先创建会话，再通过 `update_conversation` 保存草稿模型配置，成功后才 `send`；失败将草稿移到已创建会话，仅清理未被编辑的原键；两端有新编辑时保留，并为未另选模型的目标补回待保存配置，重试仍先应用配置。自动主会话迁移把仅有模型配置的草稿也视为有效；成功发送后清理源草稿与目标草稿，避免新会话继承之前选择。权限保持独立。
+
+### 2026-11-02 当前任务树排序
+
+- `studio/model.ts` 的 `flattenedTasks` 在每层同级分支中优先展示自身或任意后代仍未完成的分支；仅 `completed` / `cancelled` 为结束态。全部结束的置顶分支也排在待推进分支之后；同组保留根置顶、`position` 和 ID 顺序。完整数据决定分支分类，筛选与折叠不改变分类；仅派生展示顺序，不写回任务位置。此规则用于当前工作区任务树，优先于下文旧 To Do 排序记录。
+
+### 2026-10-30 右侧工具仅限会话（优先于旧顶栏布局约定）
+
+- RightDock.available仅由conversationVisible控制，不允许把view=tasks直接作为启用条件。任务列表无工具入口/工具正文，固定TaskDetails属性保留。
+- 非会话openTool提示先打开会话，Dock同时忽略并消费请求序号；退出时收菜单。保持挂载和collapsed/资源状态，回原会话恢复，不重放禁用期间请求，不关闭PTY/文件。
+
+### 2026-10-30 会话分层阅读
+
+- events投影保留run/turn/thread/phase与commandActions；thread参与条目身份。transcript按主线程phase区分过程/结果，子Agent归过程，缺turnId的人工中途输入保持原序。
+- ChatTranscript工具组及具体调用默认收起，输出展开才挂载。运行中显示过程，完成状态切换重置默认展开并清定时器；普通轮询不能重置用户选择。
+- Markdown标准解析与GFM，不执行HTML/危险协议。普通相对路径与绝对路径共享isFileLink判定，点击经toolRequest.target进入文件单例或网页独立tab；路径权限由后台既有边界检查。
+- Mermaid异步import、strict，SVG转img隔离显示；4在途/16缓存/32Ki字符/300边/1M SVG字符。视口离开清图片、保留viewBox比例占位，避免滚动跳动。
+
+
+### 2026-10-30 本地 RPC 连接生命周期
+
+- Electron `startSidecar` 的一次性RPC完成必须 `socket.destroy()`；`end()`只半关闭，不能依赖后端FIN。统一finish清pending/timer/buffer，协议拒绝、断流、超时和子进程退出也走此路径，不重放业务。
+- ready必须同时处理启动前error/close/exit；早期拒绝先挂处理器，调用方仍收到错误。16个在途RPC、32MiB累计响应、120秒期限，达到上限明确拒绝，不堆无界队列。
+- sidecar `ClientConnection` RAII拥有广播writer注册；serve结束按peer解除，不等下一次广播清理。最多64条注册，5秒写超时。传输背压不占Agent项目并发，不互斥PTY执行。
+
+### 2026-10-30 Codex 会话名称
+
+- `TaskExecutionConfig.thread_name` 独立传递业务标题：自动执行传任务名、手动会话传会话名。创建/恢复 Thread 后、`turn/start` 前调用 `thread/name/set`，避免 Codex 将 `Task ID:` 提示首行作为标题；恢复按当轮最新业务名称同步。
+- `extract:` 临时摘要及空名称不命名。命名拒绝发出带原 task/run/thread 归属的 `runtime/thread/nameFailed` 诊断并继续；不因名称同步扩大权限或触发业务重试。
+
+### 2026-10-30 顶栏区域归属
+
+- `WorkspaceHeader` 分导航、中间业务、右侧工具三段；`RightDock` 仅将标签和操作 portal 到工具宿主，资源内容保持原挂载。顶栏与正文共用 `workspace-tool-region` 宽度，按中间可用空间限制拖动上限。
+- `TaskDetails` 在中间区域稳定挂载唯一 Inspector。会话属性从中间顶栏打开，进入会话默认收起；任务树固定显示且不提供收起。属性页签/展开与工具 active/collapsed 独立；`setPanel(content/properties/results)` 只路由中间属性，定位任务不能修改工具活动标签。
+- `workspace-layout.css` 显式覆盖旧 Inspector 的绝对定位；窄中间容器用 container query 上下展示任务树和固定属性，不能恢复第二行工具标签。
+
+### 2026-10-30 右侧工具标签
+
+- `RightDock` 用资源 ID 组织一层标签；每个网页一个标签，文件与变更为会话内单例，终端为独立 PTY。资源元数据按 tab.id 固定，不能因打开新工具改写旧终端的初始目录。显式详情请求用 panelRevision，切会话不能覆盖其原 active。
+- `BrowserManager` 仅允许可见面板矩形显示原生 view；Agent 激活不取得显示权。状态查询纯读取，显式打开无页面时才新建。工具菜单与全局弹窗打开时临时隐藏原生 view，防止覆盖 DOM。
+- 原生网页矩形需同时监听面板 ResizeObserver 和 window resize：固定宽右栏横向移动时只有 x 变化，ResizeObserver 不会触发。隐藏/卸载时同时移除两类监听，防止旧网页重新覆盖其它工具。
+- 网页新窗口请求统一经 `BrowserManager.openWindow` 进入同会话标签。Electron 38 的 createWindow 有 guest 时必须接管并返回原 WebContents；没有 guest 时自行保留 referrer/POST 导航。安全配置在 handler 返回的 overrideBrowserWindowOptions 中提前固定。WebContentsView 不允许显式传入 undefined 的 webContents 字段；网页自行关闭由 destroyed 同步移除标签。
+- `TerminalManager` 不参与 Agent 租约；最多 8 个实例、每个 1 MiB 输出环形缓存，写入 16 KiB，前端保留 3000 行。PTY 输出不追加 SQLite。关闭和应用退出终止所属进程；start 失败的空标签可关闭，StrictMode 每次 effect 拥有独立 Run。
+- 受限沙箱使用干净 Shell 初始化，防止用户 rc 启动脚本自动向 HOME 写缓存并报错；完全访问仍载入用户配置，不改变任务沙箱或自动扩大权限。
+
+### 2026-10-30 单层工作区顶栏
+
+- 主导航顺序为任务、会话、项目、需要你；启动默认显示全局任务树。`Cmd/Ctrl+1` 进入任务，`Cmd/Ctrl+2` 进入会话，覆盖下方旧视图的历史快捷键约定。
+- `WorkspaceHeader` 是唯一应用级 header；页面不再自行渲染 main-head，`ConversationHeader` 仅提供顶栏内容。新增页面操作放到共用操作区，不恢复品牌条或系统标题占位。
+- Electron macOS hiddenInset 保留原生窗口按钮，preload 只读 platform 用于控制安全空间。`workspace-header.css` 留白 drag；按钮、实际标题悬浮区域、菜单 no-drag。标题外容器必须保留 overflow visible，文本在 hover-host/h1 截断，避免切换菜单被裁剪；header-context 明确 row，防止旧样式纵向继承。
+
 ### 2026-10-28 任务筛选和延时启动
 
 - TypeScript 模块基础名（去扩展名）不得只靠大小写区分；macOS 的无扩展名导入可能先命中另一 `.ts` 文件。筛选组件用 `TaskFilterBar.tsx`，工具用 `taskFilters.ts`。
 
 - `task_schedule.rs` 管理最早自动启动时间，单独存 `task_preferences.scheduled_start_at`；不复用旧 date-only `todo_tasks.start_date`。时间均为规范 UTC 秒，界面显示本地时区。
 - 调度刷新与事务 claim 双重检查时间，等待原因 `scheduled` 不属于人工待办。不得因到点唤醒 paused、human/environment wait 或 terminal task。人工附加会话不走该自动门槛。
-- 全局任务树查询与侧栏查询分离；状态/项目多选，周视图取滚动 168 小时。关键词命中任意节点后先选取其完整根任务树（含兄弟分支和后代）；状态/项目/更新时间再在树内同节点上取交集，仅为通过筛选的节点补必要祖先。关键词命中节点本身不必通过其他条件；祖先标记层级路径，不计入符合筛选数。本机持久化条件/折叠/分页/滚动，而非冻结任务数据；不改变独立侧栏搜索。
+- 全局任务树查询与侧栏查询分离；状态/项目多选，周视图取滚动 168 小时。关键词命中任意节点后先定位其根任务树；状态/项目/更新时间在同一节点上取交集，任意节点通过后展示所在的完整根任务树（祖先、兄弟分支和所有后代）。关键词命中节点本身不必通过其他条件；未通过状态/项目/时间条件的节点标记“同树上下文”，不计入符合筛选数。符合筛选数、纳入结果数和折叠后的当前展开数分别统计；定位结果树内未命中节点时保留筛选。本机持久化条件/折叠/分页/滚动，而非冻结任务数据；不改变独立侧栏搜索。
 - `config/read` 是只读连接预检，不创建 Thread。自动检测仅切换到通过同一配置预检的候选，不删改配置、不换凭据目录。显式 override 只验证该程序。
 - 错误分类依据实际 RPC；配置解析失败不得一律拼接 dynamicTools 提示。丢弃不属于当前连接的事件，包括所有候选均失败后的迟到 EOF。
 
@@ -41,14 +96,15 @@
 - 一个 WorkRun 对应一个 Turn。`turn/completed` 只结束执行；有效 `task_submit_result` 后 Human 等人工验收，Auto 还要等本轮正常结束。提交后继续实质工具操作会使交付失效，不能靠最终文本或未读状态猜测完成。
 - 未完成交接的正常结束最多自动续跑两轮；依赖、业务问题、环境阻塞不消费模型轮询。默认 `on-request` + `workspace-write`，Agent 创建的业务子任务继承父级权限、目录、交付与浏览器策略。
 - 树形父子关系不等于启动依赖；`blocked_by` 需校验自依赖、重复、缺失与循环。父任务提交需直接子任务已完成或明确取消；被取消的前置任务不满足完成依赖。
-- 依赖满足：前端任务（从未创建 `chat_conversations`）勾选完成即放行下游，不要求结果复盘；交给 Agent 执行过的任务必须存在 `task_results` 中 `ready+usable` 的验收结果；任一不确定资源租约继续阻塞。
-- 委托默认权限保存在 `studio_settings.delegation_permission`（按需确认/只读/完全访问），只在首次委托创建执行配置时应用；已有 `work_tasks` 的重委派保留原权限，避免静默放宽。
+- 依赖满足：以 `todo_tasks.status=completed` 为准，自动执行仍经交付验收后写入完成，用户明确标记完成也能解除依赖；不得因已有会话或只有阶段结果再次阻塞，不改写历史结果的可用性。任一未释放资源租约继续阻塞；取消、重新打开和返工不满足完成依赖。
+- 新任务默认权限保存在 `studio_settings.delegation_permission`（按需确认/只读/完全访问）；创建任务时固化到 `task_preferences.execution_permissions`，不在首次委托时重新读取全局默认。历史任务优先迁入已有执行配置，保留自定义权限；Agent 子任务继承父当前回合的启动权限。
+- “属性与设置”的任务执行权限可在无会话、等待或运行中保存；`set_task_permissions` 比较旧权限，事务同步执行配置与自动主会话。自动会话原权限入口也同步回任务；独立人工会话保持自身权限，新人工会话从任务初始化。每轮 `run_started` 记录两项权限快照，用于追溯及限制本轮派生子任务。
 - 运行中的任务允许修改权限：仅 `approval_policy`/`sandbox_mode` 变更可绕过“先停止”检查，并在自动会话下同步到 `work_tasks.config_json`，从下一轮 turn 生效；模型、浏览器、项目等仍要求先停止。
 - 暂停、取消和返工先隔离持久执行，再请求运行时停止；只操作当前业务节点，不能偷偷级联业务子任务或回滚文件。对不确定副作用的断连恢复必须需要明确重试。
 - 审批只允许当前有效的 task/run/request 组合消费一次；`serverRequest/resolved` 是失效通知，不是批准。业务问题可跨 Turn 等待，native server request 不能跨执行重放。
 - 原生 subagent 按 parentThreadId 路由输出和审批；其结束不完成父业务任务。父 Turn 完成须等待已知活动子 Agent 停止确认，未确认不得接受成功或释放目录。复用 child thread 时，新旧 Turn 的归属必须保持正确。
 - 本产品调度器是唯一续跑控制者。暂停托管 Thread 的 active native Goal，异步处理 Goal pause ACK，并按原始事件顺序检查隐藏 Turn；不得让异步 ACK 越过隐藏执行而释放业务成功。
-- 最多两个 Agent 任务并发；规范化后相同或重叠的工作目录串行。手动终端须先通过调度 actor 占用同一目录，不能绕开互斥直接调用 runtime；终端事件 run_id 为空，只做展示。
+- 最多两个 Agent 任务并发；规范化后相同或重叠的工作目录串行。用户已明确选择：浏览器、文件、人工终端全部可并发，不占 Agent 目录锁或并发额度。持续终端由独立 registry 管理；旧一次性终端事件 run_id 为空，只做展示。
 - 线程启动、文件/终端操作不得阻塞 UI；浏览器 MCP 启动允许较长超时，必须放在 worker。取消尚未启动的任务不能让排队 worker 后续继续启动；已发出的未知结果不能直接重试。
 - Playwright MCP 为显式 opt-in，固定 `@playwright/mcp@0.0.83 --isolated --browser chrome`，required=true。已有 Thread 的工作目录、Agent、角色指令与浏览器配置冻结；warm resume 不承诺重新应用启动 config。不要使用用户已有浏览器会话代替独立 Chrome。
 - 退出桌面应用停止它拥有的 app-server；没有 daemon。关闭详情面板不停止调度。恢复旧的不确定活动执行时不得自动重放。

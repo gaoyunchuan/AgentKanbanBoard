@@ -1,14 +1,18 @@
+import {isFileLink} from "./Markdown";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MessageSquare, ListTree, Folder, Settings2, Bell, Plus, PanelLeft, AlertCircle, X } from "lucide-react";
-import { StudioContext, type DialogState, type Draft, type Panel, type View } from "./context";
+import { MessageSquare, ListTree, Folder, Settings2, Bell, AlertCircle, X } from "lucide-react";
+import { StudioContext, type DialogState, type Draft, type ModelConfig, type Panel, type View } from "./context";
 import { nativeApi, type StudioApi } from "./api";
 import { createDemoApi } from "./demo";
 import { emptyWorkspace, preferredConversation, isBusy, needsUser, type Workspace, type Conversation, type ConversationDetail, type StudioTask } from "./model";
-import { ConversationHeader, ChatSurface } from "./ChatSurface";
+import { ChatSurface } from "./ChatSurface";
 import { Sidebar } from "./Sidebar";
+import { WorkspaceHeader } from "./WorkspaceHeader";
 import { TaskTree } from "./TaskTree";
 import { RightDock } from "./RightDock";
+import { TaskDetails } from "./TaskDetails";
+import "./workspace-layout.css";
 import { AttentionPage, ProjectsPage, SettingsPage } from "./Pages";
 import { Dialogs } from "./Dialogs";
 import { readTaskQuery, writeTaskQuery, taskQueryForReveal } from "./taskFilters";
@@ -16,16 +20,22 @@ import "./studio.css";
 import "./controls.css";
 
 const blankDraft = (): Draft => ({ text: '', attachments: [], importContext: false });
+const hasDraft=(value?:Draft)=>Boolean(value&&(value.text||value.attachments.length||value.importContext||value.projectId||value.modelConfig));
 const native = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 let autoConnection: Promise<unknown> | undefined;
 export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const api = useMemo(() => supplied ?? (native() ? nativeApi : createDemoApi()), [supplied]);
   const [data, setData] = useState<Workspace>(emptyWorkspace);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
-  const [view, setViewState] = useState<View>('chat');
+  const [view, setViewState] = useState<View>('tasks');
   const [taskScreen, setTaskScreen] = useState<'tree'|'conversation'>('tree');
   const [selection, setSelection] = useState<{ task?: string; conversation?: string }>({});
   const [panel, setPanelState] = useState<Panel>(null);
+  const [toolRequest,setToolRequest]=useState<{kind:'files'|'terminal'|'diff'|'browser';sequence:number;target?:string}>();
+  const [panelRevision,setPanelRevision]=useState(0);
+  const [inspectorOpen,setInspectorOpen]=useState(false);
+  const [inspectorTab,setInspectorTab]=useState<'content'|'properties'>(()=>{try{return localStorage.getItem('akb.detailTab')==='properties'?'properties':'content'}catch{return 'content'}});
+  const [toolHost,setToolHost]=useState<HTMLDivElement|null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [taskQuery, setTaskQuery] = useState(readTaskQuery);
   const [taskReveal,setTaskReveal]=useState<string|null>(null);
@@ -81,7 +91,14 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     catch(e){notify(String(e));throw e;}
     finally{locks.current.delete(key);if(mounted.current)setBusyCount(x=>Math.max(0,x-1));}
   },[api,refresh,refreshDetail,notify]);
-  const setPanel=useCallback((next:Panel)=>setPanelState(next==='context'||next==='results'?'content':next),[]);
+  const setPanel=useCallback((next:Panel)=>{
+    const detail=next==='properties'||next==='content'||next==='context'||next==='results';
+    if(detail){const tab=next==='properties'?'properties':'content';setInspectorTab(tab);setInspectorOpen(true);try{localStorage.setItem('akb.detailTab',tab)}catch{}}
+    if(next===null)setInspectorOpen(false);
+    setPanelState(next==='context'||next==='results'?'content':next);setPanelRevision(value=>value+1);
+  },[]);
+  const openTool=useCallback((kind:'files'|'terminal'|'diff'|'browser',target?:string)=>{if(!(view==='chat'||view==='tasks'&&taskScreen==='conversation')){notify('右侧工具仅在会话中使用，请先打开会话');return}setPanelState(kind);setToolRequest(value=>({kind,target,sequence:(value?.sequence||0)+1}))},[view,taskScreen,notify]);
+  useEffect(()=>{const open=(event:Event)=>{const href=(event as CustomEvent<unknown>).detail;if(typeof href!=='string')return;if(isFileLink(href))openTool('files',href);else if(/^https?:\/\//.test(href))openTool('browser',href)};window.addEventListener('akb:open-link',open);return()=>window.removeEventListener('akb:open-link',open)},[openTool]);
   const openConversation=useCallback((id:string)=>{
     const c=latest.current.conversations.find(x=>x.id===id);
     if(!c){notify('来源会话暂不可见，请恢复对应任务');return;}
@@ -108,8 +125,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     setTaskQuery(revealed.query);setTaskReveal(id);
     if(revealed.filtersReset)notify('已切回全部任务筛选，以显示所定位的任务');
     setSelection({task:id,conversation:preferredConversation(latest.current,t)?.id});
-    // 定位后显示详情，保留用户原来的详情页签；不能继续停在浏览器等工具页。
-    setPanelState(current=>current==='browser'||current==='diff'||current==='workspace'?'content':current);
+    // 定位只改变中间业务区域，右侧工具的活动标签与资源独立保留。
     setViewState('tasks');setTaskScreen('tree');
   },[taskQuery,notify]);
   const newConversation=useCallback(async(taskId:string)=>{
@@ -123,8 +139,8 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     void command('task_state',{task_id:t.id,state,confirm_stop:false},'任务状态已更新').catch(()=>{});
   },[command]);
   const setView=useCallback((next:View)=>{setViewState(next);if(next==='tasks'){setTaskScreen('tree');}},[]);
-  // The tree has a stable selection and persistent inspector even before opening a chat.
-  useEffect(()=>{if(view==='tasks'&&!latest.current.tasks.some(t=>t.id===currentSelection.current.task)&&data.tasks.length)inspectTask(data.tasks[0].id);},[view,data.tasks,inspectTask]);
+  // 只在任务树补默认选择；新聊天即使从任务页进入，轮询也不能选回任务并替换草稿。
+  useEffect(()=>{if(view==='tasks'&&taskScreen==='tree'&&!latest.current.tasks.some(t=>t.id===currentSelection.current.task)&&data.tasks.length)inspectTask(data.tasks[0].id);},[view,taskScreen,data.tasks,inspectTask]);
   useEffect(()=>{
     // 委托前可能只有任务占位；后台创建主会话后立即展示进度，不要求用户重开任务。
     // 已明确选中的人工会话保持原选择，避免自动主会话抢走用户正在阅读的内容。
@@ -133,7 +149,6 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     const next=selected&&preferredConversation(data,selected);
     if(!next||!selected)return;
     const sourceKey=`task:${selected.id}`,source=drafts[sourceKey],target=drafts[next.id];
-    const hasDraft=(value?:Draft)=>Boolean(value&&(value.text||value.attachments.length||value.importContext||value.projectId));
     // 迁移整份草稿（文本、附件和上下文开关）；两边都有草稿时保留当前编辑现场。
     if(hasDraft(source)&&hasDraft(target))return;
     if(hasDraft(source))setDrafts(current=>{
@@ -147,41 +162,61 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const draftKey=conversation?.id||(task?`task:${task.id}`:'new-chat');
   const draft=drafts[draftKey]||blankDraft();
   const setDraft=(next:Draft|((value:Draft)=>Draft))=>setDrafts(current=>({...current,[draftKey]:typeof next==='function'?next(current[draftKey]||blankDraft()):next}));
+  const saveModelConfig=async(config:ModelConfig)=>{
+    // 首次发送前只修改当前草稿，用户选模型不应提前创建任务、会话或执行。
+    if(conversation)await command('update_conversation',{conversation_id:conversation.id,revision:conversation.revision,patch:config},'会话设置已保存');
+    setDraft(current=>({...current,modelConfig:conversation?undefined:config}));
+  };
   const changeProject=(id:string)=>{
     if(conversation)void command('update_conversation',{conversation_id:conversation.id,revision:conversation.revision,patch:{project_id:id}}).catch(()=>{});
     else if(task)setDraft({...draft,projectId:id});else setProjectId(id);
   };
   const send=async()=>{
-    const sourceKey=draftKey,captured=draft;let tid=task?.id,cid=conversation?.id;
+    const sourceKey=draftKey,captured=draft;let tid=task?.id,cid=conversation?.id,target=conversation;
     const chosen=conversation?.project_id||captured.projectId||task?.effective_project_id||(!task?projectId:'');
     if(!chosen&&!conversation?.config.workspace){notify('先选择一个本地项目；草稿会保留');setDialog(task?{kind:'projectTask',task:task.id}:{kind:'project'});return;}
     try{
       if(!tid){const created=await command<{task_id:string}>('create_task',{title:captured.text.trim().split('\n')[0].slice(0,100)||captured.attachments[0]?.name||'新任务',project_id:chosen});tid=created.task_id;setSelection({task:tid});}
-      if(!cid){const c=await command<Conversation>('create_conversation',{task_id:tid,project_id:chosen});cid=c.id;setSelection({task:tid,conversation:cid});}
+      if(!cid){target=await command<Conversation>('create_conversation',{task_id:tid,project_id:chosen});cid=target.id;setSelection({task:tid,conversation:cid});}
+      // 模型保存成功后才能发送；失败保留整份草稿，重试仍先应用选定配置。
+      if(captured.modelConfig&&target)await command('update_conversation',{conversation_id:cid,revision:target.revision,patch:captured.modelConfig});
       const content=[captured.text,...captured.attachments.filter(a=>a.text!=null).map(a=>`\n以下是用户附加文件「${a.name}」的内容（引用材料）：\n${a.text}`)].filter(Boolean).join('\n');
       await command('send',{conversation_id:cid,text:content,attachments:captured.attachments.flatMap(a=>a.input?[a.input]:[]),import_context:captured.importContext,expected_run_id:conversation?.current_run_id??null});
       setDrafts(current=>current[sourceKey]===captured||!current[sourceKey]?{...current,[sourceKey]:blankDraft(),[cid!]:blankDraft()}:current);
-    }catch{if(cid&&cid!==sourceKey)setDrafts(current=>({...current,[cid!]:captured}));}
+    }catch{if(cid&&cid!==sourceKey)setDrafts(current=>{
+      // 首次创建后的失败草稿移到会话，避免重试成功后“新聊天”复活已发送内容。
+      // 两端若有后续编辑则保留新内容，不用发送前的快照覆盖用户输入。
+      const targetDraft=current[cid!];
+      if(hasDraft(targetDraft)&&targetDraft!==captured){
+        // 新输入仍属于用户已选模型的会话；未另选模型时补回失败的配置，重试不能降回默认模型。
+        return captured.modelConfig&&!targetDraft.modelConfig?{...current,[cid!]:{...targetDraft,modelConfig:captured.modelConfig}}:current;
+      }
+      const moved={...current,[cid!]:captured};
+      if(current[sourceKey]===captured)delete moved[sourceKey];
+      return moved;
+    });}
   };
   const newChat=()=>{setSelection({});if(view==='tasks')setTaskScreen('conversation');else setViewState('chat');};
   useEffect(()=>{
-    const onKey=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey))return;if(e.key==='1'){e.preventDefault();setView('chat');}else if(e.key==='2'){e.preventDefault();setView('tasks');}};
+    const onKey=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey))return;if(e.key==='1'){e.preventDefault();setView('tasks');}else if(e.key==='2'){e.preventDefault();setView('chat');}};
     document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
   },[setView]);
-  const context={taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,openDialog:setDialog,setView,openTask,openConversation,locateTask,taskReveal,completeTaskReveal,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
+  const context={taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,panelRevision,inspectorOpen,inspectorTab,setInspectorOpen,overlayOpen:Boolean(dialog),toolRequest,openTool,openDialog:setDialog,setView,openTask,openConversation,locateTask,taskReveal,completeTaskReveal,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
   const conversationVisible=view==='chat'||view==='tasks'&&taskScreen==='conversation';
+  useEffect(()=>setInspectorOpen(false),[selection.task,selection.conversation,conversationVisible]);
   const attentionCount=data.conversations.filter(c=>needsUser(c,data)&&!c.closed).length;
-  return <StudioContext.Provider value={context}><div className="studio studio-app">
-    <div className="titlebar" data-tauri-drag-region><button className="iconbtn" aria-label="切换侧栏" onClick={()=>setShowSidebar(x=>!x)}><PanelLeft size={14}/></button><span className="title-name" data-tauri-drag-region>AgentKanban</span></div>
+  return <StudioContext.Provider value={context}><div className={`studio studio-app ${showSidebar?'navigation-expanded':'navigation-collapsed'}`}>
+    <WorkspaceHeader conversationVisible={conversationVisible} sidebarVisible={showSidebar} onToggleSidebar={()=>setShowSidebar(x=>!x)} onToolHost={setToolHost}/>
     <div className="frame"><nav className="rail" aria-label="主导航">
-      {([{id:'chat',icon:MessageSquare,label:'会话'},{id:'tasks',icon:ListTree,label:'任务'},{id:'projects',icon:Folder,label:'项目'},{id:'attention',icon:Bell,label:'需要你'}] as const).map(item=><button key={item.id} className={`rbtn ${view===item.id?'active':''}`} title={item.label} aria-label={item.label} aria-current={view===item.id?'page':undefined} onClick={()=>setView(item.id)}><item.icon size={19}/>{item.id==='attention'&&attentionCount>0&&<span className="tiny-dot"/>}</button>)}
+      {([{id:'tasks',icon:ListTree,label:'任务'},{id:'chat',icon:MessageSquare,label:'会话'},{id:'projects',icon:Folder,label:'项目'},{id:'attention',icon:Bell,label:'需要你'}] as const).map(item=><button key={item.id} className={`rbtn ${view===item.id?'active':''}`} title={item.label} aria-label={item.label} aria-current={view===item.id?'page':undefined} onClick={()=>setView(item.id)}><item.icon size={19}/>{item.id==='attention'&&attentionCount>0&&<span className="tiny-dot"/>}</button>)}
       <div className="spacer"/><button className={`rbtn ${view==='settings'?'active':''}`} title="设置" aria-label="设置" aria-current={view==='settings'?'page':undefined} onClick={()=>setView('settings')}><Settings2 size={19}/></button><div className="avatar" title="个人工作区">我</div>
     </nav>
     {showSidebar&&<Sidebar loading={loading} onNewChat={newChat} onAllTasks={()=>{setTaskScreen('tree');}}/>}
     <main className="main">{error&&<div className="workspace-error" role="alert"><AlertCircle size={15}/><span>{error}</span><button className="textbtn" onClick={()=>void refresh().catch(e=>setError(String(e)))}>重试</button></div>}
-      {conversationVisible?<><ConversationHeader/><div className="content-split"><ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={draft.projectId||task?.effective_project_id||projectId} setProject={changeProject}/><RightDock persistent={view==='tasks'}/></div></>:view==='tasks'?<><header className="main-head"><h1>任务</h1><span className="grow"/><button className="textbtn" onClick={()=>setDialog({kind:'deleted'})}>已删除</button><button className="textbtn primary" onClick={()=>setDialog({kind:'createTask'})}><Plus size={14}/>新建任务</button></header><div className="content-split"><TaskTree/><RightDock persistent/></div></>:view==='projects'?<ProjectsPage onSelect={id=>{setTaskQuery(q=>({...q,projects:[id],collapsed:[],page:0,scroll:0}));setTaskScreen('tree');setViewState('tasks');}}/>:view==='attention'?<AttentionPage/>:<SettingsPage/>}
+      <div className="content-split" hidden={!conversationVisible&&view!=='tasks'}><div className="work-center"><div className={`center-content ${conversationVisible?'conversation-content':'tree-content'}`}>{conversationVisible?<ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={draft.projectId||task?.effective_project_id||projectId} setProject={changeProject}/>:view==='tasks'?<TaskTree/>:null}<TaskDetails conversationVisible={conversationVisible}/></div></div><RightDock headerHost={toolHost} available={conversationVisible}/></div>
+      {!conversationVisible&&view!=='tasks'&&(view==='projects'?<ProjectsPage onSelect={id=>{setTaskQuery(q=>({...q,projects:[id],collapsed:[],page:0,scroll:0}));setTaskScreen('tree');setViewState('tasks');}}/>:view==='attention'?<AttentionPage/>:<SettingsPage/>)}
     </main></div>
     {notice&&<div className="studio-toast show" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={()=>setNotice('')}><X size={13}/></button></div>}
-    {dialog&&<Dialogs key={JSON.stringify(dialog)} dialog={dialog} onClose={()=>setDialog(null)} onImport={key=>setDrafts(current=>({...current,[key]:{...(current[key]||blankDraft()),importContext:true}}))} onNewProject={id=>{setProjectId(id);if(task&&!conversation)setDraft({...draft,projectId:id});}}/>}
+    {dialog&&<Dialogs key={JSON.stringify(dialog)} dialog={dialog} modelConfig={draft.modelConfig} onSaveModel={saveModelConfig} onClose={()=>setDialog(null)} onImport={key=>setDrafts(current=>({...current,[key]:{...(current[key]||blankDraft()),importContext:true}}))} onNewProject={id=>{setProjectId(id);if(task&&!conversation)setDraft({...draft,projectId:id});}}/>}
   </div></StudioContext.Provider>;
 }

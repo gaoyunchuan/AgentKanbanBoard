@@ -45,13 +45,12 @@ export function withinUpdateRange(value: string, range: UpdatedRange, now: numbe
   const hours = range === 'day' ? 24 : range === 'week' ? 168 : 720;
   return Number.isFinite(at) && at <= now && at >= now - hours * 3600000;
 }
-/** Keywords select whole root trees; other predicates filter nodes within them. */
+/** 筛选用于选中根任务树，任意节点命中后保留整树上下文。 */
 export function queryTasks(tasks: StudioTask[], query: TaskQuery, now: number) {
   const text = query.text.trim().toLocaleLowerCase();
   const paths = new Map(tasks.map(t => [t.id, ancestors(tasks, t.id)]));
   const rootOf = (id: string) => paths.get(id)?.[0]?.id ?? id;
-  // Select trees BEFORE state/project/time filtering. A completed keyword hit
-  // can still locate its pending siblings, even when completed is deselected.
+  // 关键词先定位整树；状态、项目、时间仍须由同一个任务同时满足。
   const keywordRoots = text ? new Set(tasks.filter(t =>
     `${t.title}\n${t.process_tracking}`.toLocaleLowerCase().includes(text)
   ).map(t => rootOf(t.id))) : null;
@@ -61,8 +60,9 @@ export function queryTasks(tasks: StudioTask[], query: TaskQuery, now: number) {
     (!query.projects.length || query.projects.includes(t.effective_project_id || '__none__')) &&
     withinUpdateRange(t.updated_at, query.updated, now)
   ).map(t => t.id));
-  const visible = new Set(matched);
-  for (const id of matched) for (const parent of paths.get(id) ?? []) visible.add(parent.id);
+  // 用户需要完整业务上下文：命中子任务后，祖先、兄弟分支与所有后代均进入结果。
+  const matchedRoots = new Set([...matched].map(rootOf));
+  const visible = new Set(tasks.filter(t => matchedRoots.has(rootOf(t.id))).map(t => t.id));
   const collapsed = new Set(query.collapsed);
   const rows = flattenedTasks(tasks).filter(({task}) => visible.has(task.id) &&
     !paths.get(task.id)?.some(parent => collapsed.has(parent.id))

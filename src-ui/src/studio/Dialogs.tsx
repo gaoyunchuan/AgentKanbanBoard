@@ -3,14 +3,14 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Folder, Check, Clock, Link, ArrowUpRight, AlertCircle } from "lucide-react";
 import { Modal, Markdown } from "./components";
-import { useStudio, type DialogState } from "./context";
+import { useStudio, type DialogState, type ModelConfig } from "./context";
 import { ancestors, rootId, flattenedTasks, dependencyReason, isBusy, taskLabel } from "./model";
 import { ProjectPicker } from "./ProjectPicker";
 import { permissionMode, permissionPresets, type PermissionMode } from './permissions';
 import { record } from "../workbench/events";
 
-type Props = { dialog: DialogState; onClose: () => void; onImport: (key: string) => void; onNewProject?: (id: string) => void };
-export function Dialogs({ dialog, onClose, onImport, onNewProject }: Props) {
+type Props = { dialog: DialogState; onClose: () => void; onImport: (key: string) => void; onNewProject?: (id: string) => void; modelConfig?: ModelConfig; onSaveModel?: (config: ModelConfig) => Promise<unknown> };
+export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, onSaveModel }: Props) {
   const s = useStudio();
   const tid = 'task' in dialog ? dialog.task : s.task?.id;
   const task = s.data.tasks.find(t => t.id === tid);
@@ -26,8 +26,10 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject }: Props) {
   const [err, setErr] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
-  const [model, setModel] = useState(c?.config.model ?? '');
-  const [effort, setEffort] = useState(c?.config.reasoning_effort ?? '');
+  const [model, setModel] = useState((modelConfig ?? c?.config)?.model ?? '');
+  const [effort, setEffort] = useState((modelConfig ?? c?.config)?.reasoning_effort ?? '');
+  // 保存目标与表单取同一打开时快照，异步刷新不能把模型设置写到其他会话或草稿。
+  const [saveModel]=useState(()=>onSaveModel??((config:ModelConfig)=>c?s.command('update_conversation',{conversation_id:c.id,revision:c.revision,patch:config},'会话设置已保存'):Promise.reject('请先创建会话')));
   const [sandbox, setSandbox] = useState(c?.config.sandbox_mode ?? 'workspace-write');
   const [approval, setApproval] = useState(c?.config.approval_policy ?? 'on-request');
   const [acknowledged, setAcknowledged] = useState(false);
@@ -92,8 +94,8 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject }: Props) {
     return <Modal title={removing ? '删除任务与子任务？' : '完成这项任务？'} onClose={onClose} footer={<>{cancel}{submit(removing ? '移入已删除' : active.length ? '停止会话并完成任务' : '完成任务', () => s.command(removing ? 'delete_task' : 'task_state', { task_id: task.id, state: 'completed', confirm_stop: Boolean(active.length) }, removing ? '已移入已删除，历史和结果保留' : '任务完成后关联会话进入完成分组'), removing && Boolean(active.length))}</>}><p>「{task.title}」</p><p className="modal-desc">{removing ? `本任务及 ${childIds.length} 个子任务、${affected.length} 个关联会话将从日常列表隐藏。可以从已删除恢复，结果来源不会被物理删除。存在外部依赖时系统会拒绝删除。` : `本任务的 ${affected.length} 个会话将进入非活跃状态，保留消息和结果。不会级联完成 ${childIds.length} 个子任务。缺少交付的下游不会仅凭完成标签自动解除等待。`}</p>{active.length > 0 && <div className="warning-box"><AlertCircle size={16}/><span>{removing ? '请先停止该子树正在运行的会话，再删除。' : `确认后先停止 ${active.length} 个执行；实际停止确认前不会释放依赖。`}</span></div>}{error}</Modal>;
   }
   if (dialog.kind === 'context' && task) return <Modal title="本次任务上下文" wide onClose={onClose} footer={<><button className="textbtn outlined" onClick={onClose}>关闭</button>{dialog.importTo && <button className="textbtn primary" disabled={!context} onClick={() => { onImport(dialog.importTo!); onClose(); }}>带入下一条消息</button>}</>}><p className="modal-desc">当前根任务树、当前任务、各级父任务，以及本次依赖交付。真正执行时再次捕获版本快照，不修改任务原文。</p>{context ? <><details className="context-block" open><summary>当前任务</summary><div className="context-pad"><Markdown text={task.process_tracking || task.title}/></div></details><details className="context-block" open><summary>当前根任务树</summary><pre className="context-tree">{flattenedTasks(s.data.tasks).filter(x => rootId(s.data.tasks, x.task.id) === rootId(s.data.tasks, task.id)).map(({ task: n, depth }) => `${'  '.repeat(depth)}${n.id === task.id ? '→ ' : '· '}${n.title} [${taskLabel(n)}]`).join('\n')}</pre></details><details className="context-block"><summary>来源与完整输入快照</summary><pre>{JSON.stringify(context, null, 2)}</pre></details></> : <p className="note">正在读取上下文…</p>}{error}</Modal>;
-  if (dialog.kind === 'models' || dialog.kind === 'permissions') return <Modal title={dialog.kind === 'models' ? '模型与推理强度' : '会话权限'} onClose={onClose} footer={<>{cancel}{submit('保存会话设置', () => c ? s.command('update_conversation', { conversation_id: dialog.kind==='permissions'?permissionBaseline?.id:c.id, revision: dialog.kind==='permissions'?permissionBaseline?.revision:c.revision, patch: dialog.kind === 'models' ? { model: model || null, reasoning_effort: effort || null } : permissionPatch }, '会话设置已保存') : Promise.reject('请先创建会话'), !c || dialog.kind==='models'&&isBusy(c) || dialog.kind==='permissions'&&!permissionBaseline)}</>}>
-    {!c && <p className="modal-desc">先创建或选择一个会话。未设置时使用 Codex 默认模型及按需确认权限。</p>}
+  if (dialog.kind === 'models' || dialog.kind === 'permissions') return <Modal title={dialog.kind === 'models' ? '模型与推理强度' : '会话权限'} onClose={onClose} footer={<>{cancel}{submit('保存会话设置', () => dialog.kind==='models' ? saveModel({model:model||null,reasoning_effort:effort||null}) : c ? s.command('update_conversation', { conversation_id:permissionBaseline?.id, revision:permissionBaseline?.revision, patch:permissionPatch }, '会话设置已保存') : Promise.reject('请先创建会话'), dialog.kind==='models' ? Boolean(c&&isBusy(c))||!c&&!onSaveModel : !permissionBaseline)}</>}>
+    {!c && <p className="modal-desc">{dialog.kind==='models'?'设置将用于此会话的首条消息，发送前可以随时调整。':'先创建或选择一个会话。未设置时使用按需确认权限。'}</p>}
     {dialog.kind === 'models' ? <><label htmlFor="model-select">可用模型</label><StudioSelect id="model-select" label="可用模型" value={model} onValueChange={setModel} options={[{value:'',label:'Codex 默认模型'},...items.map(m=>({value:String(m.model||m.id),label:String(m.displayName||m.model||m.id)}))]}/><label htmlFor="effort-select">推理强度</label><StudioSelect id="effort-select" label="推理强度" value={effort} onValueChange={setEffort} options={[{value:'',label:'模型默认'},...['minimal','low','medium','high','xhigh'].map(value=>({value,label:value}))]}/><p className="note">模型列表由当前连接返回；选择模型不授予额外权限。</p></> : <><label htmlFor="permission-mode">权限模式</label><StudioSelect id="permission-mode" label="权限模式" value={permissionMode({sandbox_mode:sandbox,approval_policy:approval})} onValueChange={value=>{
       const mode=value as PermissionMode;
       if(mode==='custom')return;

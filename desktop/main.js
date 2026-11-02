@@ -24,7 +24,9 @@ function startSidecar(mcpUrl) {
   if (!binary) throw new Error('找不到 akb_sidecar 后端可执行文件');
   const child = spawn(binary, [], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, AKB_BROWSER_MCP_URL: mcpUrl || '' } });
   const pending = new Map(); let next = 1;
+  let readyTimer;
   const ready = new Promise((resolve, reject) => {
+    readyTimer = setTimeout(() => reject(new Error('后端启动超时，请检查连接状态')), 120000);
     const lines = readline.createInterface({ input: child.stdout });
     lines.on('line', line => {
       let value; try { value = JSON.parse(line); } catch { return; }
@@ -34,27 +36,51 @@ function startSidecar(mcpUrl) {
       value.error ? task.reject(new Error(value.error)) : task.resolve(value.result);
     });
     child.once('exit', code => reject(new Error('后端 sidecar 已退出：' + code)));
+    child.once('error', reject);
+    child.once('close', code => reject(new Error('后端 sidecar 已关闭：' + code)));
   });
+  // 启动失败也由调用方呈现；先处理拒绝，避免前端尚未加载时触发未处理异常。
+  ready.then(() => clearTimeout(readyTimer), () => clearTimeout(readyTimer));
+  let backendError = null;
+  const failPending = error => { backendError = error; for (const task of [...pending.values()]) task.reject(error); };
+  child.once('error', failPending);
+  child.once('exit', () => failPending(new Error('后端 sidecar 已退出')));
   const call = (method, params) => ready.then(port => new Promise((resolve, reject) => {
+    if (backendError) { reject(backendError); return; }
+    // 传输背压只约束在途 RPC，不占 Agent 并发，也不互斥终端进程。
+    if (pending.size >= 16) { reject(new Error('后端请求较多，请稍后重试')); return; }
     const socket = require('node:net').createConnection(port, '127.0.0.1');
     const id = next++;
-    const timer = setTimeout(() => { pending.delete(id); socket.destroy(); reject(new Error('后端响应超时')); }, 120000);
-    pending.set(id, { resolve: value => { clearTimeout(timer); socket.end(); resolve(value); }, reject: error => { clearTimeout(timer); socket.end(); reject(error); } });
+    let buffer = '', bytes = 0, settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer); pending.delete(id); buffer = '';
+      // end() 仅半关闭；服务端曾持有广播 writer 克隆，导致 socket 和 Promise 结果永久滞留。
+      socket.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    const timer = setTimeout(() => finish(new Error('后端响应超时')), 120000);
+    pending.set(id, { resolve: value => finish(null, value), reject: error => finish(error) });
     socket.setEncoding('utf8');
-    let buffer = '';
     socket.on('data', chunk => {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > 32 * 1024 * 1024) { finish(new Error('后端响应超过 32 MiB，请缩小读取范围')); return; }
       buffer += chunk;
       let index;
-      while ((index = buffer.indexOf('\n')) >= 0) {
+      while (!settled && (index = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
-        let value; try { value = JSON.parse(line); } catch { continue; }
-        const task = pending.get(value.id); if (!task) continue;
-        pending.delete(value.id);
-        value.error ? task.reject(new Error(value.error)) : task.resolve(value.result);
+        let value;
+        try { value = JSON.parse(line); } catch { finish(new Error('后端响应格式无效')); return; }
+        if (value.event === 'workbench/changed') continue;
+        if (value.id !== id) continue;
+        value.error ? finish(new Error(String(value.error))) : finish(null, value.result);
       }
     });
-    socket.on('error', error => { clearTimeout(timer); pending.delete(id); reject(error); });
-    socket.write(JSON.stringify({ id, method, params: params || {} }) + '\n');
+    socket.on('error', error => finish(error));
+    socket.on('end', () => finish(new Error('后端连接提前结束，操作结果需要核对')));
+    socket.on('close', () => finish(new Error('后端连接已关闭，操作结果需要核对')));
+    try { socket.write(JSON.stringify({ id, method, params: params || {} }) + '\n'); }
+    catch (error) { finish(error); }
   }));
   return { call, child };
 }
@@ -62,6 +88,9 @@ function startSidecar(mcpUrl) {
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
     width: 1440, height: 920, title: 'Codex Thread Kanban', backgroundColor: '#f6f7f9',
+    // 原生窗口按钮与页面操作共用顶栏，避免另占一条系统标题栏。
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 18 } } : { titleBarOverlay: { color: '#f8f9fb', symbolColor: '#475569', height: 52 } }),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false },
   });
   const browsers = new BrowserManager(window);
@@ -89,5 +118,12 @@ app.whenReady().then(async () => {
   ipcMain.on('browser:rect', (_event, payload) => browsers.setRect(payload.conversationId, payload.rect));
   ipcMain.on('browser:hide', () => browsers.hide());
   ipcMain.handle('browser:open-downloads', () => { shell.openPath(browsers.downloadPath()); return { opened: true }; });
-  window.on('closed', () => { browsers.dispose(); backend.child.kill(); app.quit(); });
+  let shuttingDown = false;
+  window.on('close', event => {
+    if (shuttingDown) return;
+    event.preventDefault(); shuttingDown = true;
+    // 先清理本应用拥有的 PTY 和 app-server，再退出 sidecar，避免终端变成孤儿。
+    Promise.race([backend.call('workbench_shutdown', {}), new Promise(resolve => setTimeout(resolve, 5000))])
+      .catch(() => {}).finally(() => { browsers.dispose(); backend.child.kill(); window.destroy(); app.quit(); });
+  });
 });

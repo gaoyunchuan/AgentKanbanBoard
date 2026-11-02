@@ -6,13 +6,12 @@ use crate::work_runtime::{
     tool_result, CodexRuntime, RuntimeEvent, StartedTask, TaskExecutionConfig,
 };
 use crate::workflow::{
-    default_agent_profiles, TaskAction, TaskConfig, TaskExecutionDetail, WorkTask, WorkflowStatus,
+    default_agent_profiles, TaskAction, TaskConfig, WorkTask, WorkflowStatus,
 };
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -40,21 +39,7 @@ enum Message {
         known: Option<StartedTask>,
     },
     Access(mpsc::SyncSender<Result<CodexRuntime, String>>),
-    TerminalEnded(String),
     Shutdown(mpsc::SyncSender<()>),
-}
-
-// A dropped caller must still release its workspace, including when a command
-// fails, times out, or its initialization reply could not be delivered.
-struct TerminalLease {
-    id: String,
-    sender: mpsc::Sender<Message>,
-}
-
-impl Drop for TerminalLease {
-    fn drop(&mut self) {
-        let _ = self.sender.send(Message::TerminalEnded(self.id.clone()));
-    }
 }
 
 #[derive(Clone)]
@@ -77,7 +62,6 @@ struct Scheduler {
     runtime_error: Option<String>,
     sender: mpsc::Sender<Message>,
     live: HashMap<String, LiveRun>,
-    terminals: HashMap<String, PathBuf>,
     stop_deadlines: HashMap<String, (String, Instant)>,
     changed: Arc<dyn Fn() + Send + Sync>,
     last_notification: Instant,
@@ -160,7 +144,6 @@ impl WorkService {
                     runtime_error: None,
                     sender: worker_sender,
                     live: HashMap::new(),
-                    terminals: HashMap::new(),
                     stop_deadlines: HashMap::new(),
                     changed,
                     last_notification: Instant::now(),
@@ -210,9 +193,6 @@ impl WorkService {
                         }
                         Ok(Message::Access(reply)) => {
                             let _ = reply.send(scheduler.connect(None));
-                        }
-                        Ok(Message::TerminalEnded(id)) => {
-                            scheduler.terminals.remove(&id);
                         }
                         Ok(Message::Started {
                             task_id,
@@ -301,16 +281,7 @@ impl WorkService {
     }
 
     pub fn task_config(&self, task_id: &str) -> Result<TaskConfig, String> {
-        if let Some(cid) = task_id.strip_prefix("conversation:") {
-            return serde_json::from_value(
-                self.call("chat/config", json!({"conversation_id":cid}))?,
-            )
-            .map_err(|e| e.to_string());
-        }
-        let detail: TaskExecutionDetail =
-            serde_json::from_value(self.call("detail", json!({"task_id":task_id}))?)
-                .map_err(|error| error.to_string())?;
-        Ok(detail.task.config)
+        serde_json::from_value(self.call("workspace_config",json!({"task_id":task_id}))?).map_err(|error|error.to_string())
     }
 
     pub fn execute_command(
@@ -319,16 +290,8 @@ impl WorkService {
         command: Vec<String>,
         timeout_ms: u64,
     ) -> Result<Value, String> {
-        static NEXT_TERMINAL: AtomicU64 = AtomicU64::new(1);
-        let lease = TerminalLease {
-            id: format!("terminal-{}", NEXT_TERMINAL.fetch_add(1, Ordering::Relaxed)),
-            sender: self.sender.clone(),
-        };
-        let config: TaskConfig = serde_json::from_value(self.call(
-            "terminal_begin",
-            json!({"task_id":task_id,"lease_id":lease.id}),
-        )?)
-        .map_err(|error| error.to_string())?;
+        // 用户明确要求：人工工具不占 Agent 的目录锁或并发额度。
+        let config=self.task_config(task_id)?;
         self.runtime()?.execute_workspace_command(
             task_id,
             &config.workspace,
@@ -342,7 +305,7 @@ impl WorkService {
 impl Scheduler {
     fn connect(&mut self, executable: Option<&str>) -> Result<CodexRuntime, String> {
         if executable.is_some() && self.runtime.is_some() {
-            if !self.live.is_empty() || !self.terminals.is_empty() {
+            if !self.live.is_empty() {
                 return Err(
                     "当前仍有执行，不能切换或重新检测 Codex；请先暂停并等待停止确认".into(),
                 );
@@ -362,7 +325,7 @@ impl Scheduler {
                 return Err("请填写 Codex 可执行文件路径，不包含命令参数".into());
             }
             if value != self.executable {
-                if !self.live.is_empty() || !self.terminals.is_empty() {
+                if !self.live.is_empty() {
                     return Err("请先停止活动执行，再切换 Codex 程序".into());
                 }
                 if let Some(runtime) = self.runtime.take() {
@@ -456,25 +419,20 @@ impl Scheduler {
                     .load_task_execution(required(&value, "task_id")?)?,
             )
             .map_err(|e| e.to_string()),
-            "terminal_begin" => {
-                let target = required(&value, "task_id")?;
-                let config = if let Some(cid) = target.strip_prefix("conversation:") {
+            "workspace_config" => {
+                let target=required(&value,"task_id")?;
+                let config=if let Some(cid)=target.strip_prefix("conversation:") {
                     self.repository.prepare_chat_workspace(cid)?.config
+                } else if let Some(task)=self.repository.get_work_task(target)? {
+                    task.config
                 } else {
-                    self.repository
-                        .get_work_task(target)?
-                        .ok_or("任务尚未委派")?
-                        .config
+                    let mut config=TaskConfig::default();
+                    config.workspace=self.repository.chat_project_workspace(target)?;
+                    self.repository.task_permissions(target)?.apply(&mut config);
+                    config
                 };
-                let workspace = canonical_workspace(&config.workspace)?;
-                if self.workspace_busy(&workspace) {
-                    return Err(
-                        "该目录仍有 Agent 或终端在执行；请先暂停并等待执行结束，再运行命令".into(),
-                    );
-                }
-                self.terminals
-                    .insert(required(&value, "lease_id")?.into(), workspace);
-                serde_json::to_value(config).map_err(|error| error.to_string())
+                canonical_workspace(&config.workspace)?;
+                serde_json::to_value(config).map_err(|error|error.to_string())
             }
             "connect" => {
                 self.connect(value.get("executable").and_then(Value::as_str))?;
@@ -749,6 +707,7 @@ impl Scheduler {
             self.dirty = true;
             let config = TaskExecutionConfig {
                 task_id: task.task_id.clone(),
+                thread_name: Some(task.title.clone()),
                 run_id: run.id.clone(),
                 thread_id: task.thread_id.clone(),
                 workspace: task.config.workspace.clone(),
@@ -798,10 +757,7 @@ impl Scheduler {
                 .live
                 .values()
                 .any(|run| workspaces_overlap(&run.workspace, workspace))
-            || self
-                .terminals
-                .values()
-                .any(|path| workspaces_overlap(path, workspace))
+
     }
 
     fn started(

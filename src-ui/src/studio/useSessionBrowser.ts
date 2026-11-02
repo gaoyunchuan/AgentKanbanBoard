@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 export type BrowserPage = { id: string; title: string; url: string; active: boolean };
 export type BrowserState = {
-  pages: BrowserPage[]; target_id: string; stream_url?: string;
+  revision?:number;conversation_id?:string;pages: BrowserPage[]; target_id: string; stream_url?: string;
   human_control: boolean; state_path?: string; input_interrupted?: boolean;
 };
 export type BrowserFrame = {
@@ -22,6 +22,14 @@ export function useSessionBrowser(conversationId: string | undefined, native: bo
   const visibleRef = useRef(visible), visibilityEpoch = useRef(0);
   visibleRef.current = visible;
   useEffect(() => { visibilityEpoch.current++; }, [visible]);
+  useEffect(()=>{
+    const akb=(window as any).akb;
+    if(!akb?.onBrowserChanged||!conversationId)return;
+    return akb.onBrowserChanged((value:BrowserState)=>{
+      if(!live.current||value.conversation_id!==conversationId)return;
+      setState(previous=>(previous?.revision||0)>(value.revision||0)?previous:value);setStarted(true);
+    });
+  },[conversationId]);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const operation = useCallback(async (method: string, params: Record<string, unknown> = {}) => {
     if (!conversationId || !native) return;
@@ -31,7 +39,7 @@ export function useSessionBrowser(conversationId: string | undefined, native: bo
       const value = await invoke<BrowserState>('chat_browser', { conversationId, method, params });
       if (!live.current || !visibleRef.current || epoch !== visibilityEpoch.current || sequence < applied.current) return;
       applied.current = sequence;
-      if (value?.pages) setState(value);
+      if (value?.pages) setState(previous=>(previous?.revision||0)>(value.revision||0)?previous:value);
       setError('');
       return value;
     } catch (cause) {
@@ -41,7 +49,8 @@ export function useSessionBrowser(conversationId: string | undefined, native: bo
   const start = useCallback(async (method = 'status') => {
     if (waiting) return;
     setWaiting(true);
-    const value = await operation(method);
+    let value = await operation(method);
+    if (value?.pages&&!value.pages.length&&Boolean((window as any).akb?.browser)) value=await operation('new_page');
     if (live.current) { if (value) setStarted(true); setWaiting(false); }
   }, [operation, waiting]);
   useEffect(() => {

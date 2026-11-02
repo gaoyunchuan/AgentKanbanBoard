@@ -3,7 +3,8 @@ import type { BackendTodoTask } from "../todo/types";
 import type { TaskConfig, WorkTask, WorkEvent, TaskInteraction, WorkRun, WorkbenchData } from "../workbench/types";
 
 export type ResultRecord = { id:string; task_id:string; conversation_id:string; conversation_title:string; source_run_id?:string|null; source_boundary:number; method:"auto"|"manual"|"legacy"; stage:string; markdown:string; evidence:unknown; status:"pending"|"ready"|"failed"|"withdrawn"; usable:boolean; supersedes?:string|null; created_at:string; error?:string|null };
-export type StudioTask = BackendTodoTask & { scheduled_start_at?:string|null; project_id:string|null; effective_project_id:string|null; last_conversation_id?:string|null; metadata_revision:number; blocked_by:string[]; missing_dependencies:string[]; results:ResultRecord[]; pending_change?:string|null };
+export type ExecutionPermissions = Pick<TaskConfig,'sandbox_mode'|'approval_policy'>;
+export type StudioTask = BackendTodoTask & { execution_permissions?:ExecutionPermissions; scheduled_start_at?:string|null; project_id:string|null; effective_project_id:string|null; last_conversation_id?:string|null; metadata_revision:number; blocked_by:string[]; missing_dependencies:string[]; results:ResultRecord[]; pending_change?:string|null };
 export type Conversation = { id:string; task_id:string; title:string; mode:"auto"|"manual"; project_id:string|null; config:TaskConfig; thread_id?:string|null; current_run_id?:string|null; runtime_status:string; pinned:boolean; closed:boolean; revision:number; created_at:string; updated_at:string; last_error?:string|null; resource_hold?:{run_id:string;state:string;error?:string|null}|null };
 export type Workspace = { tasks:StudioTask[]; projects:BackendProject[]; conversations:Conversation[]; work_tasks:WorkTask[]; settings?: { excluded_project_dirs:string[]; delegation_permission?:string }; runtime?:WorkbenchData["runtime"] };
 export type ConversationDetail = { conversation:Conversation; events:WorkEvent[]; runs:(WorkRun & {kind?:string; context?:unknown})[]; interactions:TaskInteraction[]; work?:WorkTask; results:ResultRecord[] };
@@ -38,11 +39,25 @@ export function dependencyReason(tasks:StudioTask[],tid:string,other:string):str
   while(pending.length){const n=pending.pop()!;if(n===tid)return "会形成等待循环（包含父任务等待子任务）";if(seen.has(n))continue;seen.add(n);pending.push(...(tasks.find(t=>t.id===n)?.blocked_by??[]),...tasks.filter(t=>t.parent_id===n).map(t=>t.id));}
   return null;
 }
+function unfinishedBranches(tasks:StudioTask[]) {
+  const lookup=new Map(tasks.map(t=>[t.id,t]));const unfinished=new Set<string>();
+  // 用户来任务树是为了推进未完成工作：后代未结束时，已完成的祖先仍属于待推进分支。
+  for(const task of tasks){
+    if(["completed","cancelled"].includes(task.status))continue;
+    let current:StudioTask|undefined=task;
+    while(current&&!unfinished.has(current.id)){
+      unfinished.add(current.id);current=current.parent_id?lookup.get(current.parent_id):undefined;
+    }
+  }
+  return unfinished;
+}
 export function flattenedTasks(tasks:StudioTask[],search="",projectId?:string) {
+  const unfinished=unfinishedBranches(tasks);
   const filter=search.trim().toLocaleLowerCase();const shown=new Set<string>();
   for(const t of tasks)if((!filter||`${t.title}\n${t.process_tracking}`.toLocaleLowerCase().includes(filter))&&(!projectId||t.effective_project_id===projectId)) {shown.add(t.id);ancestors(tasks,t.id).forEach(p=>shown.add(p.id));}
   const result:{task:StudioTask;depth:number}[]=[];const seen=new Set<string>();
-  const children=(parent:string|null)=>tasks.filter(t=>(t.parent_id??null)===parent).sort((a,b)=>(parent===null?Number(b.pinned)-Number(a.pinned):0)||a.position-b.position||a.id.localeCompare(b.id));
+  // 各层均先按完整分支是否待推进排序，再沿用置顶和手动顺序；筛选、折叠不改变判断。
+  const children=(parent:string|null)=>tasks.filter(t=>(t.parent_id??null)===parent).sort((a,b)=>Number(unfinished.has(b.id))-Number(unfinished.has(a.id))||(parent===null?Number(b.pinned)-Number(a.pinned):0)||a.position-b.position||a.id.localeCompare(b.id));
   const walk=(parent:string|null,depth:number)=>{for(const t of children(parent)){if(seen.has(t.id))continue;seen.add(t.id);if(shown.has(t.id))result.push({task:t,depth});walk(t.id,depth+1);}};
   walk(null,0);return result;
 }

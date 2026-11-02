@@ -1,0 +1,9 @@
+Window: "Codex Thread Kanban", App: Codex Thread Kanban.
+			3 HTML 内容 Codex Thread Kanban, URL: file:///Users/gaoyunchuan/Applications/Codex%20Thread%20Kanban.app/Contents/Resources/app/ui/index.html
+						8 工具栏 会话与任务操作
+							11 标题 接口调用示例代码及文档说明, Value: 1
+							17 按钮 提取结果, Help: 提取当前会话结果并追加到任务
+								19 文本 提取结果
+							20 按钮 会话属性
+							296 文本 需要处理
+The focused UI element is 3 HTML 内容 Codex Thread Kanban, URL: file:///Users/gaoyunchuan/Applications/Codex%20Thread%20Kanban.app/Contents/Resources/app/ui/index.html

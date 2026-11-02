@@ -1,35 +1,12 @@
 import React,{useEffect,useRef,useState} from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
 import { X,FileText,MessageSquare,ArrowUpRight } from "lucide-react";
 import type { StudioTask,Workspace,Conversation } from "./model";
 import { ancestors,flattenedTasks,rootId,visibleResults } from "./model";
 
-function inline(text:string,key=""):React.ReactNode[] {
-  const pattern=/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^\s)]+\))/g;const out:React.ReactNode[]=[];let last=0;let match:RegExpExecArray|null;
-  while((match=pattern.exec(text))){if(match.index>last)out.push(text.slice(last,match.index));const v=match[0],id=`${key}:${match.index}`;
-    if(v.startsWith("`"))out.push(<code key={id}>{v.slice(1,-1)}</code>);
-    else if(v.startsWith("**"))out.push(<strong key={id}>{v.slice(2,-2)}</strong>);
-    else {const l=/^\[([^\]]+)\]\(([^)]+)\)$/.exec(v)!;let valid=false;try{valid=["https:","http:"].includes(new URL(l[2]).protocol)}catch{/* Render invalid URLs as text. */}
-      out.push(valid?<a key={id} href={l[2]} target="_blank" rel="noreferrer noopener" onClick={e=>{if("__TAURI_INTERNALS__" in window){e.preventDefault();void invoke("open_external_link",{target:l[2]}).catch(()=>{});}}}>{l[1]}</a>:v);}
-    last=pattern.lastIndex;
-  }
-  if(last<text.length)out.push(text.slice(last));return out;
-}
-/** Markdown stays native text at rest. Rendering never executes embedded HTML. */
-export function Markdown({text}:{text:string}) {
-  const lines=text.split(/\r?\n/),nodes:React.ReactNode[]=[];
-  for(let i=0;i<lines.length;i++){
-    const line=lines[i];if(!line.trim())continue;
-    if(/^\s*```/.test(line)){const lang=line.replace(/^\s*```/,"").trim();const code=[];let j=i+1;while(j<lines.length&&!/^\s*```/.test(lines[j]))code.push(lines[j++]);nodes.push(<pre key={i}><span className="code-language">{lang}</span><code>{code.join("\n")}</code></pre>);i=j;continue;}
-    const heading=/^(#{1,6})\s+(.+)$/.exec(line);if(heading){nodes.push(React.createElement(`h${heading[1].length}`,{key:i},inline(heading[2],String(i))));continue;}
-    if(/^\s*>\s?/.test(line)){nodes.push(<blockquote key={i}>{inline(line.replace(/^\s*>\s?/,""),String(i))}</blockquote>);continue;}
-    if(/^\s*([-*+]\s|\d+\.\s)/.test(line)){const entries=[];const start=i,ordered=/^\s*\d+\./.test(line);while(i<lines.length&&/^\s*([-*+]\s|\d+\.\s)/.test(lines[i])){const content=lines[i].replace(/^\s*([-*+]\s|\d+\.\s)/,"");const box=/^\[([ xX])\]\s+(.*)/.exec(content);entries.push(<li key={i}>{box?<><input type="checkbox" checked={box[1]!==" "} readOnly tabIndex={-1}/>{inline(box[2],String(i))}</>:inline(content,String(i))}</li>);i++;}i--;nodes.push(ordered?<ol key={start}>{entries}</ol>:<ul key={start}>{entries}</ul>);continue;}
-    if(line.includes("|")&&i+1<lines.length&&/^\s*\|?\s*:?-{3}/.test(lines[i+1])){const cells=(s:string)=>s.trim().replace(/^\||\|$/g,"").split("|").map(x=>x.trim());const head=cells(line),rows=[];const start=i;i+=2;while(i<lines.length&&lines[i].includes("|")){rows.push(cells(lines[i]));i++;}i--;nodes.push(<div className="md-table" key={start}><table><thead><tr>{head.map((x,n)=><th key={n}>{inline(x)}</th>)}</tr></thead><tbody>{rows.map((r,n)=><tr key={n}>{r.map((x,j)=><td key={j}>{inline(x)}</td>)}</tr>)}</tbody></table></div>);continue;}
-    nodes.push(<p key={i}>{inline(line,String(i))}</p>);
-  }
-  return <div className="markdown">{nodes}</div>;
-}
+export {Markdown} from "./Markdown";
+import {Markdown} from "./Markdown";
+
 export function Modal({title,children,footer,onClose,wide=false}:{title:string;children:React.ReactNode;footer?:React.ReactNode;onClose:()=>void;wide?:boolean}) {
   const ref=useRef<HTMLDivElement>(null),close=useRef(onClose);close.current=onClose;
   useEffect(()=>{const old=document.activeElement as HTMLElement|null;const dialog=ref.current;dialog?.querySelector<HTMLElement>('input,textarea,select,button,[tabindex="0"]')?.focus();

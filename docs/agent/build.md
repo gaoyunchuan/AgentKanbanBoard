@@ -2,6 +2,8 @@
 
 ## Current Knowledge
 
+- 用户要求：本机构建安装并验证成功后，清理可重新生成的制品目录，包括 `src-ui/dist`、`desktop/ui`、`desktop/dist-electron` 和 `src-tauri/target`，避免长期占用磁盘。清理前确认没有构建进程或直接从这些目录运行的程序，安装副本能独立运行；保留已安装应用、用户数据、源码及验收记录。只有构建未安装或仍需交付的制品才暂留。
+
 - 桌面包仍沿用 `Codex Thread Kanban` 名称，产品能力已扩展为个人任务工作台；构建与许可证入口保持不变。
 - Codex CLI/app-server、账户登录、Node.js 22+、Python3 和 Docker 是运行环境依赖；浏览器使用应用私有 agent-browser 与 Docker Chrome，不读取个人 Chrome/Arc。仅旧只读导入看板不需要应用拥有 app-server 会话。
 - 可通过工作台连接设置保存 Codex 可执行文件路径；`CODEX_APP_SERVER_PATH` 仅作为尚未保存配置时的默认路径。传入程序路径，不能把 `app-server` 参数拼进路径字段。
@@ -27,5 +29,6 @@
 - 2026-08-05: 记录 macOS DMG 构建链路、npm 锁文件完整性约束和验收命令。
 ## Electron 外壳（2026-10-29）
 
+- 2026-10-30：正式外壳使用单层工作区顶栏。macOS `titleBarStyle=hiddenInset`，保留原生窗口按钮并自定义位置；其它平台配置原生窗口控制覆盖。前端 `WorkspaceHeader` 与 preload platform 配合预留安全区，不重新增加独立品牌标题条。
 - 正式桌面外壳已切换为 Electron（desktop/），通过 akb_sidecar 复用 Rust WorkService；侧边浏览器使用 WebContentsView 原生 Chromium，Agent 通过本机 MCP 网关操作同一批页面。构建安装入口为 `python3 scripts/electron_local.py`（等价 `make electron-local`）。
 - Electron 包内资源：`desktop/ui`（前端 dist）与 `Contents/Resources/akb_sidecar`；`akb_sidecar` 由 `cargo build --release --bin akb_sidecar` 生成。Tauri 目录保留为后端库与旧外壳构建入口，不再作为正式安装包。

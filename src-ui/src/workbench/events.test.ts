@@ -5,7 +5,7 @@ const event = (id: number, kind: string, payload: unknown, run_id = "run-a"): Wo
 
 test("streamed answer is replaced by its final item without duplication", () => {
   const events = [event(1, "item/agentMessage/delta", { itemId: "item-a", delta: "完成" }), event(2, "item/agentMessage/delta", { itemId: "item-a", delta: "检查" }), event(3, "item/completed", { item: { id: "item-a", type: "agentMessage", text: "完成检查。" } })];
-  expect(executionTimeline(events)).toEqual([{ id: "run-a:item-a", role: "agent", text: "完成检查。" }]);
+  expect(executionTimeline(events)).toMatchObject([{ id: "run-a:item-a", role: "agent", text: "完成检查。" }]);
 });
 
 test("events from different runs cannot overwrite one another with a reused item ID", () => {
@@ -22,4 +22,10 @@ test("MCP screenshots render as images without dumping their base64 into tool ou
   expect(result[0].images).toEqual(["data:image/png;base64,AA=="]);
   expect(result[0].text).not.toContain("AA==");
   expect(result[0].text).toContain("页面截图");
+});
+
+test('preserves commentary/final phase and structured command category',()=>{
+ const result=executionTimeline([event(1,'item/completed',{turnId:'turn-a',item:{id:'m',type:'agentMessage',phase:'final_answer',text:'结果'}}),event(2,'item/completed',{turnId:'turn-a',item:{id:'cmd',type:'commandExecution',command:'cat a.md',commandActions:[{type:'read',name:'a.md'}],status:'completed'}})]);
+ expect(result[0]).toMatchObject({turnId:'turn-a',phase:'final_answer'});
+ expect(result[1]).toMatchObject({toolKind:'read',label:'读取 a.md'});
 });

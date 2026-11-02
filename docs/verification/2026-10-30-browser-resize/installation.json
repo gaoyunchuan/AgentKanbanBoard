@@ -1,0 +1,15 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "restarted": true,
+  "codesign_strict": true,
+  "source_matches_installed": true,
+  "ui_sha256": "cc266c1aab8888e9366c9dae8d9a628359f951ffcd88ac28aa22dd4f47a6b5e0",
+  "sidecar_sha256": "2c6aa93a37ee642e897cd0c7eb3fab715f105e1502981e2f7bb9f54b91d19b98",
+  "active_work_runs_before_update": 1,
+  "backend_shutdown_acknowledged": true,
+  "interrupted_task": "task-30605-1793256079009962000-2",
+  "source_sha256": {
+    "src-ui/src/studio/BrowserPane.tsx": "167074a61e59aaa212bc25ffcefd657b5ee4711d34404b4225280b96fc54cf5d",
+    "src-ui/src/studio/BrowserPane.test.tsx": "b36b81141b274bd0fc093296968593e792b81068d0a9db520f9715b41ac63c46"
+  }
+}

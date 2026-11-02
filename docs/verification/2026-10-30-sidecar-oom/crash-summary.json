@@ -1,0 +1,326 @@
+[
+  {
+    "report": "/Users/gaoyunchuan/Library/Logs/DiagnosticReports/Codex Thread Kanban-2026-10-30-140224.ips",
+    "time": "2026-10-30 14:02:20.0131 +0800",
+    "pid": 42897,
+    "exception": {
+      "codes": "0x0000000000000001, 0x00000001145d0a8c",
+      "rawCodes": [
+        1,
+        4636609164
+      ],
+      "type": "EXC_BREAKPOINT",
+      "signal": "SIGTRAP"
+    },
+    "frames": [
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150948,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608112,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150976,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608140,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 39913492,
+        "symbol": "node::sqlite::UserDefinedFunction::xDestroy(void*)",
+        "symbolLocation": 29628,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563592,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499228,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563484,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499120,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 16847444,
+        "symbol": "node::PrincipalRealm::domexception_function() const",
+        "symbolLocation": 92668,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 12872304,
+        "symbol": "v8::Private::New(v8::Isolate*, v8::Local<v8::String>)",
+        "symbolLocation": 14044,
+        "imageIndex": 1
+      }
+    ],
+    "electron": {
+      "source": "P",
+      "arch": "arm64",
+      "base": 4552458240,
+      "CFBundleIdentifier": "com.github.Electron.framework",
+      "size": 162234368,
+      "uuid": "4c4c443c-5555-3144-a1e5-032630001556",
+      "path": "/Users/USER/*/Codex Thread Kanban.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework",
+      "name": "Electron Framework",
+      "CFBundleVersion": "38.8.6"
+    }
+  },
+  {
+    "report": "/Users/gaoyunchuan/Library/Logs/DiagnosticReports/Codex Thread Kanban-2026-10-30-151556.ips",
+    "time": "2026-10-30 15:15:52.7696 +0800",
+    "pid": 80418,
+    "exception": {
+      "codes": "0x0000000000000001, 0x0000000113a2ca8c",
+      "rawCodes": [
+        1,
+        4624403084
+      ],
+      "type": "EXC_BREAKPOINT",
+      "signal": "SIGTRAP"
+    },
+    "frames": [
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150948,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608112,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150976,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608140,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 39913492,
+        "symbol": "node::sqlite::UserDefinedFunction::xDestroy(void*)",
+        "symbolLocation": 29628,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563592,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499228,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563484,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499120,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 16847444,
+        "symbol": "node::PrincipalRealm::domexception_function() const",
+        "symbolLocation": 92668,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 12872304,
+        "symbol": "v8::Private::New(v8::Isolate*, v8::Local<v8::String>)",
+        "symbolLocation": 14044,
+        "imageIndex": 1
+      }
+    ],
+    "electron": {
+      "source": "P",
+      "arch": "arm64",
+      "base": 4540252160,
+      "CFBundleIdentifier": "com.github.Electron.framework",
+      "size": 162234368,
+      "uuid": "4c4c443c-5555-3144-a1e5-032630001556",
+      "path": "/Users/USER/*/Codex Thread Kanban.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework",
+      "name": "Electron Framework",
+      "CFBundleVersion": "38.8.6"
+    }
+  },
+  {
+    "report": "/Users/gaoyunchuan/Library/Logs/DiagnosticReports/Codex Thread Kanban-2026-10-30-160825.ips",
+    "time": "2026-10-30 16:08:21.0669 +0800",
+    "pid": 62505,
+    "exception": {
+      "codes": "0x0000000000000001, 0x000000011419ca8c",
+      "rawCodes": [
+        1,
+        4632201868
+      ],
+      "type": "EXC_BREAKPOINT",
+      "signal": "SIGTRAP"
+    },
+    "frames": [
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150948,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608112,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150976,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608140,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 39913492,
+        "symbol": "node::sqlite::UserDefinedFunction::xDestroy(void*)",
+        "symbolLocation": 29628,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563592,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499228,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563484,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499120,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 16847444,
+        "symbol": "node::PrincipalRealm::domexception_function() const",
+        "symbolLocation": 92668,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 12872304,
+        "symbol": "v8::Private::New(v8::Isolate*, v8::Local<v8::String>)",
+        "symbolLocation": 14044,
+        "imageIndex": 1
+      }
+    ],
+    "electron": {
+      "source": "P",
+      "arch": "arm64",
+      "base": 4548050944,
+      "CFBundleIdentifier": "com.github.Electron.framework",
+      "size": 162234368,
+      "uuid": "4c4c443c-5555-3144-a1e5-032630001556",
+      "path": "/Users/USER/*/Codex Thread Kanban.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework",
+      "name": "Electron Framework",
+      "CFBundleVersion": "38.8.6"
+    }
+  },
+  {
+    "report": "/Users/gaoyunchuan/Library/Logs/DiagnosticReports/Codex Thread Kanban-2026-10-30-162950.ips",
+    "time": "2026-10-30 16:29:47.1112 +0800",
+    "pid": 769,
+    "exception": {
+      "codes": "0x0000000000000001, 0x0000000114824a8c",
+      "rawCodes": [
+        1,
+        4639050380
+      ],
+      "type": "EXC_BREAKPOINT",
+      "signal": "SIGTRAP"
+    },
+    "frames": [
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150924,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608088,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150948,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608112,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 84150976,
+        "symbol": "ares_dns_rr_get_ttl",
+        "symbolLocation": 3608140,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 39913492,
+        "symbol": "node::sqlite::UserDefinedFunction::xDestroy(void*)",
+        "symbolLocation": 29628,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563592,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499228,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 54563484,
+        "symbol": "v8::PropertyDescriptor::set() const",
+        "symbolLocation": 4499120,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 16847444,
+        "symbol": "node::PrincipalRealm::domexception_function() const",
+        "symbolLocation": 92668,
+        "imageIndex": 1
+      },
+      {
+        "imageOffset": 12872304,
+        "symbol": "v8::Private::New(v8::Isolate*, v8::Local<v8::String>)",
+        "symbolLocation": 14044,
+        "imageIndex": 1
+      }
+    ],
+    "electron": {
+      "source": "P",
+      "arch": "arm64",
+      "base": 4554899456,
+      "CFBundleIdentifier": "com.github.Electron.framework",
+      "size": 162234368,
+      "uuid": "4c4c443c-5555-3144-a1e5-032630001556",
+      "path": "/Users/USER/*/Codex Thread Kanban.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework",
+      "name": "Electron Framework",
+      "CFBundleVersion": "38.8.6"
+    }
+  }
+]

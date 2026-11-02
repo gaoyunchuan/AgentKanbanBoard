@@ -1,0 +1,29 @@
+{
+  "operation": "只读chat_command/detail，未恢复或触发业务任务",
+  "samples": [
+    {
+      "calls": 20,
+      "events": 2273,
+      "jsonBytes": 4024672,
+      "heapBytes": 17184200
+    },
+    {
+      "calls": 40,
+      "events": 2273,
+      "jsonBytes": 4024672,
+      "heapBytes": 17147848
+    },
+    {
+      "calls": 60,
+      "events": 2273,
+      "jsonBytes": 4024672,
+      "heapBytes": 17149560
+    },
+    {
+      "calls": 80,
+      "events": 2273,
+      "jsonBytes": 4024672,
+      "heapBytes": 17150592
+    }
+  ]
+}

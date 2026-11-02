@@ -1,0 +1,5 @@
+{
+  "reason": "本轮仅前端变更，后端源码mtime均早于上轮已验证二进制；保留源码集合SHA供复核",
+  "sidecarSha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+  "sourceTreeSha256": "bc1e1b72f7368c6e6ed467534ba6e1ee275a41acfdff80934acae64da2cff63a"
+}

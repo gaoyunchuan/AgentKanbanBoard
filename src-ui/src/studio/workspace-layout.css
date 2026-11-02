@@ -1,0 +1,38 @@
+/* 顶栏与正文共用区域宽度，工具收起不影响中间属性或资源生命周期。 */
+.studio.studio-app{--navigation-width:296px;--dock-maximum:max(220px,calc(100vw - var(--navigation-width) - 320px))}
+.studio.studio-app.navigation-collapsed{--navigation-width:48px}
+.studio.studio-app .workspace-header{gap:0;padding:0;height:52px}
+.studio.studio-app .header-navigation{width:var(--navigation-width);flex:none;display:flex;align-items:center;padding:0 16px;gap:8px;height:100%}
+.studio.studio-app .platform-darwin .header-navigation{padding-left:84px}
+.studio.studio-app .workspace-center-header{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:0 12px;height:100%;position:relative}
+.studio.studio-app .workspace-center-header .head-title{min-width:0}
+.studio.studio-app .workspace-center-header .header-actions{flex:none;max-width:none;overflow:visible}
+.studio.studio-app .workspace-tools-host{flex:none;min-width:0;height:100%}
+.studio.studio-app .workspace-tool-region{width:36vw;min-width:min(270px,var(--dock-maximum));max-width:min(65vw,var(--dock-maximum));flex:none}
+.studio.studio-app .dock-tabbar.workspace-tool-region{height:100%;border-left:1px solid var(--line);border-bottom:0;padding:0 6px;gap:5px;flex-wrap:nowrap;align-items:center;-webkit-app-region:no-drag}
+.studio.studio-app .dock-tabbar.tools-collapsed{width:auto;min-width:0;max-width:none}
+.studio.studio-app .dock-tabs{height:100%;min-height:0;padding:5px 0 0;background:transparent;align-items:center}
+.studio.studio-app .dock-tab{min-height:33px;border:0;border-radius:7px;color:#7d8591;max-width:190px}
+.studio.studio-app .dock-tab.active{background:white;color:#334457;box-shadow:0 1px 4px #23334b0a}
+.studio.studio-app .dock-tab>button:first-child{padding:7px;min-width:0}
+.studio.studio-app .dock-tool-shortcuts{display:flex;gap:1px;flex:none;align-items:center}
+.studio.studio-app .dock-tool-shortcuts .iconbtn{width:25px;height:29px}
+.studio.studio-app .dock-tab-actions{padding:0;gap:2px}
+.studio.studio-app .dock-tab-actions .inline-menu{top:calc(100% + 10px)}
+.studio.studio-app .workspace-tool-region[hidden],.studio.studio-app .dock-tabs[hidden]{display:none}
+.studio.studio-app .work-center{flex:1;min-width:0;min-height:0;container-type:inline-size;position:relative;display:flex}
+.studio.studio-app .center-content{display:flex;flex:1;min-width:0;min-height:0;position:relative}
+.studio.studio-app .center-content>.chat-surface,.studio.studio-app .center-content>.task-page{flex:1;min-width:0;min-height:0}
+.studio.studio-app .task-details{display:flex;min-height:0;min-width:0;overflow:hidden;background:#fcfcfd}
+.studio.studio-app .task-details[hidden]{display:none}
+.studio.studio-app .tree-properties{width:clamp(280px,30cqw,400px);flex:none;border-left:1px solid var(--line)}
+.studio.studio-app .conversation-properties{position:absolute;z-index:12;top:8px;right:10px;width:min(510px,calc(100% - 20px));max-height:calc(100% - 16px);border:1px solid #e0e5ed;border-radius:12px;box-shadow:0 12px 40px #2432471c,0 2px 8px #2432470b}
+.studio.studio-app .properties-close{position:absolute;right:8px;top:8px;z-index:2}
+.studio.studio-app .conversation-properties .inspector-head{padding-right:40px}
+.studio.studio-app .task-details .inspector{position:static!important;flex:1;display:flex;flex-direction:column;width:100%!important;max-width:none;min-width:0!important;min-height:0;border:0;box-shadow:none!important;overflow:hidden}
+.studio.studio-app .task-details .inspector-head{flex:none;height:45px;display:flex;align-items:center;gap:7px}
+.studio.studio-app .task-details .itabs{margin:0 18px;gap:22px;flex:none}
+.studio.studio-app .task-details .inspector-body{flex:1;min-height:0;overflow:auto;padding:18px}
+@container(max-width:700px){.studio.studio-app .tree-content{flex-direction:column}.studio.studio-app .tree-properties{width:auto;max-height:48%;flex:0 0 48%;border-left:0;border-top:1px solid var(--line)}}
+@media(max-width:1100px){.studio.studio-app{--navigation-width:258px}.studio.studio-app.navigation-collapsed{--navigation-width:48px}.studio.studio-app .workspace-center-header{padding:0 8px;gap:3px}.studio.studio-app .workspace-center-header .header-actions{gap:1px}.studio.studio-app .workspace-header .iconbtn{width:27px}}
+@media(max-width:850px){.studio.studio-app{--navigation-width:222px}.studio.studio-app.navigation-collapsed{--navigation-width:42px}.studio.studio-app .dock-tool-shortcuts{display:none}.studio.studio-app .tools-collapsed .dock-tool-shortcuts{display:flex}.studio.studio-app .workspace-center-header .extract-label{display:none}.studio.studio-app .workspace-center-header .header-actions .textbtn{padding:4px}.studio.studio-app .dock-tabbar.workspace-tool-region{padding:0 3px;gap:2px}}

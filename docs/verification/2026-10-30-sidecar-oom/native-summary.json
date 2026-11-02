@@ -1,0 +1,17 @@
+{
+  "durationSeconds": 180,
+  "samples": 13,
+  "mainRssMiB": [
+    132.25,
+    144.97
+  ],
+  "mainTcpRange": [
+    1,
+    2
+  ],
+  "sidecarTcpRange": [
+    1,
+    3
+  ],
+  "newCrashReports": []
+}

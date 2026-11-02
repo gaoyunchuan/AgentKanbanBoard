@@ -77,6 +77,36 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 describe('会话浏览器实时画面', () => {
+  it('窗口缩放只改变原生画面位置时也更新坐标，隐藏和卸载后不再上报', async () => {
+    const rect = vi.fn(), hide = vi.fn();
+    vi.stubGlobal('akb', { browser: true, rect, hide });
+    let box = { x: 500, y: 100, width: 600, height: 500 };
+    const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => box as DOMRect);
+    try {
+      const state = fixture(), ui = render(view(state));
+      await userEvent.click(screen.getByRole('button', { name: '打开侧边浏览器' }));
+      await screen.findByLabelText('原生浏览器画面');
+      expect(rect).toHaveBeenLastCalledWith({ conversationId: 'c', rect: box });
+      // 固定宽右栏在横向扩窗后只移动 x，ResizeObserver 不会因位置变化回调。
+      box = { ...box, x: 1000 };
+      fireEvent(window, new Event('resize'));
+      expect(rect).toHaveBeenLastCalledWith({ conversationId: 'c', rect: box });
+      box = { x: 300, y: 100, width: 400, height: 350 };
+      fireEvent(window, new Event('resize'));
+      expect(rect).toHaveBeenLastCalledWith({ conversationId: 'c', rect: box });
+      ui.rerender(view(state, false));
+      rect.mockClear();
+      fireEvent(window, new Event('resize'));
+      expect(rect).not.toHaveBeenCalled();
+      expect(hide).toHaveBeenCalled();
+      ui.rerender(view(state));
+      await screen.findByLabelText('原生浏览器画面');
+      expect(rect).toHaveBeenLastCalledWith({ conversationId: 'c', rect: box });
+      ui.unmount();rect.mockClear();
+      fireEvent(window, new Event('resize'));
+      expect(rect).not.toHaveBeenCalled();
+    } finally { measure.mockRestore(); }
+  });
   it('按真实 target 新建、选择和关闭标签，切页立即关闭旧流', async () => {
     const { socket } = await start();
     await userEvent.click(screen.getByRole('button', { name: '新建浏览器标签' }));

@@ -14,7 +14,7 @@ This project is open source under the [MIT License](LICENSE). See the [task work
 
 - **Task tree with executable work**: Keep the existing To Do hierarchy, keyboard editing, dates, ordering, and notes. Delegate individual nodes without introducing a workflow canvas.
 - **Explicit task ownership and prerequisites**: Set the delegator, Agent profile, workspace, instructions, acceptance criteria, and `Blocked by` tasks. Dependencies control eligibility; tree structure keeps the work organized.
-- **Automatic dispatch**: Eligible tasks start Codex sessions. The scheduler permits up to two Agent executions and serializes overlapping workspaces. Explicit terminal commands reserve the same workspace, so they cannot race an Agent's writes.
+- **Automatic dispatch**: Eligible tasks start Codex sessions. The scheduler permits up to two Agent executions and serializes overlapping workspaces. Manual terminals, files, and browsers run independently without reserving Agent workspace locks or concurrency slots.
 - **Task-scoped execution detail**: Read streamed messages and tool output, inspect changes, browse workspace files, attach local image paths, and run or stop explicit terminal commands through app-server.
 - **Human attention when needed**: The “需要我” area collects approvals, questions, review, and execution problems. Replies are bound to the exact task and execution; stale approvals cannot authorize a newer run.
 - **Delivery instead of a completion guess**: An ordinary final message or `turn/completed` does not complete a task. The Agent explicitly submits its result and evidence. Human review is the default; opt-in Auto acceptance applies only after a valid submission and successful execution end.

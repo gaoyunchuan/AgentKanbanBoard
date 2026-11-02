@@ -1,0 +1,13 @@
+{
+  "startup_profile_errors_absent": true,
+  "database": "/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-pty-smoke-2q38w_u_/test.db",
+  "project": "/private/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-pty-smoke-2q38w_u_/project",
+  "two_shells_same_project": true,
+  "initial_pwd_verified": true,
+  "independent_cd_verified": true,
+  "chinese_output_verified": true,
+  "ctrl_c_verified": true,
+  "resize_verified": true,
+  "one_close_other_survives": true,
+  "model_execution": false
+}

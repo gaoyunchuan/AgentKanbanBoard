@@ -1,0 +1,26 @@
+{
+  "真实release后端隔离副本回放": "通过",
+  "历史工作任务数": 5,
+  "历史执行权限保持一致": true,
+  "创建时默认权限": {
+    "approval_policy": "never",
+    "sandbox_mode": "danger-full-access"
+  },
+  "更改全局默认后原任务保持": {
+    "approval_policy": "never",
+    "sandbox_mode": "danger-full-access"
+  },
+  "后续新任务权限": {
+    "approval_policy": "on-request",
+    "sandbox_mode": "read-only"
+  },
+  "无会话保存后权限": {
+    "approval_policy": "on-request",
+    "sandbox_mode": "read-only"
+  },
+  "新人工会话继承任务权限": true,
+  "旧权限基线保存被拒绝": true,
+  "重启持久化": true,
+  "触发模型执行": false,
+  "运行中及下一轮真实JSONL参数验证": "workflow::tests::service_task_permission_change_is_applied_only_to_the_next_turn_start"
+}

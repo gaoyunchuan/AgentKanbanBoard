@@ -2,6 +2,53 @@
 
 ## Current Knowledge
 
+### 2026-11-02 首次发送前的模型设置
+
+- `ChatModelDraft.test.tsx` 覆盖无会话记录时模型/强度可保存和重开、取消不修改选择、新聊天与已有会话/任务草稿隔离、任务页进入新聊天后轮询不选回任务、首次发送先保存配置后执行、配置保存失败保留草稿且不发送、失败重试成功清理旧草稿、保存等待期间的新输入与选定模型均保留且重试先保存配置、恢复默认值、已有空闲会话可修改、运行中仍禁用模型保存。使用隔离demo业务API和固定测试模型，不能据此声称真实模型执行通过。
+
+### 2026-11-02 当前任务树排序
+
+- `taskTreeOrder.test.ts` 覆盖待推进优先于已结束置顶、多层已完成祖先含未完成后代、同组置顶/手动顺序、结束与重开后的顺序、筛选/折叠与分页定位一致性；`taskFilters.keyword.test.ts` 的搜索结果沿用此展示顺序。
+
+### 2026-10-30 会话阅读验收
+
+- ChatTranscript/Markdown/transcript/events测试覆盖连续工具及二级展开、阶段/线程归属、无turnId中途补充、多轮、结束自动收起、相对/绝对/带括号链接、Mermaid图/视口占位、安全降级。
+- 真Mermaid必须另做浏览器验收：查看实际SVG img及节点连线，不能只依赖mock；800px下检查横向溢出。原生会话还需验证既有消息文件链接与重复点击单例。证据见docs/verification/2026-10-30-conversation-transcript/。
+
+
+- 本地RPC生命周期回归：`node --expose-gc --test scripts/test_electron_sidecar.js scripts/test_electron_browser_tabs.js`。故意保留服务端半关闭，检查客户端连接归零、160次大响应heap稳定、失败路径清理、启动前error无exit、在途/字节上限。Rust sidecar测试验证没有后续广播时writer也立即移除。真实验收读取现有detail，不能以恢复业务任务来做读压力测试。
+
+### 2026-10-30 顶栏分区
+
+- ChatApp 回归验证工具标签位于唯一 banner、任务详情不在工具 tabs、提取结果/会话属性属于中间 toolbar、会话属性默认收起及任务树属性不能收起；原文件/多终端/草稿/权限回归继续执行。
+- 连续宽度 1440→1024→800→1600→1440 比对工具头和正文 x/width，验证任务树属性上下排列及导航收起；原生应用实际读 go.mod、收起恢复文件与终端、原生网页及新建菜单。截图与 AX 证据区分见 `docs/verification/2026-10-30-header-regions/`。
+
+### 2026-10-30 右侧工作区
+
+- `dockTabs`、`RightDock`、`WorkspaceFiles`、`WorkspaceTerminal` 回归工具单例、多终端、项目归属冻结、跨会话选中项恢复、失败启动关闭、StrictMode 清理、目录收起和迟到读取隔离。
+- `scripts/test_electron_browser_tabs.js` 覆盖后台页面不抢显示、跨会话仅一个原生 view、最后页关闭后状态查询不复活网页。菜单遮挡需在真实 Electron 中打开菜单并选择工具验证。
+- 新窗口回归必须模拟 Electron 38 的 guest 身份约束、无 guest 导航分支和可选构造参数校验；Node mock 通过后仍需在真实 Electron 点击 target blank、中键、window.open、空白页后跳转和 POST 表单。原生验证见 `docs/verification/2026-10-30-browser-popup/`。
+- `BrowserPane.test.tsx` 覆盖窗口缩放只改变原生槽位 x 时同步最新矩形，以及隐藏、恢复、卸载后的监听清理。连续缩放验收必须保持部分档位右栏宽高不变，不能只比较两个静态截图；矩形回调镜像与原生像素截图需要明确区分，证据见 `docs/verification/2026-10-30-browser-resize/`。
+- `workspace_terminal::tests` 验证同目录双 PTY、输入隔离、归属、单独关闭、1 MiB 环形缓存与受限 Shell 初始化；workflow 服务测试确认人工命令不占 Agent 并发身份，并保留 Agent 停止/资源确认约束。
+- 真实 release sidecar 的隔离双 Shell 验收、原生标签 AX 记录及 1440/800 布局图见 `docs/verification/2026-10-30-right-workspace/`；隔离 fixture 不执行模型、不更改业务任务。
+
+
+### 2026-10-30 单层顶栏
+
+- `ChatApp.test.tsx` 验证任务与项目切换后仅一个工作区 banner，侧栏、新建任务、添加项目仍可操作；真实布局需额外检查会话定位/标题/操作同行、切换菜单未裁剪及窄窗口无页面横向溢出。
+- macOS 已安装版本的单层原生窗口按钮与正式属性权限截图见 `docs/verification/2026-10-30-single-header/`；未量化物理拖拽位移，Windows/Linux 仍需对应平台实机验证，不能把浏览器 demo 当成原生窗口验证。
+
+### 2026-10-30 任务执行权限
+
+- `task_permissions::tests` 覆盖完全访问首次委托、等待中修改后领取、历史自定义权限迁移/重启幂等、过期保存拒绝、自动会话同步和独立人工会话隔离、父当前回合权限对子任务的继承。
+- `service_task_permission_change_is_applied_only_to_the_next_turn_start` 通过真实假 app-server 子进程抓取两次 `turn/start`，断言旧回合保持审批、新回合为 `never + dangerFullAccess`；不冒充真实模型验收。
+- `ChatApp.test.tsx` 覆盖无会话的任务属性权限、自动会话双入口同步、旧草稿冲突；宽窄界面及真实 release sidecar 隔离副本证据见 `docs/verification/2026-10-30-task-permissions/`。
+
+### 2026-10-30 前置任务完成与依赖等待
+
+- `workflow::tests::completed_dependency_with_only_phase_results_releases_downstream` 覆盖历史阶段结果仍不可用时，业务完成释放排队下游、快照缺失依赖清空，以及重新打开和取消重新阻塞；`manually_completed_dependency_releases_without_review_note` 覆盖已有会话、无结果的人工完成。保持原有自动交付验收、资源不确定和返工回归。
+- 正式数据只能只读排查；本轮 release sidecar 回放使用隔离副本，停用其他执行并为目标设置未来时间门槛，不调用真实模型。证据见 `docs/verification/2026-10-30-dependency-completion/`。
+
 ### 2026-10-27 验收修订（优先于下方历史记录）
 
 - 当前任务工作区规则以 `docs/review-fixes-2026-10-27.md` 为准。旧看板入口和旧 UI 已删除，旧数据库迁移和数据仍保留。不要恢复被删除的旧页面命令或在文档中要求回到旧版。
@@ -96,9 +143,9 @@
 
 ## 2026-10-28 筛选/时间回归
 
-- taskFilters.test.ts：168 小时边界、未来/无效日期、多维同节点交集、祖先路径、折叠、缓存损坏与刷新后重新计算。
-- taskFilters.keyword.test.ts：根/中间节点/叶子任意关键词命中均定位整棵根树、多树去重、Markdown 上下文大小写搜索；已完成/过期的关键词命中不阻止同树待办节点通过其他筛选；多维条件仍须在各节点上取交集，保留必要祖先但不计数，无符合节点不显示空树。
-- ChatApp.test.tsx：多选状态/项目/周视图离开返回、全部展开折叠、重置与独立侧栏查询；关键词整树命中后状态筛选兄弟分支、往返导航保留条件与结果。
+- taskFilters.test.ts：168 小时边界、未来/无效日期、多维同节点交集、命中后的完整根树、24小时/7天/30天命中深层节点、根命中及多命中去重、折叠不影响整树集合、未命中同树任务定位与分页、缓存损坏与刷新后重新计算。
+- taskFilters.keyword.test.ts：根/中间节点/叶子任意关键词命中均定位整棵根树、多树去重、Markdown 上下文大小写搜索；已完成/过期的关键词命中不阻止同树待办节点通过其他筛选；多维条件仍须在各节点上取交集，命中后补全整棵根树，补全节点不计入符合筛选数，无符合节点不显示空树。
+- ChatApp.test.tsx：多选状态/项目/周视图离开返回、全部展开折叠、重置与独立侧栏查询；关键词和状态筛选后仍完整展示所在根树、往返导航保留条件与结果；最近7天仅一个子任务更新时显示全部兄弟任务与祖先，区分命中、纳入结果和折叠后数量，标记同树上下文。
 - TaskStatusIcon.test.tsx：四种状态不同形状，终态不能被旧依赖覆盖。
 - ScheduledStartField.test.tsx：本地时间转 UTC、设置/清空不隐式委派。
 - task_schedule.rs：注入时钟验证到点边界、不重复领取、暂停/依赖不被绕过、无效/过期编辑保护、幂等迁移。

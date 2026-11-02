@@ -151,6 +151,26 @@ impl AppServer {
         params: Value,
         timeout: Duration,
     ) -> Result<Value, String> {
+        let receive = self.request_background(method, params)?;
+        match receive.recv_timeout(timeout) {
+            Ok(result) => result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let error = format!("Codex 请求 {method} 超时，执行结果未知；连接已停止，请先恢复状态，勿直接重复执行。");
+                self.transport.fail(&error);
+                Err(error)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err("Codex app-server 在返回请求结果前断开".into())
+            }
+        }
+    }
+
+    // 持续 PTY 的回复在 Shell 退出后才返回；先同步发送，再由资源管理器等待结束。
+    pub(crate) fn request_background(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<mpsc::Receiver<Result<Value, String>>, String> {
         if !self.is_alive() {
             return Err("Codex app-server 已断开，请先恢复连接和任务状态".into());
         }
@@ -173,21 +193,7 @@ impl AppServer {
             return Err(error);
         }
 
-        match receive.recv_timeout(timeout) {
-            Ok(result) => result,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let error = format!(
-                    "Codex 请求 {method} 超时，执行结果未知；连接已停止，请先恢复状态，勿直接重复执行。"
-                );
-                // A timed-out mutating RPC might already have executed. Do not leave a
-                // second producer free to retry it on the same uncontrolled connection.
-                self.transport.fail(&error);
-                Err(error)
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err("Codex app-server 在返回请求结果前断开".into())
-            }
-        }
+        Ok(receive)
     }
 
     pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {

@@ -1,0 +1,11 @@
+{
+  "user_authorized_stop_and_restart": true,
+  "task": {
+    "task_id": "task-30605-1793256079009962000-2",
+    "status": "paused",
+    "current_run_id": null,
+    "wait_reason": "user_paused"
+  },
+  "resource_leases": 0,
+  "will_remain_paused": true
+}

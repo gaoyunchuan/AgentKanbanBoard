@@ -1,0 +1,26 @@
+{
+  "directories": [
+    {
+      "path": "src-ui/dist",
+      "bytesRemoved": 871935,
+      "existsAfter": false
+    },
+    {
+      "path": "desktop/ui",
+      "bytesRemoved": 871935,
+      "existsAfter": false
+    },
+    {
+      "path": "desktop/dist-electron",
+      "bytesRemoved": 285828959,
+      "existsAfter": false
+    },
+    {
+      "path": "src-tauri/target",
+      "bytesRemoved": 3545652474,
+      "existsAfter": false
+    }
+  ],
+  "bytesRemoved": 3833225303,
+  "installedSignatureAfterCleanup": true
+}

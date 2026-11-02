@@ -1,0 +1,94 @@
+{
+  "failed_runs": [
+    {
+      "id": "run-18e33b3d5687d258-2",
+      "status": "failed",
+      "error": "workspace routing discovery failed",
+      "started_at": "2026-10-30T06:36:51Z",
+      "ended_at": "2026-10-30T06:37:49Z"
+    },
+    {
+      "id": "run-18e33b180c0f17d8-1",
+      "status": "failed",
+      "error": "workspace routing discovery failed",
+      "started_at": "2026-10-30T06:34:11Z",
+      "ended_at": "2026-10-30T06:36:01Z"
+    }
+  ],
+  "diagnosis": "Codex 上游路由发现时连接失败；同一进程的 ChatGPT 插件目录、MCP、遥测也有 is_connect=true。具体网络故障原因未获证实。",
+  "network_probe": {
+    "direct_rate_limits_succeeded": true,
+    "system_proxy_rate_limits_succeeded": true,
+    "inference": {
+      "mode": "direct",
+      "seconds": 13.84,
+      "turn": {
+        "id": "01a18b8b-6bb9-7292-b70b-013e6fe964a6",
+        "rootTurnId": "01a18b8b-6bb9-7292-b70b-013e6fe964a6",
+        "items": [
+          {
+            "type": "agentMessage",
+            "id": "msg_0adbf55f4352f388016ae43c49bc7881918816118a950213f5",
+            "text": "NETWORK-OK",
+            "phase": "final_answer",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null,
+            "startedAtMs": 1793342540995,
+            "completedAtMs": 1793342540995
+          }
+        ],
+        "itemsView": "summary",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1793342532,
+        "completedAt": 1793342541,
+        "durationMs": 8466
+      }
+    }
+  },
+  "recovered_task": {
+    "task_id": "task-30605-1793256079009962000-2",
+    "status": "waiting",
+    "current_run_id": "run-18e33b94fafe8460-3",
+    "last_error": null,
+    "generation": 11,
+    "updated_at": "2026-10-30T06:43:21Z"
+  },
+  "recovery_events": [
+    {
+      "kind": "item/started",
+      "created_at": "2026-10-30T06:43:21Z",
+      "item_type": "mcpToolCall",
+      "tool": "session_browser"
+    },
+    {
+      "kind": "item/completed",
+      "created_at": "2026-10-30T06:43:16Z",
+      "item_type": "agentMessage",
+      "tool": null,
+      "text": "我会直接读取你已打开的侧边页面，核对接口参数和调用记录后修改，并回读确认保存结果。\n"
+    },
+    {
+      "kind": "item/started",
+      "created_at": "2026-10-30T06:43:16Z",
+      "item_type": "agentMessage",
+      "tool": null,
+      "text": ""
+    },
+    {
+      "kind": "item/completed",
+      "created_at": "2026-10-30T06:43:09Z",
+      "item_type": "userMessage",
+      "tool": null
+    },
+    {
+      "kind": "item/started",
+      "created_at": "2026-10-30T06:43:09Z",
+      "item_type": "userMessage",
+      "tool": null
+    }
+  ],
+  "task_permissions_changed": false,
+  "application_code_changed": false
+}

@@ -1,0 +1,92 @@
+[
+  {
+    "bodyWidth": 1800,
+    "mirror": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 901,
+      "y": 163
+    },
+    "slot": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 901,
+      "y": 163
+    },
+    "viewport": 1800
+  },
+  {
+    "bodyWidth": 2200,
+    "mirror": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 1301,
+      "y": 163
+    },
+    "slot": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 1301,
+      "y": 163
+    },
+    "viewport": 2200
+  },
+  {
+    "bodyWidth": 1600,
+    "mirror": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 701,
+      "y": 163
+    },
+    "slot": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 701,
+      "y": 163
+    },
+    "viewport": 1600
+  },
+  {
+    "bodyWidth": 900,
+    "mirror": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 584,
+      "x": 316,
+      "y": 163
+    },
+    "slot": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 584,
+      "x": 316,
+      "y": 163
+    },
+    "viewport": 900
+  },
+  {
+    "bodyWidth": 1800,
+    "mirror": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 901,
+      "y": 163
+    },
+    "slot": {
+      "height": 659.40625,
+      "visible": true,
+      "width": 899,
+      "x": 901,
+      "y": 163
+    },
+    "viewport": 1800
+  }
+]

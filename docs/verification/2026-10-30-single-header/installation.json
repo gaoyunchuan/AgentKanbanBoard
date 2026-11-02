@@ -1,0 +1,22 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "backup_app": [
+    "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-df8ac101-bad9-4c4f-80d8-7fa5874aa28d.app"
+  ],
+  "sidecar_sha256": "2f130ee736b9d80ce22933c0b86ee5f8aa4cd37b37bffd0ea62f8b97ea766eb9",
+  "main_js_sha256": "28db04045d4c2044b518a116958a78cd353759618f91fbdd201e176f7c622b92",
+  "built_installed_match": true,
+  "codesign_strict_verified": true,
+  "signing": "ad-hoc",
+  "installed": true,
+  "restarted": true,
+  "approved_task_will_remain_paused": true,
+  "approved_task_state_after_restart": {
+    "title": "接口调用示例代码及文档说明",
+    "status": "paused",
+    "current_run_id": null,
+    "execution_permissions": "{\"sandbox_mode\":\"workspace-write\",\"approval_policy\":\"on-request\"}"
+  },
+  "resource_leases": 0,
+  "native_ui_verified": true
+}

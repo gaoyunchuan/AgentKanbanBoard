@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { TaskQuery } from "./taskFilters";
 import type { StudioApi } from "./api";
 import type { Workspace, StudioTask, Conversation, ConversationDetail } from "./model";
+import type { TaskConfig } from "../workbench/types";
 
 export type View = "chat" | "tasks" | "projects" | "attention" | "settings";
 export type DialogState =
@@ -13,8 +14,9 @@ export type DialogState =
   | { kind: "models" | "permissions" | "deleted" }
   | { kind: "taskState"; task: string; state: "todo" | "in_progress" | "completed" | "cancelled" }
   | { kind: "renameConversation"; conversation: string };
-export type Panel = "content" | "properties" | "context" | "results" | "browser" | "diff" | "workspace" | null;
-export type Draft = { text: string; projectId?: string; importContext: boolean; attachments: { name: string; input?: unknown; text?: string }[] };
+export type Panel = "content" | "properties" | "context" | "results" | "browser" | "diff" | "workspace" | "files" | "terminal" | null;
+export type ModelConfig = Pick<TaskConfig, 'model' | 'reasoning_effort'>;
+export type Draft = { text: string; projectId?: string; modelConfig?: ModelConfig; importContext: boolean; attachments: { name: string; input?: unknown; text?: string }[] };
 export type StudioState = {
   taskQuery: TaskQuery;
   setTaskQuery: Dispatch<SetStateAction<TaskQuery>>;
@@ -26,6 +28,13 @@ export type StudioState = {
   view: View;
   panel: Panel;
   setPanel: (panel: Panel) => void;
+  panelRevision?:number;
+  inspectorOpen?:boolean;
+  inspectorTab?:'content'|'properties';
+  setInspectorOpen?:Dispatch<SetStateAction<boolean>>;
+  overlayOpen?:boolean;
+  toolRequest?: {kind:'files'|'terminal'|'diff'|'browser';sequence:number;target?:string};
+  openTool?: (kind:'files'|'terminal'|'diff'|'browser',target?:string) => void;
   openDialog: (dialog: DialogState) => void;
   setView: (view: View) => void;
   openTask: (id: string) => void;

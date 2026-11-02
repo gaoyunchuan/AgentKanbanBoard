@@ -1,6 +1,38 @@
 # Known Errors
 
+## 原生网页在横向扩窗后停在会话区
+
+- 场景：右栏已经打开网页，再连续改变窗口宽度。
+- 根因：固定宽右栏宽高不变而 x 移动，只有 ResizeObserver 不会重新上报坐标；主进程 resize 沿用旧矩形。
+- 修复：NativeBrowserSurface 同时监听 window resize，重新测量槽位；隐藏及卸载移除监听并隐藏 view。回归覆盖只变 x、不变宽高，不能用仅首次打开的宽窄截图替代。
+- 证据：`docs/verification/2026-10-30-browser-resize/`，包含先失败后通过回归、连续缩放的矩形比对和原生截图白图限制。
+
 ## Current Knowledge
+
+### Electron 多次意外退出：本地 RPC 泄漏导致 V8 OOM
+
+- 2026-10-30正式应用14:02、15:15、16:08、16:29四份ips同栈SIGTRAP；Framework反汇编含electron.v8-oom.detail和Last few GCs，不能把最近导出符号ares_dns/sqlite当作DNS/SQLite根因。
+- 根因：每次详情/快照读取新建TCP，客户端end仅半关闭，后端CLIENTS克隆writer未随serve退出移除；活跃socket回调保留已完成Promise及大响应，最终主进程内存耗尽。
+- 证据：旧版160次大响应heap约5.2MB→85.4MB、160条连接，新版约5MB、0条；真实旧进程更新前434条TCP。修复finish销毁socket、后端RAII解除注册，并覆盖启动前失败、断流、超量响应、子进程退出。
+- 排查先对齐ips时间/PID/版本，记录TCP数量和RSS，再用有界真实TCP负载复现；不要先增大V8堆或把UI停顿等同业务任务完成。验收见docs/verification/2026-10-30-sidecar-oom/。
+
+### Codex 最近会话显示 Task ID
+
+- 根因：本应用仅将标题放在任务提示中，没有调用显式命名协议，Codex 退回展示提示首行 `Task ID:`。
+- 修复：业务层传名称、运行时在创建及恢复后显式设置；不要通过删除内部 ID 或修改 Codex 私有数据库修复。真实协议可在首条 Turn 前命名。历史关联会话通过受支持的标题接口修正并回读；证据见 `docs/verification/2026-10-30-task-thread-names/`。
+
+### workspace routing discovery failed
+
+- 2026-10-30：真实 `turn/completed` 返回上游路由发现失败，之前 `responseStreamDisconnected` 重连 5 次；同进程 ChatGPT 插件目录和 MCP 请求也记录 `is_connect=true`，不是本地项目目录不存在的证据。
+- 先核对 Codex 日志与 Thread/Turn，再做账户只读查询和隔离短模型请求；仅 initialize、config/read 或“已连接”不能证明模型请求正常。此例查询和真实短模型请求恢复后，再通过任务“核对后继续”恢复，成功收到回复及浏览器工具调用。
+- 不据此自动改代理、凭证、权限或无限重试。若停在有效工具审批，保留用户确认；模型连接恢复与业务交付完成分开报告。证据见 `docs/verification/2026-10-30-workspace-routing/`。
+
+### 已完成前置任务仍显示等待
+
+- 场景：交给 Agent 执行过的前置任务被用户明确标记完成，但只有 `stage=phase` 的阶段记录，没有 `ready+usable` 的最终结果。
+- 根因：`unresolved_dependencies` 在完成状态外再次要求可用结果，导致列表显示完成而下游仍被阻塞；创建过但未执行的会话也会触发。
+- 处理：依赖以业务完成状态与资源释放为准，交付验收仍由任务完成入口约束。不得通过伪造最终结果或修改阶段记录的可用性修复等待。
+- 回归：`completed_dependency_with_only_phase_results_releases_downstream`、`manually_completed_dependency_releases_without_review_note`；同时保留执行未结束、待验收、资源不确定及返工重新阻塞的既有测试。
 
 ### 2026-10-27 验收修订（优先于下方历史记录）
 

@@ -337,6 +337,7 @@ dependencies = [
 name = "codex-kanban"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "hmac",
  "rusqlite",
  "serde",

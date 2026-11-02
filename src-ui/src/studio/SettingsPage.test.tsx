@@ -21,7 +21,7 @@ describe('settings page', () => {
     const command = vi.fn(async () => ({ excluded_project_dirs: [], delegation_permission: 'full-access' }));
     render(<StudioContext.Provider value={state(command as unknown as StudioState['command'])}><SettingsPage/></StudioContext.Provider>);
     const user = userEvent.setup();
-    await user.click(screen.getByRole('combobox', { name: '委托任务默认权限' }));
+    await user.click(screen.getByRole('combobox', { name: '新任务默认权限' }));
     await user.click(await screen.findByRole('option', { name: '完全访问' }));
     expect(screen.getByText(/不再逐次确认/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '保存默认权限' }));

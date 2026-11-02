@@ -1,0 +1,33 @@
+{
+  "removed": [
+    {
+      "path": "src-ui/dist",
+      "bytes": 884736
+    },
+    {
+      "path": "desktop/ui",
+      "bytes": 884736
+    },
+    {
+      "path": "desktop/dist-electron",
+      "bytes": 287477760
+    },
+    {
+      "path": "src-tauri/target",
+      "bytes": 4792320
+    }
+  ],
+  "freed_mib": 280.42,
+  "stopped_servers": [
+    {
+      "pid": 23791,
+      "port": 4190
+    },
+    {
+      "pid": 40802,
+      "port": 4191
+    }
+  ],
+  "installed_app_preserved": true,
+  "signature_after_cleanup": true
+}

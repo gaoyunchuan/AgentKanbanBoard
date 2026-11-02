@@ -1,6 +1,7 @@
 import { StudioSelect } from './StudioSelect';
 import { ScheduledStartField } from './ScheduledStartField';
 import { TaskExecutionControls } from './TaskExecutionControls';
+import { TaskPermissionField } from './TaskPermissionField';
 import { useState } from 'react';
 import { ListTree, Link, Check, Clock, ArrowUpRight, Folder, Pencil, FileText } from 'lucide-react';
 import { useStudio } from './context';
@@ -23,6 +24,7 @@ export function Inspector({tab,onTab}:{tab:'content'|'properties';onTab:(tab:'co
    {!t.parent_id&&<div className="property-row"><span>置顶任务及其会话</span><button className={`toggle ${t.pinned?'on':''}`} role="switch" aria-checked={t.pinned} aria-label="置顶任务及其会话" onClick={()=>void s.command('update_task',{task_id:t.id,patch:{pinned:!t.pinned},before:{pinned:t.pinned}}).catch(()=>{})}/></div>}
  </section>
  <section className="property-group" aria-label="执行安排"><h3>执行安排</h3>
+   <TaskPermissionField key={`permission:${t.id}`} task={t}/>
    <div className="property-pair"><div className="field"><div className="field-label">委托人</div><div className="field-value">{w?.config.delegated_by||'我'}</div></div><div className="field"><div className="field-label">受理 Agent</div><div className="field-value">{w?w.config.agent_id:'我 · 手动开展'}</div></div></div>
    {!w&&<div className="field"><details className="delegate-options"><summary>自动执行与验收设置</summary><label>验收要求<textarea value={acceptance[t.id]||''} onChange={e=>setAcceptance(v=>({...v,[t.id]:e.target.value}))}/></label><label>交付方式<StudioSelect label="交付方式" value={policies[t.id]||'human'} onValueChange={value=>setPolicies(v=>({...v,[t.id]:value}))} options={[{value:'human',label:'交付后由我验收'},{value:'auto',label:'有效交付后自动完成'}]}/></label></details><button className="textbtn outlined" disabled={s.busy||!project||['completed','cancelled'].includes(t.status)} onClick={()=>void s.command('delegate',{task_id:t.id,agent_id:'codex',acceptance:acceptance[t.id]||'',review_policy:policies[t.id]||'human'},'已委托；条件就绪后自动执行').catch(()=>{})}>委托给 Codex</button></div>}
    <ScheduledStartField key={t.id} task={t}/>

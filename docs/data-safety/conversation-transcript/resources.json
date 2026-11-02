@@ -1,0 +1,36 @@
+{
+  "resources": [
+    {
+      "resource_id": "renderer.mermaid.diagrams",
+      "owner": "MermaidDiagram",
+      "namespace": "component/useId + source cache",
+      "cardinality": {
+        "max_cache_entries": 16,
+        "max_inflight": 4,
+        "max_source_characters": 32768,
+        "max_edges": 300,
+        "max_svg_characters": 1000000
+      },
+      "retention": {
+        "images": "离开视口/源码变化/卸载清理组件图片，缓存满16时逐出",
+        "timers": "180ms防流式抖动，取消时clearTimeout；完成的Turn不保留1秒时钟",
+        "persistent": false
+      },
+      "rate": {
+        "automatic_retry": 0,
+        "retry": "用户点击重试，不无限入队"
+      },
+      "capacity": {
+        "formula": "每SVG≤1M UTF16字符，UTF8最坏3MB，base64≤4MB；缓存16项×4MB≈64MB ASCII载荷，保守UTF16上界128MB，另有约1MiB源码key及最多4个渲染临时对象",
+        "scope": "仅本次图表缓存估算，不宣称整个Mermaid引擎或渲染进程硬quota"
+      },
+      "backpressure": {
+        "limit": "显示失败与源码/重试入口；不新增无限队列"
+      },
+      "cleanup_recovery": {
+        "owner": "组件取消标记+本模块Map",
+        "business_data_deleted": false
+      }
+    }
+  ]
+}

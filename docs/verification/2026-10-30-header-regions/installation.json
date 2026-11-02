@@ -1,0 +1,20 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "restarted": true,
+  "codesign_strict": true,
+  "source_matches_installed": true,
+  "ui_sha256": "7eb113bfeb846ec995a6b35591fee2b7897f9d30a116981cf698a44aaa7c8962",
+  "reused_sidecar_sha256": "2c6aa93a37ee642e897cd0c7eb3fab715f105e1502981e2f7bb9f54b91d19b98",
+  "active_runs_before_update": 0,
+  "backend_source_unchanged_verified": true,
+  "source_sha256": {
+    "ChatApp.tsx": "8fae9b94af40254504d3a314157e85a3ce98a8106bdb2f079cddebd15937bcba",
+    "ChatSurface.tsx": "e47e3767d56c3d599338a9fd04443f80cbae7d72bbde1e9c6e6c0fa34ecb1d12",
+    "WorkspaceHeader.tsx": "b8ac10cbb39a879b0626a48fe91f274236c6739ae7ed4dbc9f28ea0eefe87cee",
+    "RightDock.tsx": "71fc64fa5b2e53cb4d06b45047f193bc2a5ab2ce3b83db752b2147d1ad3499ee",
+    "TaskDetails.tsx": "36bb81c9785102f1f2c6ce02fd10c8ba904f739b19cd9f50f7e75c106d9e1f25",
+    "context.tsx": "ce1edea14663725e8fac291622916e680e74f9a2a0ed7d2dd0d868bcf2e9ecbe",
+    "workspace-layout.css": "b57eae304283b11872052a6342f26ebca3456c313a420d6e0053df7697bd633c",
+    "ChatApp.test.tsx": "744b3bcfc96c9b64c2407da22f984fcd667adb0819fac24aa65e270e54eb027c"
+  }
+}

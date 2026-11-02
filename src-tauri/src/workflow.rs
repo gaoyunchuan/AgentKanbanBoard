@@ -275,11 +275,10 @@ pub(crate) fn unresolved_dependencies(
 ) -> Result<Vec<String>, String> {
     let mut statement = connection
         .prepare(
-            // 人工任务勾选完成即可满足依赖；只有交给 Agent 执行过的任务才要求已验收的可用结果。
+            // 完成状态由交付验收或用户明确确认写入，依赖判断不再用结果类型二次否定完成。
+            // 人工完成可能只有阶段记录；仍须等待执行资源释放，避免停止尚未确认就放行下游。
             "SELECT d.blocked_by FROM work_dependencies d JOIN todo_tasks t ON t.id=d.blocked_by
-         WHERE d.task_id=?1 AND (t.status<>'completed' OR EXISTS(SELECT 1 FROM work_resource_leases l WHERE l.owner=t.id OR l.run_id IN (SELECT cr.id FROM chat_runs cr JOIN chat_conversations cc ON cc.id=cr.conversation_id WHERE cc.task_id=t.id)) OR (
-           EXISTS(SELECT 1 FROM chat_conversations c WHERE c.task_id=t.id)
-           AND NOT EXISTS(SELECT 1 FROM task_results r WHERE r.task_id=t.id AND r.status='ready' AND r.usable=1))) ORDER BY d.blocked_by",
+         WHERE d.task_id=?1 AND (t.status<>'completed' OR EXISTS(SELECT 1 FROM work_resource_leases l WHERE l.owner=t.id OR l.run_id IN (SELECT cr.id FROM chat_runs cr JOIN chat_conversations cc ON cc.id=cr.conversation_id WHERE cc.task_id=t.id))) ORDER BY d.blocked_by",
         )
         .map_err(db)?;
     let result = statement
@@ -339,7 +338,10 @@ pub(crate) fn replace_dependencies(
 }
 
 /// 把设置页选择的默认权限映射成一次委托的沙箱与审批策略。
-pub(crate) fn apply_delegation_permission(config: &mut TaskConfig, mode: &str) -> Result<(), String> {
+pub(crate) fn apply_delegation_permission(
+    config: &mut TaskConfig,
+    mode: &str,
+) -> Result<(), String> {
     let (sandbox, approval) = match mode {
         "on-request" => ("workspace-write", "on-request"),
         "read-only" => ("read-only", "on-request"),
@@ -527,9 +529,9 @@ fn validate_config(config: &TaskConfig) -> Result<(), String> {
     }
     if !matches!(
         config.sandbox_mode.as_str(),
-        "read-only" | "workspace-write"
+        "read-only" | "workspace-write" | "danger-full-access"
     ) {
-        return Err("一期支持只读或 workspace-write 沙箱".into());
+        return Err("不支持的任务文件与网络边界".into());
     }
     Ok(())
 }
@@ -647,6 +649,7 @@ impl Repository {
             }
             write_todo(&tx, task, &now)?;
         }
+        crate::task_permissions::initialize_missing(&tx).map_err(db)?;
         refresh_dependencies(&tx, &now)?;
         tx.commit().map_err(db)?;
         self.list_todo_tasks().map_err(db)
@@ -783,6 +786,11 @@ impl Repository {
              revision=work_tasks.revision+1,continuation_count=0,last_error=NULL,updated_at=excluded.updated_at",
             params![task_id,encode(config)?,status.as_str(),reason,now],
         ).map_err(db)?;
+        crate::task_permissions::store(
+            &tx,
+            task_id,
+            &crate::task_permissions::TaskPermissions::from_config(config),
+        )?;
         project_business_status(&tx, task_id, status, &now)?;
         event(
             &tx,
@@ -837,7 +845,7 @@ impl Repository {
             task_id,
             Some(&run.id),
             "run_started",
-            &json!({"generation":generation}),
+            &json!({"generation":generation,"execution_permissions":crate::task_permissions::TaskPermissions::from_config(&task.config)}),
             &now,
         )?;
         tx.commit().map_err(db)?;
@@ -1419,8 +1427,12 @@ impl Repository {
         child_config.delegated_by = parent_task_id.into();
         // An Agent cannot grant itself broader runtime permissions or bypass the
         // review selected by the human who delegated its parent.
-        child_config.approval_policy = parent.config.approval_policy;
-        child_config.sandbox_mode = parent.config.sandbox_mode;
+        // 运行中修改的是下一轮权限；当前 Agent 创建子任务时仍继承本轮启动权限。
+        crate::task_permissions::for_run(&tx, parent_run_id)?
+            .unwrap_or_else(|| {
+                crate::task_permissions::TaskPermissions::from_config(&parent.config)
+            })
+            .apply(&mut child_config);
         child_config.workspace = parent.config.workspace;
         child_config.review_policy = parent.config.review_policy;
         child_config.browser_enabled = parent.config.browser_enabled;
@@ -1428,6 +1440,11 @@ impl Repository {
         replace_dependencies(&tx, &id, &child_config.blocked_by)?;
         let ready = unresolved_dependencies(&tx, &id)?.is_empty();
         tx.execute("INSERT INTO work_tasks(task_id,config_json,status,wait_reason,updated_at) VALUES(?1,?2,?3,?4,?5)",params![id,encode(&child_config)?,if ready {"queued"} else {"waiting"},if ready {None} else {Some("dependencies")},now]).map_err(db)?;
+        crate::task_permissions::store(
+            &tx,
+            &id,
+            &crate::task_permissions::TaskPermissions::from_config(&child_config),
+        )?;
         event(
             &tx,
             &id,
@@ -2211,11 +2228,17 @@ for line in sys.stdin:
         emit({'id':request,'result':{'thread':{'id':thread}}})
     elif method == 'thread/resume':
         emit({'id':request,'result':{'thread':{'id':params['threadId']}}})
+    elif method == 'thread/name/set':
+        threads[params['threadId']]['name']=params['name']
+        emit({'id':request,'result':{}})
     elif method == 'thread/goal/get':
         emit({'id':request,'result':{'goal':None}})
     elif method == 'turn/start':
         thread=params['threadId']
         state=threads[thread]
+        if not state['summary']: assert state.get('name'), 'persistent conversation must have a business name'
+        with pathlib.Path(state['cwd'],'permission-starts.jsonl').open('a') as log:
+            log.write(json.dumps({'approvalPolicy':params.get('approvalPolicy'),'sandboxPolicy':params.get('sandboxPolicy')})+'\n')
         state['turns'] += 1
         turn='turn-' + str(state['turns'])
         text='\n'.join(item.get('text','') for item in params['input'])
@@ -2371,15 +2394,29 @@ for line in sys.stdin:
     fn manually_completed_dependency_releases_without_review_note() {
         let repo = repository(&["upstream", "downstream", "cancelled-upstream"]);
         repo.connection
-            .execute("UPDATE todo_tasks SET status='completed',result_review='' WHERE id='upstream'", [])
+            .execute(
+                "UPDATE todo_tasks SET status='completed',result_review='' WHERE id='upstream'",
+                [],
+            )
             .unwrap();
-        replace_dependencies(&repo.connection, "downstream", &["upstream".into(), "cancelled-upstream".into()]).unwrap();
+        repo.connection
+            .execute(
+                "UPDATE todo_tasks SET status='cancelled' WHERE id='cancelled-upstream'",
+                [],
+            )
+            .unwrap();
+        replace_dependencies(
+            &repo.connection,
+            "downstream",
+            &["upstream".into(), "cancelled-upstream".into()],
+        )
+        .unwrap();
         // 人工完成即满足依赖，未写结果复盘也不能永久卡住下游。
         assert_eq!(
             unresolved_dependencies(&repo.connection, "downstream").unwrap(),
             vec!["cancelled-upstream"]
         );
-        // 交给 Agent 执行过的任务仍必须有可接受的结果，完成勾选本身不足以放行。
+        // 创建人工会话或逻辑占位会话，不应撤销用户已确认的完成状态。
         repo.connection
             .execute(
                 "INSERT INTO chat_conversations(id,task_id,title,mode,config_json,created_at,updated_at) VALUES('manual-upstream','upstream','上游会话','manual','{}','now','now')",
@@ -2388,8 +2425,84 @@ for line in sys.stdin:
             .unwrap();
         assert_eq!(
             unresolved_dependencies(&repo.connection, "downstream").unwrap(),
-            vec!["cancelled-upstream", "upstream"]
+            vec!["cancelled-upstream"]
         );
+    }
+
+    #[test]
+    fn completed_dependency_with_only_phase_results_releases_downstream() {
+        let repo = repository(&["upstream", "downstream"]);
+        repo.delegate_task("upstream", &config(ReviewPolicy::Human))
+            .unwrap();
+        let run = repo.claim_work_task("upstream", "phase").unwrap();
+        crate::chat_store::record_handoff(
+            &repo.connection,
+            "upstream",
+            &run.id,
+            "阶段工作已记录，用户随后确认整体完成",
+            &json!({}),
+            "phase",
+            &repo.now_text(),
+        )
+        .unwrap();
+        repo.finish_work_run("upstream", &run.id, "completed", None)
+            .unwrap();
+        let mut downstream = config(ReviewPolicy::Human);
+        downstream.blocked_by = vec!["upstream".into()];
+        repo.delegate_task("downstream", &downstream).unwrap();
+        assert_eq!(
+            repo.get_work_task("downstream").unwrap().unwrap().status,
+            WorkflowStatus::Waiting
+        );
+
+        // 复现历史数据：人工完成已提交，阶段结果仍保留原有的不可用标记。
+        repo.connection
+            .execute(
+                "UPDATE todo_tasks SET status='completed' WHERE id='upstream'",
+                [],
+            )
+            .unwrap();
+        repo.connection
+            .execute(
+                "UPDATE work_tasks SET status='completed' WHERE task_id='upstream'",
+                [],
+            )
+            .unwrap();
+        crate::chat_store::accept_results(&repo.connection, "upstream").unwrap();
+        repo.refresh_work_dependencies().unwrap();
+        assert_eq!(repo.chat_results("upstream").unwrap()[0]["usable"], false);
+        assert!(repo
+            .chat_missing_dependencies("downstream")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            repo.get_work_task("downstream").unwrap().unwrap().status,
+            WorkflowStatus::Queued
+        );
+        let snapshot = repo.chat_snapshot().unwrap();
+        let task = snapshot["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == "downstream")
+            .unwrap();
+        assert_eq!(task["missing_dependencies"], json!([]));
+
+        // 保留历史结果时，重新打开或取消前置任务仍须重新阻塞下游。
+        for status in ["todo", "cancelled"] {
+            repo.connection
+                .execute(
+                    "UPDATE todo_tasks SET status=?1 WHERE id='upstream'",
+                    [status],
+                )
+                .unwrap();
+            repo.refresh_work_dependencies().unwrap();
+            assert_eq!(
+                repo.chat_missing_dependencies("downstream").unwrap(),
+                vec!["upstream"]
+            );
+            assert!(repo.claim_work_task("downstream", "must wait").is_err());
+        }
     }
 
     #[test]
@@ -2467,10 +2580,10 @@ for line in sys.stdin:
             .service
             .execute_command(
                 "e2e-native-stop",
-                vec!["echo".into(), "blocked".into()],
+                vec!["echo".into(), "manual inspection".into()],
                 1000
             )
-            .is_err());
+            .is_ok());
         // 模拟用户核对并结束本测试拥有的进程，再执行绑定到原运行的解除动作。
         std::fs::remove_file(fixture.directory.join("fail-native-list")).unwrap();
         std::fs::write(fixture.directory.join("allow-native-stop"), "yes").unwrap();
@@ -2534,10 +2647,10 @@ for line in sys.stdin:
             .service
             .execute_command(
                 "e2e-native-stop",
-                vec!["echo".into(), "blocked".into()],
+                vec!["echo".into(), "manual inspection".into()],
                 1000
             )
-            .is_err());
+            .is_ok());
         std::fs::write(fixture.directory.join("allow-native-stop"), "yes").unwrap();
         fixture.wait_for("e2e-native-stop", |d| d.task.execution_status != "stopping");
         let before = std::fs::metadata(fixture.directory.join("heartbeat.log"))
@@ -2638,7 +2751,7 @@ for line in sys.stdin:
 
     #[test]
     #[cfg(unix)]
-    fn service_terminal_respects_agent_workspace_lease_and_does_not_reopen_completed_work() {
+    fn service_terminal_runs_beside_agent_without_consuming_its_slot_or_reopening_work() {
         let fixture = ServiceFixture::new();
         fixture.delegate("e2e-cancel");
         let active = fixture.wait_for("e2e-cancel", |detail| {
@@ -2647,15 +2760,12 @@ for line in sys.stdin:
                 .iter()
                 .any(|interaction| interaction.status == "pending")
         });
-        let error = fixture
-            .service
-            .execute_command(
-                "e2e-cancel",
-                vec!["echo".into(), "unsafe overlap".into()],
-                1000,
-            )
-            .unwrap_err();
-        assert!(error.contains("该目录仍有 Agent 或终端在执行"));
+        // 人工终端可并行；原 Agent 的身份、额度与运行状态不能被占用或改变。
+        let result = fixture.service.execute_command("e2e-cancel",vec!["echo".into(), "manual inspection".into()],1000).unwrap();
+        assert_eq!(result["exitCode"],0);
+        let same:TaskExecutionDetail=serde_json::from_value(fixture.service.call("detail",json!({"task_id":"e2e-cancel"})).unwrap()).unwrap();
+        assert_eq!(same.task.current_run_id,active.task.current_run_id);
+        assert_eq!(same.task.status,active.task.status);
         fixture.service.call("action",json!({"task_id":"e2e-cancel","action":"cancel","expected_revision":active.task.revision})).unwrap();
         // A later task in the same directory cannot finish until cancellation has
         // actually released the former execution's workspace lease.
@@ -2782,6 +2892,48 @@ for line in sys.stdin:
             .service
             .call("chat/extract", json!({"conversation_id":cid}))
             .is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn service_task_permission_change_is_applied_only_to_the_next_turn_start() {
+        let fixture = ServiceFixture::new();
+        fixture.delegate("e2e-cancel");
+        let first = fixture.wait_for("e2e-cancel", |d| {
+            d.interactions.iter().any(|i| i.status == "pending")
+        });
+        fixture.service.call("chat/set_task_permissions",json!({"task_id":"e2e-cancel","permissions":{"sandbox_mode":"danger-full-access","approval_policy":"never"},"expected_permissions":{"sandbox_mode":"workspace-write","approval_policy":"on-request"}})).unwrap();
+        let unchanged =
+            fixture.wait_for("e2e-cancel", |d| d.task.config.approval_policy == "never");
+        assert_eq!(unchanged.task.current_run_id, first.task.current_run_id);
+        assert!(unchanged.interactions.iter().any(|i| i.status == "pending"));
+        fixture
+            .service
+            .call(
+                "chat/task_state",
+                json!({"task_id":"e2e-cancel","state":"todo","confirm_stop":true}),
+            )
+            .unwrap();
+        let paused = fixture.wait_for("e2e-cancel", |d| {
+            d.task.status == WorkflowStatus::Paused && d.task.current_run_id.is_none()
+        });
+        fixture.service.call("action",json!({"task_id":"e2e-cancel","action":"resume","expected_revision":paused.task.revision})).unwrap();
+        fixture.wait_for("e2e-cancel", |d| {
+            d.task.current_run_id.is_some()
+                && d.task.current_run_id != first.task.current_run_id
+                && d.interactions.iter().any(|i| i.status == "pending")
+        });
+        let lines =
+            std::fs::read_to_string(fixture.directory.join("permission-starts.jsonl")).unwrap();
+        let starts: Vec<Value> = lines
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        assert_eq!(starts.len(), 2);
+        assert_eq!(starts[0]["approvalPolicy"], "on-request");
+        assert_eq!(starts[0]["sandboxPolicy"]["type"], "workspaceWrite");
+        assert_eq!(starts[1]["approvalPolicy"], "never");
+        assert_eq!(starts[1]["sandboxPolicy"]["type"], "dangerFullAccess");
     }
 
     #[test]

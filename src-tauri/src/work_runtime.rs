@@ -22,6 +22,8 @@ pub struct TaskExecutionConfig {
     pub task_id: String,
     pub run_id: String,
     pub thread_id: Option<String>,
+    #[serde(default)]
+    pub thread_name: Option<String>,
     pub workspace: String,
     pub prompt: String,
     pub model: Option<String>,
@@ -114,6 +116,7 @@ fn native_cleanup_timeout(deadline: std::time::Instant) -> Result<Duration, Stri
 
 struct RuntimeShared {
     server: AppServer,
+    terminals: Arc<crate::workspace_terminal::TerminalManager>,
     connection_id: String,
     server_version: String,
     registry: Mutex<Registry>,
@@ -164,8 +167,10 @@ impl CodexRuntime {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
+        let terminals=crate::workspace_terminal::TerminalManager::new(server.clone());
         let shared = Arc::new(RuntimeShared {
             server,
+            terminals,
             connection_id: format!("codex-{}-{stamp}", std::process::id()),
             server_version: initialized
                 .get("userAgent")
@@ -342,6 +347,8 @@ impl CodexRuntime {
             thread_id
         };
 
+        self.sync_thread_name(&config, &thread_id);
+
         // This release has exactly one continuation authority: our task scheduler.
         // A previously imported or interrupted session may still contain a native Goal.
         // 只读摘要使用 ephemeral Thread，服务端禁止其持有 Goal；只对持久会话核对续跑状态。
@@ -365,6 +372,39 @@ impl CodexRuntime {
         let mut input = vec![text_input(&config.prompt)];
         input.extend(attachments);
         self.start_turn(&config, &thread_id, input)
+    }
+
+    fn sync_thread_name(&self, config: &TaskExecutionConfig, thread_id: &str) {
+        // 临时摘要不持久化名称；旧会话恢复时同步本轮的最新业务名称。
+        if config.task_id.starts_with("extract:") {
+            return;
+        }
+        let Some(name) = config
+            .thread_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        else {
+            return;
+        };
+        if let Err(error) = self
+            .shared
+            .server
+            .request("thread/name/set", json!({"threadId":thread_id,"name":name}))
+        {
+            // 标题同步失败只记录诊断，不让协议拒绝阻断业务执行。
+            self.shared.emit(
+                Some(Binding {
+                    task_id: config.task_id.clone(),
+                    run_id: config.run_id.clone(),
+                    thread_id: thread_id.into(),
+                    turn_id: None,
+                }),
+                "runtime/thread/nameFailed",
+                json!({"error":error}),
+                None,
+            );
+        }
     }
 
     pub fn send_message(
@@ -667,6 +707,10 @@ impl CodexRuntime {
 
     pub fn read_workspace_file(&self, workspace: &str, path: &str) -> Result<Value, String> {
         let path = workspace_path(workspace, path)?;
+        // 在请求前限制文件大小，避免 Base64 大响应中断 Agent 共用的协议连接。
+        if std::fs::metadata(&path).map_err(|error| format!("无法读取文件信息：{error}"))?.len() > 3_000_000 {
+            return Err("文件超过 3 MB，请使用终端或外部编辑器查看".into());
+        }
         self.shared
             .server
             .request("fs/readFile", json!({"path":path}))
@@ -811,7 +855,10 @@ impl CodexRuntime {
         Ok(())
     }
 
+    pub fn terminals(&self)->Arc<crate::workspace_terminal::TerminalManager>{self.shared.terminals.clone()}
+
     pub fn shutdown(&self) {
+        self.shared.terminals.shutdown();
         self.shared.server.shutdown();
     }
 
@@ -977,6 +1024,7 @@ impl RuntimeShared {
     fn handle_message(self: &Arc<Self>, message: ServerMessage) {
         match message {
             ServerMessage::Disconnected { reason } => {
+                self.terminals.disconnect(&reason);
                 let bindings = self
                     .lock_registry()
                     .map(|mut registry| {
@@ -1009,6 +1057,7 @@ impl RuntimeShared {
                 params,
                 request_id,
             } => {
+                if self.terminals.accept_output(&method,&params){return;}
                 if method == "runtime/internal/goal-pause-result" {
                     self.goal_pause_result(params);
                     return;
@@ -1668,7 +1717,7 @@ fn workspace_path(workspace: &str, requested: &str) -> Result<String, String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
-fn sandbox_policy(mode: &str, workspace: &str) -> Value {
+pub(crate) fn sandbox_policy(mode: &str, workspace: &str) -> Value {
     match mode {
         "read-only" => json!({"type":"readOnly","networkAccess":false}),
         "danger-full-access" => json!({"type":"dangerFullAccess"}),
@@ -1817,6 +1866,7 @@ mod tests {
             task_id: "task".into(),
             run_id: "run".into(),
             thread_id: None,
+            thread_name: None,
             workspace: std::env::temp_dir().to_string_lossy().into_owned(),
             prompt: "work".into(),
             model: None,
@@ -1825,6 +1875,77 @@ mod tests {
             sandbox_mode: "workspace-write".into(),
             instructions: None,
             browser_enabled: false,
+        }
+    }
+
+    #[test]
+    fn task_names_are_explicit_for_new_and_resumed_threads_but_not_extractions() {
+        let script = r#"
+import sys, json
+calls=[]
+for line in sys.stdin:
+    m=json.loads(line)
+    method=m.get('method')
+    if 'id' not in m: continue
+    calls.append({'method':method,'params':m.get('params')})
+    if method=='thread/start': result={'thread':{'id':'owned-thread'}}
+    elif method=='thread/goal/get': result={'goal':None}
+    elif method=='config/read': result={'config':{}}
+    elif method=='thread/name/set' and m['params']['name']=='拒绝命名':
+        print(json.dumps({'id':m['id'],'error':{'code':-32600,'message':'name rejected'}}),flush=True)
+        continue
+    elif method=='turn/start': result={'turn':{'id':'turn','status':'inProgress'}}
+    elif method=='model/list': result={'data':[],'calls':calls}
+    else: result={}
+    print(json.dumps({'id':m['id'],'result':result}),flush=True)
+"#;
+        for mode in ["new", "resume", "extract", "blank", "reject"] {
+            let mut command = std::process::Command::new("python3");
+            command.args(["-u", "-c", script]);
+            let (server, events) = AppServer::spawn_command(command).unwrap();
+            let runtime = CodexRuntime::from_server(server, events, Arc::new(|_| {})).unwrap();
+            let mut value = serde_json::to_value(test_config()).unwrap();
+            let name = match mode {
+                "blank" => "  ",
+                "reject" => "拒绝命名",
+                "resume" => "任务的新名称",
+                _ => "接口调用示例代码及文档说明",
+            };
+            value["thread_name"] = json!(name);
+            if mode == "resume" {
+                value["thread_id"] = json!("owned-thread");
+            }
+            if mode == "extract" {
+                value["task_id"] = json!("extract:summary");
+            }
+            runtime
+                .start_task(serde_json::from_value(value).unwrap())
+                .unwrap();
+            let result = runtime.rpc_read("model/list", json!({})).unwrap();
+            let calls = result["calls"].as_array().unwrap();
+            let names: Vec<_> = calls
+                .iter()
+                .filter(|c| c["method"] == "thread/name/set")
+                .collect();
+            if mode == "extract" || mode == "blank" {
+                assert!(names.is_empty(), "临时摘要不能进入名称索引");
+            } else {
+                assert_eq!(names.len(), 1, "{mode}: 应显式命名");
+                assert_eq!(
+                    names[0]["params"],
+                    json!({"threadId":"owned-thread","name":name})
+                );
+                let name_at = calls
+                    .iter()
+                    .position(|c| c["method"] == "thread/name/set")
+                    .unwrap();
+                let turn_at = calls
+                    .iter()
+                    .position(|c| c["method"] == "turn/start")
+                    .unwrap();
+                assert!(name_at < turn_at, "首轮自动标题生成前设置名称");
+            }
+            runtime.shutdown();
         }
     }
 
@@ -2217,6 +2338,7 @@ for line in sys.stdin:
                 task_id: "task".into(),
                 run_id: "run".into(),
                 thread_id: None,
+                thread_name: None,
                 workspace: std::env::temp_dir().to_string_lossy().into_owned(),
                 prompt: "work".into(),
                 model: None,
@@ -2300,6 +2422,7 @@ for line in sys.stdin:
                 task_id: "task".into(),
                 run_id: "run".into(),
                 thread_id: None,
+                thread_name: None,
                 workspace: std::env::temp_dir().to_string_lossy().into_owned(),
                 prompt: "work".into(),
                 model: None,
@@ -2377,6 +2500,7 @@ for line in sys.stdin:
             task_id: "task-a".into(),
             run_id: "run-1".into(),
             thread_id: None,
+            thread_name: None,
             workspace: std::env::temp_dir().to_string_lossy().into_owned(),
             prompt: "Complete the task with evidence".into(),
             model: None,
@@ -2442,6 +2566,7 @@ for line in sys.stdin:
             .start_task(TaskExecutionConfig {
                 run_id: "run-2".into(),
                 thread_id: Some("main-thread".into()),
+                thread_name: None,
                 ..config
             })
             .unwrap();
@@ -2549,6 +2674,35 @@ for line in sys.stdin:
         let workspace = root.join("workspace").to_string_lossy().into_owned();
         assert!(workspace_path(&workspace, "inside.txt").is_ok());
         assert!(workspace_path(&workspace, "../outside.txt").is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn oversized_workspace_file_does_not_reach_shared_app_server() {
+        let script = r#"
+import sys,json
+reads=0
+for line in sys.stdin:
+    message=json.loads(line)
+    if 'id' not in message: continue
+    method=message.get('method')
+    if method=='fs/readFile': reads+=1
+    result={'config':{}} if method=='config/read' else {'reads':reads}
+    print(json.dumps({'id':message['id'],'result':result}),flush=True)
+"#;
+        let mut command = std::process::Command::new("python3");
+        command.args(["-u", "-c", script]);
+        let (server, events) = AppServer::spawn_command(command).unwrap();
+        let runtime = CodexRuntime::from_server(server, events, Arc::new(|_| {})).unwrap();
+        let root = std::env::temp_dir().join(format!("akb-file-size-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        // 使用稀疏文件验证读取之前的上限，不向共享协议连接发送大响应。
+        std::fs::File::create(root.join("large.bin")).unwrap().set_len(3_000_001).unwrap();
+        let error = runtime.read_workspace_file(&root.to_string_lossy(), "large.bin").unwrap_err();
+        assert!(error.contains("3 MB"));
+        assert_eq!(runtime.rpc_read("model/list", json!({})).unwrap()["reads"], 0);
+        assert!(runtime.is_alive());
+        runtime.shutdown();
         let _ = std::fs::remove_dir_all(root);
     }
     #[test]

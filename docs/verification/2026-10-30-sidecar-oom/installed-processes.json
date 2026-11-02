@@ -1,0 +1,13 @@
+[
+  {
+    "pid": 98291,
+    "command": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/MacOS/Codex Thread Kanban",
+    "sha256": "e1a59dab83061b3c9fc7c637ea29dc30c3e02c0c3c35ae2310df056b12062716"
+  },
+  {
+    "pid": 98318,
+    "command": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/Resources/akb_sidecar",
+    "sha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+    "port": 63604
+  }
+]

@@ -1,0 +1,3 @@
+以现有conversationVisible作为唯一入口，不将view=tasks直接视为会话。RightDock仍稳定挂载，available只控制工具顶栏/正文、网页显示与请求接纳；离开关闭弹出菜单，不重置collapsed或已有资源。任务属性继续由中间TaskDetails固定呈现。
+
+三个边界：任务树不能留右栏空白→同时隐藏portal顶栏与正文；返回不能丢终端→不卸载RightDock；任务树请求不能稍后误开工具→忽略时也推进已处理序号，前端入口提示需先打开会话。

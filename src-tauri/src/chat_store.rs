@@ -340,6 +340,7 @@ impl Repository {
             }
             let mut t = serde_json::to_value(&todo).map_err(|e| e.to_string())?;
             t["scheduled_start_at"] = json!(self.task_start_time(&todo.id)?);
+            t["execution_permissions"] = json!(self.task_permissions(&todo.id)?);
             t["project_id"] = json!(pref.as_ref().and_then(|p| p.0.clone()));
             t["effective_project_id"] = json!(self.chat_effective_project(&todo.id)?);
             t["last_conversation_id"] = json!(pref.as_ref().and_then(|p| p.2.clone()));
@@ -554,6 +555,7 @@ impl Repository {
                 params![tid, project],
             )
             .map_err(db)?;
+        crate::task_permissions::store(&transaction, &tid, &crate::task_permissions::defaults(&transaction)?)?;
         transaction.commit().map_err(db)?;
         Ok(tid)
     }
@@ -662,10 +664,11 @@ impl Repository {
             .map(|p| self.selectable_project_path(p))
             .transpose()?
             .unwrap_or_default();
-        let config = TaskConfig {
+        let mut config = TaskConfig {
             workspace,
             ..TaskConfig::default()
         };
+        self.task_permissions(task_id)?.apply(&mut config);
         let count: i64 = self
             .connection
             .query_row(
@@ -774,6 +777,9 @@ impl Repository {
         }
         let transaction = tx(&self.connection)?;
         transaction.execute("UPDATE chat_conversations SET title=?2,pinned=?3,config_json=?4,project_id=?5,revision=revision+1,updated_at=?6 WHERE id=?1 AND revision=?7",params![cid,title,patch.get("pinned").and_then(Value::as_bool).unwrap_or(c.pinned),encoded(&config)?,project_id,self.now_text(),revision]).map_err(db)?;
+        if c.mode == "auto" && (patch.get("approval_policy").is_some() || patch.get("sandbox_mode").is_some()) {
+            crate::task_permissions::store(&transaction, &c.task_id, &crate::task_permissions::TaskPermissions::from_config(&config))?;
+        }
         if changes_config && c.mode == "auto" {
             transaction
                 .execute(
@@ -1191,6 +1197,20 @@ mod tests {
         assert!(r.chat_set_dependencies(&a, &[foreign]).is_err());
         r.chat_set_dependencies(&b, &[a.clone()]).unwrap();
         assert!(r.chat_set_dependencies(&a, &[b]).is_err());
+    }
+    #[test]
+    fn new_task_captures_default_permissions_before_delegation() {
+        let r = repo();
+        r.save_delegation_permission("full-access").unwrap();
+        let id = task(&r, "权限默认值", None);
+        r.save_delegation_permission("read-only").unwrap();
+        let snapshot = r.chat_snapshot().unwrap();
+        let saved = snapshot["tasks"].as_array().unwrap().iter().find(|t| t["id"] == id).unwrap();
+        assert_eq!(saved["execution_permissions"], json!({"sandbox_mode":"danger-full-access","approval_policy":"never"}));
+        assert!(r.chat_conversations().unwrap().is_empty());
+        let c = r.chat_create_conversation(&id, None).unwrap();
+        assert_eq!(c.config.sandbox_mode, "danger-full-access");
+        assert_eq!(c.config.approval_policy, "never");
     }
     #[test]
     fn blocked_task_keeps_logical_main_but_never_gets_a_thread_or_run() {

@@ -48,6 +48,12 @@ impl Scheduler {
                 self.repository.set_task_start_time(task_id,value["scheduled_start_at"].as_str(),value["expected_start_at"].as_str())?;
                 self.dirty=true;Ok(json!({"saved":true}))
             }
+            "set_task_permissions" => {
+                let next=serde_json::from_value(value["permissions"].clone()).map_err(|e|format!("任务权限无效：{e}"))?;
+                let expected=serde_json::from_value(value["expected_permissions"].clone()).map_err(|e|format!("缺少原任务权限：{e}"))?;
+                self.repository.set_task_permissions(req(&value,"task_id")?,&next,&expected)?;
+                self.dirty=true;Ok(json!({"saved":true}))
+            }
             "update_task" => {
                 self.repository.chat_update_task(req(&value,"task_id")?,&value["patch"],&value["before"])?;
                 self.dirty=true;Ok(json!({"saved":true}))
@@ -86,8 +92,8 @@ impl Scheduler {
                 let todo=self.repository.list_todo_tasks().map_err(|e|e.to_string())?.into_iter().find(|t|t.id==task_id).ok_or("任务不存在")?;
                 let existing=self.repository.get_work_task(task_id)?.map(|w|w.config);
                 let mut config=existing.clone().unwrap_or_default();
-                // 默认权限只用于首次委托；已存在的执行配置保持原样，避免重委派时悄悄放宽权限。
-                if existing.is_none() { self.repository.apply_delegation_defaults(&mut config)?; }
+                // 任务在创建时保存默认值；委托时采用该任务目前已保存的权限。
+                self.repository.task_permissions(task_id)?.apply(&mut config);
                 if config.workspace.is_empty(){config.workspace=self.repository.chat_project_workspace(task_id)?;}
                 config.prompt=if todo.process_tracking.trim().is_empty(){todo.title.clone()}else{todo.process_tracking};
                 config.acceptance=value.get("acceptance").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).map(str::to_string).unwrap_or_else(||if config.acceptance.is_empty(){"完成当前任务要求；明确说明实际验证与尚未完成事项，保留可核对的产物。".into()}else{config.acceptance.clone()});
@@ -298,7 +304,7 @@ impl Scheduler {
             let runtime=match self.connect(None){Ok(r)=>r,Err(e)=>{self.repository.chat_finish(&run.id,"failed",Some(&e))?;break}};
             let run=self.repository.chat_claim(&run.id)?;
             let key=if run.kind=="extract"{format!("extract:{}",run.id)}else{format!("chat:{}",c.id)};
-            let config=TaskExecutionConfig{task_id:key.clone(),run_id:run.id.clone(),thread_id:if run.kind=="extract"{None}else{c.thread_id},workspace:c.config.workspace,
+            let config=TaskExecutionConfig{task_id:key.clone(),thread_name:Some(c.title),run_id:run.id.clone(),thread_id:if run.kind=="extract"{None}else{c.thread_id},workspace:c.config.workspace,
                 prompt:run.prompt,model:c.config.model,reasoning_effort:c.config.reasoning_effort,
                 approval_policy:if run.kind=="extract"{"untrusted".into()}else{c.config.approval_policy},sandbox_mode:if run.kind=="extract"{"read-only".into()}else{c.config.sandbox_mode},
                 instructions:Some(c.config.instructions),browser_enabled:run.kind!="extract"&&c.config.browser_enabled};

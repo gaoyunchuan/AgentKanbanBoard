@@ -1,0 +1,30 @@
+{
+  "installed_at": "2026-11-02T10:08:38.093790+08:00",
+  "app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "backup": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-51e7f6ef-2a13-4ff3-8b8e-8c482021face.app",
+  "signature_verified": true,
+  "ui_files_verified": 65,
+  "sidecar_sha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+  "new_process": [
+    "5351     1 /Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/MacOS/Codex Thread Kanban"
+  ],
+  "sidecar_process": [
+    "5392  5351 /Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/Resources/akb_sidecar"
+  ],
+  "ui_observation": {
+    "window": "Codex Thread Kanban",
+    "task_tree_loaded": true,
+    "codex_connected": true,
+    "filter_description": "状态、项目、更新时间在同一任务上取交集；任意任务命中后展示整棵树。"
+  },
+  "tests": "26文件230用例通过（安装前）",
+  "cleanup": {
+    "removed": [
+      "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-ui/dist",
+      "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/ui",
+      "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/dist-electron",
+      "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-tauri/target"
+    ],
+    "verified_absent": true
+  }
+}

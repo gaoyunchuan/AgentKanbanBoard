@@ -1,0 +1,29 @@
+{
+  "正式应用已更新重启": true,
+  "实际界面": "接口调用示例代码及文档说明：进行中；1 项前置已就绪",
+  "已见等待标签": false,
+  "正式任务与执行状态": [
+    {
+      "id": "task-30605-1793256011297955000-1",
+      "title": "网关文档发布及SDK对外发布",
+      "status": "completed",
+      "execution_status": "completed",
+      "wait_reason": null,
+      "current_run_id": null
+    },
+    {
+      "id": "task-30605-1793256079009962000-2",
+      "title": "接口调用示例代码及文档说明",
+      "status": "in_progress",
+      "execution_status": "running",
+      "wait_reason": null,
+      "current_run_id": "run-18e32f83fd878a28-1"
+    }
+  ],
+  "验证方式": [
+    "原生应用可访问性树",
+    "原生应用截图",
+    "正式数据库只读查询"
+  ],
+  "业务文档交付结果": "不在本次依赖修复验收范围内"
+}

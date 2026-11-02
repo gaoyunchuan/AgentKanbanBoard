@@ -1,0 +1,7 @@
+					5 container 工作区标题栏
+						8 工具栏 会话与任务操作
+						22 工具栏 右侧工具操作
+								24 标签 (selected) 窗口缩放验收, Value: 1
+							37 按钮 新建右侧标签
+								1374 文本栏 (settable) Description: 浏览器地址, Value: http://127.0.0.1:4191/, Placeholder: 网址或 http://localhost
+					1390 文本 网页应始终位于右侧标签下方

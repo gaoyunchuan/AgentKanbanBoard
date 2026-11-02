@@ -1,0 +1,42 @@
+/* 窗口控制、页面标题和操作共用一行；交互元素必须排除原生拖动区域。 */
+.studio .workspace-header {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: #f8f9fb;
+  border-bottom: 1px solid #e7eaf0;
+  position: relative;
+  z-index: 20;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.studio .workspace-header.platform-darwin { padding-left: 84px; }
+.studio .workspace-header.platform-win32,
+.studio .workspace-header.platform-linux { padding-right: 150px; }
+.studio .workspace-header .header-leading { display: flex; flex: none; }
+.studio .workspace-header button,
+.studio .workspace-header .hover-host,
+.studio .workspace-header .menu-anchor,
+.studio .workspace-header .inline-menu,
+.studio .workspace-header .header-actions { -webkit-app-region: no-drag; }
+.studio .workspace-header .head-title { flex: 1; min-width: 60px; overflow: visible; gap: 8px; }
+.studio .workspace-header h1 { font-size: 14px; font-weight: 600; margin: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio .workspace-header .header-context,
+.studio .workspace-header .title-with-switch { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.studio .workspace-header .title-with-switch>.hover-host { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.studio .workspace-header .title-with-switch>.menu-anchor { flex: none; }
+.studio .workspace-header .header-actions { flex: 0 1 auto; min-width: 0; max-width: 65%; display: flex; gap: 4px; white-space: nowrap; }
+.studio .workspace-header .header-actions>button { flex: none; }
+.studio .workspace-header .iconbtn { width: 30px; height: 30px; border-radius: 7px; }
+.studio .workspace-header .header-locate { flex: none; color: #8a94a4; }
+.studio .workspace-header .header-actions .textbtn { height: 30px; font-size: 12px; }
+@media(max-width:800px) {
+  .studio .workspace-header { gap: 8px; padding-right: 10px; }
+  .studio .workspace-header .header-actions { gap: 1px; overflow-x: auto; scrollbar-width: thin; }
+  .studio .workspace-header .header-actions .extract-label { display: none; }
+  .studio .workspace-header.platform-win32,
+  .studio .workspace-header.platform-linux { padding-right: 150px; }
+}

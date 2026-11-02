@@ -1,0 +1,12 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "backup_app": [
+    "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-42af4d26-ada7-4ef1-a421-c95a796f3fb1.app"
+  ],
+  "sidecar_sha256": "3d135cda3635a141dd50f35837ddf6325503688dc1070c8757bfd7a2e867e4ba",
+  "built_installed_sidecar_match": true,
+  "codesign_strict_verified": true,
+  "signing": "ad-hoc",
+  "restarted": true,
+  "live_verification": "live-verification.json"
+}

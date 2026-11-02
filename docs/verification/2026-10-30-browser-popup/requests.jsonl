@@ -1,0 +1,5 @@
+{"kind": "link", "method": "GET", "body": {}, "fixture_cookie_preserved": true}
+{"kind": "script", "method": "GET", "body": {}, "fixture_cookie_preserved": true}
+{"kind": "deferred", "method": "GET", "body": {}, "fixture_cookie_preserved": true}
+{"kind": "post", "method": "POST", "body": {"message": ["中文表单"]}, "fixture_cookie_preserved": true}
+{"kind": "link", "method": "GET", "body": {}, "fixture_cookie_preserved": true}

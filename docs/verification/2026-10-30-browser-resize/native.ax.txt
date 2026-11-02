@@ -1,0 +1,4 @@
+0 标准窗口 Codex Thread Kanban, Secondary Actions: Raise
+									1309 标签 (settable, integer) 窗口缩放验收, Value: 0
+										1311 文本 窗口缩放验收
+									1312 按钮 关闭窗口缩放验收标签

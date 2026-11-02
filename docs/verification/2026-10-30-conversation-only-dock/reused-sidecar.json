@@ -1,0 +1,5 @@
+{
+  "reason": "本轮纯前端，复用已验证后端；源码修改时间早于二进制",
+  "sidecarSha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+  "sourceSha256": "bc1e1b72f7368c6e6ed467534ba6e1ee275a41acfdff80934acae64da2cff63a"
+}

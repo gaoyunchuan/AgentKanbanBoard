@@ -1,0 +1,19 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "ui_matches_build": true,
+  "codesign_strict_verified": true,
+  "ui_tests_passed": 186,
+  "default_task_tree_native_verified": true,
+  "navigation_order": [
+    "任务",
+    "会话",
+    "项目",
+    "需要你"
+  ],
+  "native_cmd_1_and_2_verified": true,
+  "previously_paused_task": {
+    "status": "paused",
+    "current_run_id": null
+  },
+  "install_log": "已保留旧版本：/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-74f76fb4-9a0f-4b3e-a5d8-2a81cfbb3ad6.app\n已安装：/Users/gaoyunchuan/Applications/Codex Thread Kanban.app\n"
+}

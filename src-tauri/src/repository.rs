@@ -239,6 +239,7 @@ impl Repository {
                 ],
             )?;
         }
+        crate::task_permissions::initialize_missing(&transaction)?;
         transaction.commit()?;
         self.list_todo_tasks()
     }
@@ -1090,6 +1091,7 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS studio_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
     )?;
+    crate::task_permissions::migrate(connection)?;
     // Older UI versions allowed child pins. Preserve their intent on the root
     // and enforce the root-only invariant without changing task activity dates.
     connection.execute_batch(

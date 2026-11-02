@@ -1,0 +1,8 @@
+						8 工具栏 会话与任务操作
+						22 工具栏 右侧工具操作
+								24 标签 (settable, integer) 文件, Value: 0
+								29 标签 (selected) 终端 1, Help: 终端, Value: 1
+							1180 container 会话属性面板
+								1181 按钮 收起会话属性
+									1265 文本栏 (settable) Terminal input
+The focused UI element is 1265 文本栏 (settable) Terminal input

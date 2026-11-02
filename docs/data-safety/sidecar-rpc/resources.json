@@ -1,0 +1,43 @@
+{
+  "scope": "本地RPC临时连接与响应，不包括用户业务历史的持久保留",
+  "resources": [
+    {
+      "resource_id": "desktop.sidecar.rpc",
+      "owner": "Electron startSidecar / Rust ClientConnection",
+      "namespace": "app instance / request id / socket peer",
+      "cardinality": {
+        "max_inflight_rpc": 16,
+        "max_broadcast_writers": 64,
+        "queue": 0
+      },
+      "retention": {
+        "request_timeout_seconds": 120,
+        "startup_timeout_seconds": 120,
+        "writer_write_timeout_seconds": 5,
+        "cleanup": "finish销毁socket并清buffer/pending；serve退出时Drop删除writer；启动/退出错误结清等待"
+      },
+      "rate": {
+        "normal_poll_qps": 1.2333333333333334,
+        "stress": "160次0.75MB线传输；读请求无自动重试、写操作失败不重放"
+      },
+      "capacity": {
+        "max_response_bytes": 33554432,
+        "max_raw_responses_bytes": 536870912,
+        "formula": "16 * 32MiB = 512MiB原始在途响应；UTF16字符串最多约1GiB，解析对象与临时复制按4倍原始预算为2GiB；这不是整个Electron进程的硬内存quota",
+        "measured_old_heap_bytes": 85435184,
+        "measured_fixed_heap_bytes": 5368608,
+        "persistent_copy": false
+      },
+      "backpressure": {
+        "at_limit": "明确报错，无额外队列，不自动重放",
+        "agent_concurrency": "无占用",
+        "terminal_mutex": "无互斥"
+      },
+      "cleanup_recovery": {
+        "selector": "本进程pending.id / 本连接peer",
+        "business_data_deleted": false,
+        "rollback": "安装前保留旧APP，业务SQLite无迁移"
+      }
+    }
+  ]
+}

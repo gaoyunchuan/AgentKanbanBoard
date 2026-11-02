@@ -1,0 +1,7 @@
+0 标准窗口 Codex Thread Kanban, Secondary Actions: Raise
+									1168 标签 (settable, integer) 链接验收入口, Value: 0
+									1173 标签 (settable, integer) 子页面 link, Value: 0
+									1178 标签 (settable, integer) 子页面 script, Value: 0
+									1183 标签 (settable, integer) 子页面 deferred, Value: 0
+									1188 标签 (selected) 子页面 link, Value: 1
+								1204 文本栏 (settable) Description: 浏览器地址, Value: http://127.0.0.1:4189/child?kind=link, Placeholder: 网址或 http://localhost

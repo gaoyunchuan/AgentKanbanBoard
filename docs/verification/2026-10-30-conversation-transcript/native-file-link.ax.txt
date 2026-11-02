@@ -1,0 +1,11 @@
+								24 标签 (selected) 文件, Value: 1
+								222 按钮 Worked for 3分钟32秒
+								226 container 最终回答
+								240 按钮 Worked for 2分钟39秒
+								245 按钮 Worked for 41秒
+								250 按钮 Worked for 51秒
+								255 按钮 Worked for 20分钟33秒
+								259 container 最终回答
+							308 container 文件工作区
+								309 文本 openspec/changes/add-gpu-local-disk-auto-recovery/proposal.md
+								312 按钮 收起目录树

@@ -1,0 +1,132 @@
+{
+  "验证范围": "实际数据的隔离副本，真实release sidecar及任务状态API；未来时间门槛阻止模型执行",
+  "正式任务状态": [
+    {
+      "id": "task-30605-1793256011297955000-1",
+      "title": "网关文档发布及SDK对外发布",
+      "status": "completed"
+    },
+    {
+      "id": "task-30605-1793256079009962000-2",
+      "title": "接口调用示例代码及文档说明",
+      "status": "todo"
+    }
+  ],
+  "旧版实际等待原因": "dependencies；只有阶段结果，没有ready+usable最终交付",
+  "新版首次读取": {
+    "title": "接口调用示例代码及文档说明",
+    "missing_dependencies": [],
+    "execution_status": "waiting",
+    "wait_reason": "dependencies",
+    "upstream_results": [
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      }
+    ]
+  },
+  "API重新打开": {
+    "title": "接口调用示例代码及文档说明",
+    "missing_dependencies": [
+      "task-30605-1793256011297955000-1"
+    ],
+    "execution_status": "waiting",
+    "wait_reason": "dependencies",
+    "upstream_results": [
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      }
+    ]
+  },
+  "API再次完成": {
+    "title": "接口调用示例代码及文档说明",
+    "missing_dependencies": [],
+    "execution_status": "waiting",
+    "wait_reason": "scheduled",
+    "upstream_results": [
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      }
+    ]
+  },
+  "重启后读取": {
+    "title": "接口调用示例代码及文档说明",
+    "missing_dependencies": [],
+    "execution_status": "waiting",
+    "wait_reason": "scheduled",
+    "upstream_results": [
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      },
+      {
+        "stage": "phase",
+        "status": "ready",
+        "usable": false
+      }
+    ]
+  },
+  "正式任务状态保持不变": true,
+  "已调用模型": false
+}

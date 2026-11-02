@@ -1,0 +1,210 @@
+[
+  {
+    "elapsedSeconds": 0,
+    "time": "2026-10-30T17:15:30.497722",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 147568,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 129456,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 15,
+    "time": "2026-10-30T17:15:45.568528",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 146864,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 135840,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 30,
+    "time": "2026-10-30T17:16:00.655011",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 146960,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 139248,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 45,
+    "time": "2026-10-30T17:16:15.753867",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 146960,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 130688,
+        "tcpSockets": 3
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 60,
+    "time": "2026-10-30T17:16:30.850096",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 148448,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 134288,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 75,
+    "time": "2026-10-30T17:16:45.955116",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 136448,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 89040,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 90,
+    "time": "2026-10-30T17:17:01.033299",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 145760,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 77440,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 105,
+    "time": "2026-10-30T17:17:16.116997",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 143936,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 98464,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 120,
+    "time": "2026-10-30T17:17:31.220629",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 146048,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 103936,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 135,
+    "time": "2026-10-30T17:17:46.323239",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 142784,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 84512,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 150,
+    "time": "2026-10-30T17:18:01.425988",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 144592,
+        "tcpSockets": 2
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 96416,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 165,
+    "time": "2026-10-30T17:18:16.526435",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 140400,
+        "tcpSockets": 1
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 75280,
+        "tcpSockets": 1
+      }
+    ]
+  },
+  {
+    "elapsedSeconds": 180,
+    "time": "2026-10-30T17:18:31.614280",
+    "processes": [
+      {
+        "pid": 98291,
+        "rssKiB": 135424,
+        "tcpSockets": 2
+      },
+      {
+        "pid": 98318,
+        "rssKiB": 87120,
+        "tcpSockets": 1
+      }
+    ]
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "uiSha256": "dc7cd94f05d3584e3f0d7ec79a40e61deb32893b4a1891552631b82053fa0790",
+  "sidecarSha256": "a8318925908af07299ae8a8fc5e802f6ec4a3cb56c6bee19983b6d1f6b70c260",
+  "signature": true,
+  "running": [
+    "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/MacOS/Codex Thread Kanban",
+    "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app/Contents/Resources/akb_sidecar"
+  ],
+  "backup": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.backup-e30c3145-d937-4911-a91c-a2034064bd2c.app",
+  "activeBusinessRunsBeforeUpdate": 0
+}

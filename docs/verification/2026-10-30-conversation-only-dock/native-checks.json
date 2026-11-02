@@ -1,0 +1,29 @@
+[
+  {
+    "stage": "任务列表",
+    "toolbars": 0,
+    "properties": true
+  },
+  {
+    "stage": "会话",
+    "toolbars": 1,
+    "properties": false
+  },
+  {
+    "stage": "已展开工具后返回任务列表",
+    "toolbars": 0,
+    "properties": true,
+    "fileWorkspace": false
+  },
+  {
+    "stage": "返回原会话",
+    "toolbars": 1,
+    "fileTabs": 1,
+    "fileWorkspace": true
+  },
+  {
+    "stage": "最终停留任务列表",
+    "toolbars": 0,
+    "properties": true
+  }
+]

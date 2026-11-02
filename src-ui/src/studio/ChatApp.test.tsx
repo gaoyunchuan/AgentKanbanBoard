@@ -14,6 +14,145 @@ async function chooseOption(user:ReturnType<typeof userEvent.setup>,trigger:HTML
   await user.click(trigger);await user.click(await screen.findByRole('option',{name:label}));
 }
 describe('task-focused workspace',()=>{
+ it('enables the right workspace only in conversations and restores it after leaving the task tree',async()=>{
+   const {user}=await tasksPage();
+   expect(screen.queryByRole('toolbar',{name:'右侧工具操作'})).not.toBeInTheDocument();
+   expect(screen.queryByRole('button',{name:'文件'})).not.toBeInTheDocument();
+   expect(screen.getByLabelText('右侧工作区')).not.toBeVisible();
+   expect(screen.getByLabelText('任务属性区域')).toBeVisible();
+   fireEvent(window,new CustomEvent('akb:open-link',{detail:'README.md'}));
+   expect(screen.getByText('右侧工具仅在会话中使用，请先打开会话')).toBeVisible();
+   await user.click(row('diff').querySelector('.task-title-btn')!);
+   await screen.findByRole('textbox',{name:'聊天输入'});
+   await user.click(screen.getByRole('button',{name:'新建终端'}));
+   expect(screen.getByRole('tab',{name:'终端 1'})).toHaveAttribute('aria-selected','true');
+   await user.click(screen.getByRole('button',{name:/全部任务树/}));
+   expect(screen.getByLabelText('任务属性区域')).toBeVisible();
+   expect(screen.getByLabelText('右侧工作区')).not.toBeVisible();
+   expect(screen.queryByRole('toolbar',{name:'右侧工具操作'})).not.toBeInTheDocument();
+   await user.click(row('diff').querySelector('.task-title-btn')!);
+   await screen.findByRole('textbox',{name:'聊天输入'});
+   expect(screen.getByRole('tab',{name:'终端 1'})).toHaveAttribute('aria-selected','true');
+   expect(screen.queryByRole('tab',{name:'终端 2'})).not.toBeInTheDocument();
+ });
+ it('keeps task properties fixed in the tree and tool tabs in the conversation top header',async()=>{
+   const {user}=await tasksPage();
+   expect(screen.getByLabelText('任务属性区域')).toBeVisible();
+   expect(screen.queryByRole('button',{name:'收起会话属性'})).not.toBeInTheDocument();
+   await user.click(row('diff').querySelector('.task-title-btn')!);
+   await screen.findByRole('textbox',{name:'聊天输入'});
+   await user.click(screen.getByRole('button',{name:'文件'}));
+   const tabs=screen.getByRole('tablist',{name:'右侧工具标签'});
+   expect(tabs.closest('header')).toBe(screen.getByRole('banner',{name:'工作区标题栏'}));
+   expect(within(tabs).queryByRole('tab',{name:'任务详情'})).not.toBeInTheDocument();
+   expect(screen.getByLabelText('右侧工作区')).not.toContainElement(tabs);
+   await user.click(screen.getByRole('button',{name:'收起右侧工作区'}));
+   expect(screen.getByLabelText('会话属性面板')).not.toBeVisible();
+ });
+ it('starts conversation properties collapsed and separates conversation actions from tool actions',async()=>{
+   const {user}=await tasksPage();await user.click(row('diff').querySelector('.task-title-btn')!);
+   await screen.findByRole('textbox',{name:'聊天输入'});
+   await user.click(screen.getByRole('button',{name:'切换本任务会话'}));
+   await user.click(within(document.querySelector('.workspace-center-header .inline-menu') as HTMLElement).getByRole('button',{name:'实现部署前 Diff'}));
+   expect(screen.getByLabelText('会话属性面板')).not.toBeVisible();
+   const center=screen.getByRole('toolbar',{name:'会话与任务操作'}),tools=screen.getByRole('toolbar',{name:'右侧工具操作'});
+   expect(within(center).getByRole('button',{name:'提取结果'})).toBeInTheDocument();
+   expect(within(center).getByRole('button',{name:'会话属性'})).toHaveAttribute('aria-expanded','false');
+   expect(within(center).queryByRole('button',{name:'文件'})).not.toBeInTheDocument();
+   expect(within(tools).getByRole('button',{name:'文件'})).toBeInTheDocument();
+   await user.click(within(center).getByRole('button',{name:'会话属性'}));
+   expect(screen.getByLabelText('会话属性面板')).toBeVisible();
+   await user.click(within(tools).getByRole('button',{name:'新建终端'}));
+   await user.click(screen.getByRole('button',{name:'提取结果'}));
+   await waitFor(()=>expect(screen.getByRole('tab',{name:'上下文与结果'})).toHaveAttribute('aria-selected','true'));
+   expect(screen.getByRole('tab',{name:'终端 1'})).toHaveAttribute('aria-selected','true');
+   await user.click(screen.getByRole('button',{name:'收起会话属性'}));
+   expect(screen.getByLabelText('会话属性面板')).not.toBeVisible();
+   await user.click(screen.getByRole('button',{name:'收起右侧工作区'}));
+   await user.click(screen.getByRole('button',{name:'展开右侧工作区'}));
+   expect(screen.getByRole('tab',{name:'终端 1'})).toHaveAttribute('aria-selected','true');
+   expect(screen.queryByRole('tab',{name:'终端 2'})).not.toBeInTheDocument();
+ });
+ it('reuses files, opens multiple terminals and preserves their tabs across other pages',async()=>{
+   const {user}=await tasksPage();await user.click(row('diff').querySelector('.task-title-btn')!);await screen.findByRole('textbox',{name:'聊天输入'});
+   await user.click(screen.getByRole('button',{name:'文件'}));
+   await user.click(screen.getByRole('button',{name:'新建终端'}));
+   await user.click(screen.getByRole('button',{name:'新建终端'}));
+   const tabs=screen.getByRole('tablist',{name:'右侧工具标签'});
+   expect(within(tabs).getByRole('tab',{name:'终端 1'})).toBeInTheDocument();
+   expect(within(tabs).getByRole('tab',{name:'终端 2'})).toHaveAttribute('aria-selected','true');
+   await user.click(screen.getByRole('button',{name:'文件'}));await user.click(screen.getByRole('button',{name:'文件'}));
+   expect(within(tabs).getAllByRole('tab',{name:'文件'})).toHaveLength(1);
+   await user.click(screen.getByRole('button',{name:'项目'}));await user.click(screen.getByRole('button',{name:'任务'}));
+   expect(screen.getByLabelText('右侧工作区')).not.toBeVisible();
+   await user.click(row('diff').querySelector('.task-title-btn')!);
+   await screen.findByRole('textbox',{name:'聊天输入'});
+   expect(within(screen.getByRole('tablist',{name:'右侧工具标签'})).getByRole('tab',{name:'终端 2'})).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'收起右侧工作区'}));
+   expect(screen.getByLabelText('右侧工作区')).not.toBeVisible();
+ });
+ it('opens the task tree by default with tasks before conversations and matching numbered shortcuts',async()=>{
+   render(<ChatApp api={createDemoApi()}/>);
+   await screen.findByRole('region',{name:'全局任务树'});
+   const nav=screen.getByRole('navigation',{name:'主导航'});
+   expect(within(nav).getAllByRole('button').slice(0,2).map(x=>x.getAttribute('aria-label'))).toEqual(['任务','会话']);
+   expect(within(nav).getByRole('button',{name:'任务'})).toHaveAttribute('aria-current','page');
+   fireEvent.keyDown(document,{key:'2',metaKey:true});
+   expect(within(nav).getByRole('button',{name:'会话'})).toHaveAttribute('aria-current','page');
+   fireEvent.keyDown(document,{key:'1',ctrlKey:true});
+   expect(tree()).toBeInTheDocument();
+ });
+ it('uses one window header across pages while keeping page actions and sidebar control available',async()=>{
+   const {user}=await tasksPage();
+   expect(screen.getAllByRole('banner')).toHaveLength(1);
+   const header=screen.getByRole('banner',{name:'工作区标题栏'});
+   expect(within(header).getByRole('button',{name:'切换侧栏'})).toBeEnabled();
+   await user.click(within(header).getByRole('button',{name:'新建任务'}));
+   expect(screen.getByRole('dialog',{name:'新建任务'})).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'取消'}));
+   await user.click(screen.getByRole('button',{name:'项目'}));
+   expect(screen.getAllByRole('banner')).toHaveLength(1);
+   expect(within(header).getByRole('heading',{name:'项目'})).toBeInTheDocument();
+   await user.click(within(header).getByRole('button',{name:'添加本地项目'}));
+   expect(screen.getByRole('dialog',{name:'添加本地项目'})).toBeInTheDocument();
+ });
+ it('shows task execution permissions before any conversation exists and saves them without starting work',async()=>{
+   const {api,user}=await tasksPage();
+   const before=await api.call<Workspace>('snapshot');
+   await user.click(row('review'));
+   await user.click(screen.getByRole('tab',{name:'属性与设置'}));
+   const picker=screen.getByRole('combobox',{name:'任务执行权限'});
+   await chooseOption(user,picker,'完全访问');
+   await user.click(screen.getByRole('button',{name:'保存任务权限'}));
+   const after=await api.call<Workspace>('snapshot');
+   expect(after.tasks.find(t=>t.id==='review')?.execution_permissions).toEqual({sandbox_mode:'danger-full-access',approval_policy:'never'});
+   expect(after.conversations).toHaveLength(before.conversations.length);
+   expect(after.work_tasks).toHaveLength(before.work_tasks.length);
+ });
+ it('keeps task properties and the automatic conversation permission entry in sync',async()=>{
+   const {api,user}=await tasksPage();
+   await user.click(row('contract'));
+   await user.click(screen.getByRole('tab',{name:'属性与设置'}));
+   await chooseOption(user,screen.getByRole('combobox',{name:'任务执行权限'}),'完全访问');
+   await user.click(screen.getByRole('button',{name:'保存任务权限'}));
+   await user.click(row('contract').querySelector('.task-title-btn')!);
+   await user.click(await screen.findByRole('button',{name:'完全访问'}));
+   await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'只读');
+   await user.click(screen.getByRole('button',{name:'保存会话设置'}));
+   await screen.findByRole('button',{name:'只读'});
+   await user.click(screen.getByRole('button',{name:'会话属性'}));
+   expect(screen.getByRole('combobox',{name:'任务执行权限'})).toHaveTextContent('只读');
+   expect((await api.call<Workspace>('snapshot')).tasks.find(t=>t.id==='contract')?.execution_permissions).toEqual({sandbox_mode:'read-only',approval_policy:'on-request'});
+ });
+ it('rejects a stale task permission draft after another entry changes it',async()=>{
+   const {api,user}=await tasksPage();
+   await user.click(row('review'));await user.click(screen.getByRole('tab',{name:'属性与设置'}));
+   await chooseOption(user,screen.getByRole('combobox',{name:'任务执行权限'}),'完全访问');
+   await api.call('set_task_permissions',{task_id:'review',permissions:{sandbox_mode:'read-only',approval_policy:'on-request'},expected_permissions:{sandbox_mode:'workspace-write',approval_policy:'on-request'}});
+   await user.click(screen.getByRole('button',{name:'保存任务权限'}));
+   expect(await screen.findByRole('alert')).toHaveTextContent('任务权限已被修改');
+   expect((await api.call<Workspace>('snapshot')).tasks.find(t=>t.id==='review')?.execution_permissions?.sandbox_mode).toBe('read-only');
+ });
  it('keeps the tree after creating a task and selects its details without creating a conversation',async()=>{
    const {api,user}=await tasksPage(),before=await api.call<Workspace>('snapshot');
    await user.click(screen.getByRole('button',{name:'新建任务'}));
@@ -84,7 +223,7 @@ describe('task-focused workspace',()=>{
    const api=createDemoApi(),user=userEvent.setup(),data=await api.call<Workspace>('snapshot');
    const selected=data.conversations.find(c=>c.mode==='manual')!;
    await api.call('update_conversation',{conversation_id:selected.id,revision:selected.revision,patch:{sandbox_mode:'danger-full-access',approval_policy:'never'}});
-   render(<ChatApp api={api}/>);await user.click(await screen.findByRole('button',{name:selected.title}));await user.click(screen.getByRole('button',{name:'完全访问'}));
+   render(<ChatApp api={api}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:selected.title}));await user.click(screen.getByRole('button',{name:'完全访问'}));
    const opening=(await api.call<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)!;
    await api.call('update_conversation',{conversation_id:selected.id,revision:opening.revision,patch:{sandbox_mode:'read-only',approval_policy:'on-request'}});
    await waitFor(()=>expect(screen.getByRole('button',{name:'只读'})).toBeInTheDocument(),{timeout:4000});
@@ -100,7 +239,7 @@ describe('task-focused workspace',()=>{
      if(method==='update_conversation'&&(params?.patch as Record<string,unknown>)?.approval_policy==='on-failure')throw Error('不支持的审批策略');
      return original(method,params);
    })} as typeof api;
-   render(<ChatApp api={wrapped}/>);await user.click(await screen.findByRole('button',{name:selected.title}));await user.click(screen.getByRole('button',{name:'自定义权限'}));
+   render(<ChatApp api={wrapped}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:selected.title}));await user.click(screen.getByRole('button',{name:'自定义权限'}));
    await user.click(screen.getByRole('button',{name:'保存会话设置'}));await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
    expect((await original<Workspace>('snapshot')).conversations.find(c=>c.id===selected.id)?.config.approval_policy).toBe('on-failure');
    await user.click(screen.getByRole('button',{name:'自定义权限'}));await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'完全访问');await user.click(screen.getByRole('button',{name:'保存会话设置'}));await screen.findByRole('button',{name:'完全访问'});
@@ -110,7 +249,7 @@ describe('task-focused workspace',()=>{
    const api=createDemoApi(),user=userEvent.setup(),data=await api.call<Workspace>('snapshot');
    const selected=data.conversations.find(c=>c.mode==='manual')!;
    await api.call('update_conversation',{conversation_id:selected.id,revision:selected.revision,patch:{sandbox_mode:'danger-full-access',approval_policy:'on-request'}});
-   render(<ChatApp api={api}/>);await user.click(await screen.findByRole('button',{name:selected.title}));
+   render(<ChatApp api={api}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:selected.title}));
    expect(screen.queryByRole('button',{name:'完全访问'})).not.toBeInTheDocument();
    await user.click(screen.getByRole('button',{name:'自定义权限'}));
    expect(screen.getByRole('combobox',{name:'权限模式'})).toHaveTextContent('自定义（保留当前设置）');
@@ -125,7 +264,7 @@ describe('task-focused workspace',()=>{
  it('enables full access atomically for only the selected existing conversation',async()=>{
    const api=createDemoApi(),user=userEvent.setup(),before=await api.call<Workspace>('snapshot');
    const selected=before.conversations.find(c=>c.mode==='manual')!;
-   render(<ChatApp api={api}/>);await user.click(await screen.findByRole('button',{name:selected.title}));
+   render(<ChatApp api={api}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:selected.title}));
    await user.click(screen.getByRole('button',{name:'按需确认'}));
    await chooseOption(user,screen.getByRole('combobox',{name:'权限模式'}),'完全访问');
    await user.click(screen.getByRole('button',{name:'保存会话设置'}));
@@ -150,6 +289,7 @@ describe('task-focused workspace',()=>{
      return result;
    })} as typeof api;
    const user=userEvent.setup();render(<ChatApp api={wrapped}/>);
+   await user.click(screen.getByRole('button',{name:'会话'}));
    if(state==='stopping')await user.click(await screen.findByRole('button',{name:/^阻塞/}));
    await user.click(await screen.findByRole('button',{name:selected.title}));
    await user.type(screen.getByRole('textbox',{name:'聊天输入'}),'补充范围');
@@ -203,6 +343,7 @@ describe('task-focused workspace',()=>{
    await user.click(screen.getByRole('button',{name:'添加上下文或附件'}));
    await user.click(screen.getByRole('button',{name:'导入任务上下文'}));
    await user.click(await screen.findByRole('button',{name:'带入下一条消息'}));
+   await user.click(screen.getByRole('button',{name:'会话属性'}));
    await user.click(screen.getByRole('tab',{name:'属性与设置'}));
    await user.click(screen.getByRole('button',{name:'委托给 Codex'}));
    expect(await screen.findByRole('button',{name:'自动带入上下文'})).toBeInTheDocument();
@@ -212,7 +353,7 @@ describe('task-focused workspace',()=>{
    await user.click(screen.getByRole('button',{name:'新建本任务会话'}));
    await waitFor(()=>expect(screen.queryByRole('button',{name:'自动带入上下文'})).not.toBeInTheDocument());
  });
- it('defaults to chat without a configuration form',()=>{render(<ChatApp api={createDemoApi()}/>);expect(screen.getByRole('textbox',{name:'聊天输入'})).toBeInTheDocument();expect(screen.queryByRole('textbox',{name:'验收要求'})).not.toBeInTheDocument();});
+ it('opens conversations without a configuration form',async()=>{const user=userEvent.setup();render(<ChatApp api={createDemoApi()}/>);await user.click(screen.getByRole('button',{name:'会话'}));expect(screen.getByRole('textbox',{name:'聊天输入'})).toBeInTheDocument();expect(screen.queryByRole('textbox',{name:'验收要求'})).not.toBeInTheDocument();});
  it('has two task columns and a permanent combined detail view',async()=>{await tasksPage();expect(tree().querySelector('.table-head')?.children).toHaveLength(2);expect(screen.getByRole('tab',{name:'上下文与结果'})).toHaveAttribute('aria-selected','true');expect(within(screen.getByLabelText('任务侧栏')).queryByText('release-console')).not.toBeInTheDocument();});
  it('opens dependencies from a task context menu, without rename or child pin actions',async()=>{const {user}=await tasksPage();fireEvent.contextMenu(row('frontend'),{clientX:400,clientY:300});const menu=screen.getByRole('menu',{name:'实现前端差异展示 任务菜单'});expect(within(menu).queryByText('重命名任务')).not.toBeInTheDocument();expect(within(menu).queryByText('置顶任务')).not.toBeInTheDocument();await user.click(within(menu).getByRole('menuitem',{name:'设置前置任务'}));const dialog=screen.getByRole('dialog',{name:'为「实现前端差异展示」设置前置任务'});expect(within(dialog).getByLabelText(/明确 Diff 接口契约/)).toBeChecked();expect(within(dialog).queryByText('整理本机运行说明')).not.toBeInTheDocument();expect(within(dialog).getByLabelText(/实现前端差异展示/)).toBeDisabled();});
  it('opens dependencies from its visible waiting chip',async()=>{const {user}=await tasksPage();await user.click(within(tree()).getByRole('button',{name:'等待：明确 Diff 接口契约'}));expect(screen.getByRole('dialog',{name:/为「实现前端差异展示」/})).toBeInTheDocument();});
@@ -227,9 +368,9 @@ describe('task-focused workspace',()=>{
  it('preserves context draft when switching tasks',async()=>{const {user}=await tasksPage();await user.click(screen.getByRole('button',{name:'编辑'}));await user.clear(screen.getByRole('textbox',{name:'任务 Markdown 上下文'}));await user.type(screen.getByRole('textbox',{name:'任务 Markdown 上下文'}),'## 草稿\n不合并');await user.click(row('contract'));await user.click(row('diff'));expect(screen.getByRole('textbox',{name:'任务 Markdown 上下文'})).toHaveValue('## 草稿\n不合并');await user.click(screen.getByRole('button',{name:'保存上下文'}));await screen.findByText('不合并');});
  it('settings and attention are regular pages, no legacy navigation',async()=>{const {user}=await tasksPage();await user.click(screen.getByRole('button',{name:'设置'}));expect(screen.getByRole('heading',{name:'工作区设置'})).toBeInTheDocument();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(screen.queryByText(/旧版/)).not.toBeInTheDocument();await user.click(screen.getByRole('button',{name:'需要你'}));expect(screen.getByRole('heading',{name:'需要你关注'})).toBeInTheDocument();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
  it('excluded projects disappear while tasks and old sessions stay',async()=>{const {api,user}=await tasksPage();const before=await api.call<Workspace>('snapshot');await user.click(screen.getByRole('button',{name:'设置'}));await user.type(screen.getByLabelText('添加一个或多个目录（每行一个）'),'/Users/yc/Projects/release-console');await user.click(screen.getByRole('button',{name:'添加目录'}));await user.click(screen.getByRole('button',{name:'保存排除目录'}));await waitFor(async()=>expect((await api.call<Workspace>('snapshot')).projects).toHaveLength(1));const after=await api.call<Workspace>('snapshot');expect(after.tasks.length).toBe(before.tasks.length);expect(after.conversations.length).toBe(before.conversations.length);});
- it('utility panels share a right tabstrip and preserve inspector selection',async()=>{const {user}=await tasksPage();await user.click(row('diff').querySelector('.task-title-btn')!);await screen.findByRole('textbox',{name:'聊天输入'});await user.click(screen.getByRole('tab',{name:'属性与设置'}));await user.click(screen.getByRole('button',{name:'侧边浏览器'}));await user.click(screen.getByRole('button',{name:'文件与终端'}));const tabs=screen.getByRole('tablist',{name:'右侧工具标签'});expect(within(tabs).getByRole('tab',{name:'浏览器'})).toBeInTheDocument();expect(within(tabs).getByRole('tab',{name:'文件与终端'})).toHaveAttribute('aria-selected','true');await user.click(within(tabs).getByRole('tab',{name:'任务详情'}));expect(screen.getByRole('tab',{name:'属性与设置'})).toHaveAttribute('aria-selected','true');});
+ it('utility panels share a right tabstrip and preserve inspector selection',async()=>{const {user}=await tasksPage();await user.click(row('diff').querySelector('.task-title-btn')!);await screen.findByRole('textbox',{name:'聊天输入'});await user.click(screen.getByRole('button',{name:'会话属性'}));await user.click(screen.getByRole('tab',{name:'属性与设置'}));await user.click(screen.getByRole('button',{name:'侧边浏览器'}));await user.click(screen.getByRole('button',{name:'文件'}));const tabs=screen.getByRole('tablist',{name:'右侧工具标签'});expect(within(tabs).getByRole('tab',{name:'新标签页'})).toBeInTheDocument();expect(within(tabs).getByRole('tab',{name:'文件'})).toHaveAttribute('aria-selected','true');expect(within(tabs).queryByRole('tab',{name:'任务详情'})).not.toBeInTheDocument();expect(screen.getByRole('tab',{name:'属性与设置'})).toHaveAttribute('aria-selected','true');});
  it('renders native Markdown without executing HTML',()=>{const {container}=render(<Markdown text={'## 成果\n<script>alert(1)</script>\n[坏链接](javascript:alert)\n[安全文档](https://example.com)\n```sh\necho test\n```'}/>);expect(container.querySelector('script')).toBeNull();expect(container.querySelector('a[href^="javascript:"]')).toBeNull();expect(screen.getByRole('link',{name:'安全文档'})).toHaveAttribute('rel','noreferrer noopener');});
- it('ignores a late detail response after selecting a different conversation',async()=>{const api=createDemoApi(),original=api.call.bind(api);let release:((x:unknown)=>void)|undefined;const d=await api.call<Workspace>('snapshot'),first=d.conversations[0],second=d.conversations[1];const delayed={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>method==='detail'&&params?.conversation_id===first.id?new Promise(resolve=>{release=resolve}):original(method,params))} as typeof api;const user=userEvent.setup();render(<ChatApp api={delayed}/>);await user.click(await screen.findByRole('button',{name:first.title}));await user.click(screen.getByRole('button',{name:second.title}));await waitFor(()=>expect(delayed.call).toHaveBeenCalledWith('detail',{conversation_id:second.id}));release?.(await original('detail',{conversation_id:first.id}));await waitFor(()=>expect(screen.queryByText('已明确的边界')).not.toBeInTheDocument());});
+ it('ignores a late detail response after selecting a different conversation',async()=>{const api=createDemoApi(),original=api.call.bind(api);let release:((x:unknown)=>void)|undefined;const d=await api.call<Workspace>('snapshot'),first=d.conversations[0],second=d.conversations[1];const delayed={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>method==='detail'&&params?.conversation_id===first.id?new Promise(resolve=>{release=resolve}):original(method,params))} as typeof api;const user=userEvent.setup();render(<ChatApp api={delayed}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:first.title}));await user.click(screen.getByRole('button',{name:second.title}));await waitFor(()=>expect(delayed.call).toHaveBeenCalledWith('detail',{conversation_id:second.id}));release?.(await original('detail',{conversation_id:first.id}));await waitFor(()=>expect(screen.queryByText('已明确的边界')).not.toBeInTheDocument());});
  it('preserves multiselect, week, project and collapsed filters across navigation',async()=>{
    const {user}=await tasksPage();
    await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
@@ -256,7 +397,32 @@ describe('task-focused workspace',()=>{
    expect(screen.getByRole('textbox',{name:'搜索全局任务'})).toHaveValue('前端');
  });
 
- it('keyword scopes the full tree, status filters its nodes, and navigation preserves both',async()=>{
+ it('最近七天命中一个子任务时显示整树，并区分命中与上下文数量',async()=>{
+   const base=createDemoApi(),now=Date.now(),user=userEvent.setup();
+   const api={...base,call:async <T,>(method:string,params?:Record<string,unknown>):Promise<T>=>{
+     const result=await base.call<T>(method,params);
+     if(method==='snapshot'){
+       const data=result as Workspace;
+       data.tasks=data.tasks.map(t=>({...t,updated_at:new Date(now-(t.id==='contract'?1:2000)*3600000).toISOString()}));
+     }
+     return result;
+   }};
+   render(<ChatApp api={api}/>);
+   await screen.findByRole('region',{name:'全局任务树'});
+   await chooseOption(user,screen.getByRole('combobox',{name:'按更新时间筛选'}),'周视图 · 最近 7 天');
+   for(const id of ['diff','contract','frontend','regression'])expect(row(id)).toBeInTheDocument();
+   expect(row('review')).not.toBeInTheDocument();
+   expect(row('contract')).not.toHaveClass('context-only');
+   expect(within(row('frontend')).getByText('同树上下文')).toBeInTheDocument();
+   expect(within(tree()).getByText('符合筛选 1 项 · 纳入结果 4 项 · 当前展开 4 项（含同树上下文）')).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'全部折叠'}));
+   expect(row('contract')).not.toBeInTheDocument();
+   expect(within(tree()).getByText('符合筛选 1 项 · 纳入结果 4 项 · 当前展开 1 项（含同树上下文）')).toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'全部展开'}));
+   expect(row('frontend')).toBeInTheDocument();
+ });
+
+ it('keyword and state select complete root trees across navigation',async()=>{
    const {api,user}=await tasksPage();
    await user.click(within(row('contract')).getByRole('button',{name:/点击完成，右键改状态/}));
    await waitFor(async()=>expect((await api.call<Workspace>('snapshot')).tasks.find(t=>t.id==='contract')?.status).toBe('completed'));
@@ -269,7 +435,8 @@ describe('task-focused workspace',()=>{
    await user.click(screen.getByRole('button',{name:'全不选'}));
    await user.click(screen.getByLabelText('待办'));
    await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
-   expect(row('contract')).not.toBeInTheDocument();
+   expect(row('contract')).toBeInTheDocument();
+   expect(row('contract')).toHaveClass('context-only');
    expect(row('frontend')).toBeInTheDocument();
    expect(row('regression')).toBeInTheDocument();
    expect(row('diff')).toHaveClass('context-only');
@@ -280,7 +447,8 @@ describe('task-focused workspace',()=>{
    expect(screen.getByRole('button',{name:'筛选任务状态'})).toHaveTextContent('1 种状态');
    expect(row('frontend')).toBeInTheDocument();
    expect(row('regression')).toBeInTheDocument();
-   expect(row('contract')).not.toBeInTheDocument();
+   expect(row('contract')).toBeInTheDocument();
+   expect(row('contract')).toHaveClass('context-only');
  });
 
 });

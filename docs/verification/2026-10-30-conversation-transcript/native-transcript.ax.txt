@@ -1,0 +1,11 @@
+							11 标题 本地盘的gpu资源是可以被自动强制恢复, Value: 1
+							215 按钮 Worked for 3分钟32秒
+							219 container 最终回答
+									222 link Description: 提案与验收清单, Value: file:///Users/gaoyunchuan/workspace/go/jvirt-failover/openspec/changes/add-gpu-local-disk-auto-recovery/proposal.md
+									228 link Description: OpenSpec 指令, Value: file:///Users/gaoyunchuan/workspace/go/jvirt-failover/openspec/AGENTS.md
+							233 按钮 Worked for 2分钟39秒
+							238 按钮 Worked for 41秒
+							243 按钮 Worked for 51秒
+							248 按钮 Worked for 20分钟33秒
+							252 container 最终回答
+									259 link Description: 验收记录与配置说明, Value: file:///Users/gaoyunchuan/workspace/go/jvirt-failover/docs/deploy/gpu-local-disk-auto-recovery/%E9%AA%8C%E6%94%B6%E4%B8%8E%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E.md
