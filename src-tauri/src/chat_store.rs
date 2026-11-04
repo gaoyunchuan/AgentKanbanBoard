@@ -61,6 +61,8 @@ pub struct Conversation {
     pub last_error: Option<String>,
     #[serde(default)]
     pub resource_hold: Option<Value>,
+    #[serde(default)]
+    pub codex_binding: Option<bool>,
 }
 fn conversation_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
     Ok(Conversation {
@@ -82,6 +84,7 @@ fn conversation_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
         updated_at: r.get(13)?,
         last_error: r.get(14)?,
         resource_hold: None,
+        codex_binding: None,
     })
 }
 const CONV_COLUMNS:&str="id,task_id,title,mode,project_id,config_json,thread_id,current_run_id,runtime_status,pinned,closed,revision,created_at,updated_at,last_error";
@@ -248,7 +251,7 @@ impl Repository {
         let mut result = self
             .connection
             .query_row(
-                &format!("SELECT {CONV_COLUMNS} FROM chat_conversations WHERE id=?1"),
+                &format!("SELECT {CONV_COLUMNS} FROM chat_conversations WHERE id=?1 AND deleted_at IS NULL"),
                 [cid],
                 conversation_row,
             )
@@ -292,6 +295,7 @@ impl Repository {
             format!("chat:{}", result.id)
         };
         result.resource_hold = self.resource_hold(&owner)?;
+        result.codex_binding = self.codex_binding(cid)?;
         if result
             .resource_hold
             .as_ref()
@@ -303,7 +307,7 @@ impl Repository {
     }
     pub fn chat_conversations(&self) -> Result<Vec<Conversation>, String> {
         let mut s=self.connection.prepare("SELECT c.id FROM chat_conversations c LEFT JOIN task_preferences p ON p.task_id=c.task_id
-            WHERE p.archived_at IS NULL ORDER BY c.updated_at DESC,c.id").map_err(db)?;
+            WHERE p.archived_at IS NULL AND c.deleted_at IS NULL ORDER BY c.updated_at DESC,c.id").map_err(db)?;
         let ids = s
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(db)?
@@ -902,6 +906,9 @@ impl Repository {
         attachments: &[Value],
         import_context: bool,
     ) -> Result<ChatRun, String> {
+        if self.codex_binding(cid)? == Some(false) {
+            return Err("请先完成 Codex 会话归档交接，再发送消息".into());
+        }
         let c = self.prepare_chat_workspace(cid)?;
         self.chat_require_task(&c.task_id)?;
         if c.mode != "manual" {
@@ -959,6 +966,13 @@ impl Repository {
         self.chat_run(&rid)
     }
     pub fn chat_queue_extraction(&self, cid: &str) -> Result<ChatRun, String> {
+        self.chat_queue_extraction_with_history(cid,None)
+    }
+
+    pub fn chat_queue_extraction_with_history(&self,cid: &str,external:Option<&Value>) -> Result<ChatRun,String> {
+        if self.codex_binding(cid)? == Some(false) {
+            return Err("请先完成会话交接后再提取结果".into());
+        }
         let c = self.chat_conversation(cid)?;
         self.chat_require_task(&c.task_id)?;
         if c.current_run_id.is_some() || self.chat_active_run(cid)?.is_some() {
@@ -967,10 +981,20 @@ impl Repository {
         let detail = self.chat_detail(cid)?;
         let events = detail["events"].as_array().ok_or("没有可提取的会话记录")?;
         let boundary = events.last().and_then(|e| e["id"].as_i64()).unwrap_or(0);
-        if boundary == 0 {
+        if c.codex_binding.is_some() && external.is_none() {
+            return Err("请先通过会话提取入口捕获原 Codex 历史".into());
+        }
+        if let Some(snapshot)=external {
+            if snapshot["revision"].as_i64()!=Some(c.revision)||snapshot["thread_id"].as_str()!=c.thread_id.as_deref()||snapshot["local_boundary"].as_i64()!=Some(boundary) {
+                return Err("读取原历史期间会话已变化，请重新提取".into());
+            }
+        }
+        if boundary == 0 && external.and_then(|v|v["items"].as_array()).is_none_or(Vec::is_empty) {
             return Err("会话尚无可提取内容".into());
         }
-        let existing:Option<String>=self.connection.query_row("SELECT id FROM task_results WHERE conversation_id=?1 AND method='manual' AND source_boundary=?2 AND status IN ('pending','ready','failed','withdrawn')",params![cid,boundary],|r|r.get(0)).optional().map_err(db)?;
+        use sha2::Digest;
+        let source_hash=external.map(|v|format!("{:x}",sha2::Sha256::digest(v["items"].to_string().as_bytes())));
+        let existing:Option<String>=self.connection.query_row("SELECT z.id FROM task_results z WHERE conversation_id=?1 AND method='manual' AND source_boundary=?2 AND status IN ('pending','ready','failed','withdrawn') AND (?3 IS NULL OR EXISTS(SELECT 1 FROM chat_runs r WHERE r.result_id=z.id AND json_extract(r.context_json,'$.codex_source_hash')=?3))",params![cid,boundary,source_hash],|r|r.get(0)).optional().map_err(db)?;
         if existing.is_some() {
             return Err(
                 "这段会话已有提取记录。整理失败可在结果区重试；新内容产生后可再次提取".into(),
@@ -978,7 +1002,7 @@ impl Repository {
         }
         // Snapshot is fixed before the model runs. Never use whichever task is
         // selected when the asynchronous result arrives.
-        let source = encoded(events)?;
+        let source = if let Some(snapshot)=external {encoded(&json!({"codex_history":snapshot["items"],"local_events":events}))?} else {encoded(events)?};
         if source.len() > 600_000 {
             return Err("会话过长，请选择较短的会话整理；不会静默截断证据".into());
         }
@@ -994,7 +1018,7 @@ impl Repository {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .map_err(db)?;
-        let extraction_context = json!({"task_id":c.task_id,"task_status":task_version.0,"task_updated_at":task_version.1,"source_boundary":boundary});
+        let extraction_context = json!({"task_id":c.task_id,"task_status":task_version.0,"task_updated_at":task_version.1,"source_boundary":boundary,"codex_source_hash":source_hash,"codex_thread_id":external.map(|v|&v["thread_id"])});
         let prompt=format!("仅总结下面提供的会话快照，不执行任何业务动作或工具。用中文 Markdown 输出：实际成果、关键结论、验证情况、未完成事项、原始产物引用。区分讨论与已实现、未验证与通过。不得伪造检查结果。来源会话={}，截止事件={}。只输出摘要正文。\n<transcript>\n{}\n</transcript>",cid,boundary,source);
         let transaction = tx(&self.connection)?;
         transaction.execute("INSERT INTO task_results(id,task_id,conversation_id,source_run_id,source_boundary,method,stage,markdown,status,created_at) VALUES(?1,?2,?3,?4,?5,'manual','summary','','pending',?6)",params![result_id,c.task_id,cid,source_run_id,boundary,now]).map_err(db)?;
@@ -1135,6 +1159,105 @@ mod tests {
         .unwrap();
         r.finish_work_run(tid, &run.id, "completed", None).unwrap();
         run.id
+    }
+    #[test]
+    fn conversation_deletion_preserves_history_results_and_restores_without_execution() {
+        let r = repo();
+        let tid = task(&r, "task", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        r.chat_visit(&c.id).unwrap();
+        r.chat_event(&c.id, None, "user_message", &json!({"text":"保留消息"}))
+            .unwrap();
+        r.connection.execute("INSERT INTO task_results(id,task_id,conversation_id,method,stage,markdown,status,created_at) VALUES('kept',?1,?2,'manual','summary','保留结果','ready','now')", params![tid,c.id]).unwrap();
+        r.chat_delete_conversation(&c.id, c.revision).unwrap();
+        assert!(r.chat_conversations().unwrap().is_empty());
+        assert!(r.chat_conversation(&c.id).is_err());
+        assert!(r.chat_queue(&c.id, "不能发送", &[], false).is_err());
+        assert!(r.chat_queue_extraction(&c.id).is_err());
+        assert_eq!(r.chat_results(&tid).unwrap().len(), 1);
+        assert_eq!(r.list_todo_tasks().unwrap().len(), 1);
+        assert_eq!(r.chat_deleted_conversations().unwrap().len(), 1);
+        r.migrate_chat_workspace().unwrap();
+        assert!(r.chat_conversations().unwrap().is_empty());
+        r.chat_restore_conversation(&c.id, c.revision + 1).unwrap();
+        assert_eq!(
+            r.chat_detail(&c.id).unwrap()["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            r.chat_detail(&c.id).unwrap()["runs"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert!(r.chat_delete_conversation(&c.id, c.revision).is_err());
+    }
+    #[test]
+    fn conversation_deletion_preserves_closed_state_and_other_task_and_resource_guard() {
+        let r = repo();
+        let tid = task(&r, "one", None);
+        let other = task(&r, "other", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        let untouched = r.chat_create_conversation(&other, None).unwrap();
+        r.connection
+            .execute(
+                "UPDATE chat_conversations SET closed=1 WHERE id=?1",
+                [&c.id],
+            )
+            .unwrap();
+        r.connection.execute("INSERT INTO work_resource_leases(run_id,owner,connection_id,workspace,threads_json,state,created_at) VALUES('lease',?1,'connection','/tmp','[]','uncertain','now')",[format!("chat:{}",c.id)]).unwrap();
+        assert!(r.chat_delete_conversation(&c.id, c.revision).is_err());
+        assert_eq!(r.chat_conversations().unwrap().len(), 2);
+        r.connection
+            .execute("DELETE FROM work_resource_leases", [])
+            .unwrap();
+        r.chat_delete_conversation(&c.id, c.revision).unwrap();
+        assert!(r.chat_conversation(&untouched.id).is_ok());
+        assert!(r.chat_restore_conversation(&c.id, c.revision).is_err());
+        r.chat_restore_conversation(&c.id, c.revision + 1).unwrap();
+        assert!(r.chat_conversation(&c.id).unwrap().closed);
+    }
+    #[test]
+    fn conversation_deletion_rejects_main_active_extraction_and_archived_restore() {
+        let r = repo();
+        let tid = task(&r, "one", None);
+        delegate(&r, &tid, ReviewPolicy::Human);
+        let main = r.chat_conversation(&format!("main:{tid}")).unwrap();
+        assert!(r
+            .chat_delete_conversation(&main.id, main.revision)
+            .unwrap_err()
+            .contains("主会话"));
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        for kind in ["chat", "extract"] {
+            r.connection.execute("INSERT INTO chat_runs(id,conversation_id,kind,status,prompt,started_at) VALUES(?1,?2,?1,'queued','x','now')",params![kind,c.id]).unwrap();
+            assert!(r
+                .chat_delete_conversation(&c.id, c.revision)
+                .unwrap_err()
+                .contains("执行"));
+            r.connection
+                .execute("DELETE FROM chat_runs WHERE id=?1", [kind])
+                .unwrap();
+        }
+        r.chat_delete_conversation(&c.id, c.revision).unwrap();
+        r.connection
+            .execute(
+                "UPDATE task_preferences SET archived_at='now' WHERE task_id=?1",
+                [&tid],
+            )
+            .unwrap();
+        assert!(r.chat_restore_conversation(&c.id, c.revision + 1).is_err());
+        r.connection
+            .execute(
+                "UPDATE task_preferences SET archived_at=NULL WHERE task_id=?1",
+                [&tid],
+            )
+            .unwrap();
+        assert!(r.chat_conversations().unwrap().iter().all(|x| x.id != c.id));
+        r.chat_restore_conversation(&c.id, c.revision + 1).unwrap();
     }
     #[test]
     fn multiple_conversations_never_add_business_tree_nodes() {

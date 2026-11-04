@@ -5,7 +5,7 @@ import type { TaskConfig, WorkTask, WorkEvent, TaskInteraction, WorkRun, Workben
 export type ResultRecord = { id:string; task_id:string; conversation_id:string; conversation_title:string; source_run_id?:string|null; source_boundary:number; method:"auto"|"manual"|"legacy"; stage:string; markdown:string; evidence:unknown; status:"pending"|"ready"|"failed"|"withdrawn"; usable:boolean; supersedes?:string|null; created_at:string; error?:string|null };
 export type ExecutionPermissions = Pick<TaskConfig,'sandbox_mode'|'approval_policy'>;
 export type StudioTask = BackendTodoTask & { execution_permissions?:ExecutionPermissions; scheduled_start_at?:string|null; project_id:string|null; effective_project_id:string|null; last_conversation_id?:string|null; metadata_revision:number; blocked_by:string[]; missing_dependencies:string[]; results:ResultRecord[]; pending_change?:string|null };
-export type Conversation = { id:string; task_id:string; title:string; mode:"auto"|"manual"; project_id:string|null; config:TaskConfig; thread_id?:string|null; current_run_id?:string|null; runtime_status:string; pinned:boolean; closed:boolean; revision:number; created_at:string; updated_at:string; last_error?:string|null; resource_hold?:{run_id:string;state:string;error?:string|null}|null };
+export type Conversation = { codex_binding?:boolean|null; id:string; task_id:string; title:string; mode:"auto"|"manual"; project_id:string|null; config:TaskConfig; thread_id?:string|null; current_run_id?:string|null; runtime_status:string; pinned:boolean; closed:boolean; revision:number; created_at:string; updated_at:string; last_error?:string|null; resource_hold?:{run_id:string;state:string;error?:string|null}|null };
 export type Workspace = { tasks:StudioTask[]; projects:BackendProject[]; conversations:Conversation[]; work_tasks:WorkTask[]; settings?: { excluded_project_dirs:string[]; delegation_permission?:string }; runtime?:WorkbenchData["runtime"] };
 export type ConversationDetail = { conversation:Conversation; events:WorkEvent[]; runs:(WorkRun & {kind?:string; context?:unknown})[]; interactions:TaskInteraction[]; work?:WorkTask; results:ResultRecord[] };
 export type Group = "pinned"|"active"|"blocked"|"completed";
@@ -30,7 +30,12 @@ export function ancestors(tasks:StudioTask[],id:string) {
 export function rootId(tasks:StudioTask[],id:string){return ancestors(tasks,id)[0]?.id??id;}
 export function taskConversations(data:Workspace,taskId:string){return data.conversations.filter(c=>c.task_id===taskId);}
 export function preferredConversation(data:Workspace,t:StudioTask){const all=taskConversations(data,t.id);return all.find(c=>c.id===t.last_conversation_id)??all.find(c=>c.mode==="auto")??all[0];}
-export function isBusy(c:Conversation){return Boolean(c.current_run_id)||["running","needs_input","stopping"].includes(c.runtime_status);}
+export function isBusy(c:Conversation){return Boolean(c.current_run_id)||["running","needs_input","stopping","recovering"].includes(c.runtime_status);}
+export function conversationRecoveryReason(c:Conversation,data:Workspace):string|undefined {
+  if(!c.thread_id)return '发送过消息并建立 Codex 会话后才能恢复连接';
+  if(c.closed)return '请先重新打开会话';
+  if(isBusy(c)||c.runtime_status==='queued'||c.resource_hold||data.tasks.some(t=>t.results.some(r=>r.conversation_id===c.id&&r.status==='pending')))return '请先停止会话执行或结果提取，并确认资源已释放';
+}
 export function dependencyReason(tasks:StudioTask[],tid:string,other:string):string|null {
   if(tid===other)return "当前任务不能依赖自身";
   if(!tasks.some(t=>t.id===other))return "任务不存在";
@@ -73,4 +78,9 @@ export function taskGroup(t:StudioTask,data:Workspace):Group {
 }
 export function needsUser(c:Conversation,data:Workspace) {
   return ["needs_input","failed"].includes(c.runtime_status) || c.mode==="auto" && data.work_tasks.some(w=>w.task_id===c.task_id && ["review","attention"].includes(w.status));
+}
+
+export function conversationDeleteReason(c:Conversation,data:Workspace):string|undefined {
+  if(c.mode==='auto')return '自动主会话保留任务执行历史，不能删除';
+  if(isBusy(c)||c.runtime_status==='queued'||c.resource_hold||data.tasks.some(t=>t.results.some(r=>r.conversation_id===c.id&&r.status==='pending')))return '请先停止会话执行或结果提取，并确认资源已释放';
 }

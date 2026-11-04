@@ -2,11 +2,28 @@
 impl Scheduler {
     fn chat_call(&mut self, method: &str, value: Value) -> Result<Value, String> {
         use crate::chat_store::required as req;
+        self.check_recovery_mutation(method, &value)?;
         match method {
             "snapshot" => {
                 let mut snapshot=self.repository.chat_snapshot()?;
+                if let Some(conversations)=snapshot["conversations"].as_array_mut() {
+                    for c in conversations {if c["id"].as_str().is_some_and(|id|self.recovering.contains_key(id)){c["runtime_status"]=json!("recovering");}}
+                }
                 snapshot["runtime"]=self.call("list",json!({}))?["runtime"].clone();
                 Ok(snapshot)
+            }
+            "open_recovery_thread" => self.open_connection_recovery(&value),
+            "codex_reader_executable" => {
+                self.connect(None)?;
+                Ok(json!(self.resolved_executable.as_ref().ok_or("Codex 程序路径不可用")?))
+            }
+            "codex_history_context" => self.repository.codex_history_context(req(&value,"conversation_id")?),
+            "codex_extraction_context" => self.repository.codex_extraction_context(req(&value,"conversation_id")?),
+            "bind_codex_thread" => {
+                let tid=req(&value,"task_id")?;
+                if self.chat_task_busy(tid)? {return Err("请先停止目标任务的执行，再绑定会话".into());}
+                let conversation=self.repository.bind_codex_conversation(tid,&value["codex_thread"])?;
+                self.dirty=true;Ok(json!(conversation))
             }
             "release_resources" => self.release_checked_resources(req(&value,"conversation_id")?,req(&value,"run_id")?),
             "settings" => self.repository.studio_settings(),
@@ -170,6 +187,23 @@ impl Scheduler {
                 if c.mode=="auto" {let w=self.repository.get_work_task(&c.task_id)?.ok_or("任务尚未委派")?;self.call("action",json!({"task_id":c.task_id,"action":"pause","expected_revision":w.revision}))?;}
                 self.chat_stop(cid)?;self.dirty=true;Ok(json!({"stopping":true}))
             }
+            "delete_conversation" => {
+                let cid=req(&value,"conversation_id")?;
+                // actor 的存活记录可能长于数据库执行；两者都确认结束才允许隐藏。
+                let mut live=self.live.contains_key(&format!("chat:{cid}"));
+                for execution in self.live.values() {
+                    let belongs:bool=self.repository.connection.query_row("SELECT EXISTS(SELECT 1 FROM chat_runs WHERE id=?1 AND conversation_id=?2)",rusqlite::params![execution.run_id,cid],|r|r.get(0)).map_err(|e|e.to_string())?;
+                    live|=belongs;
+                }
+                if live {return Err("请先停止会话执行或结果提取，再删除".into())}
+                self.repository.chat_delete_conversation(cid,value["revision"].as_i64().ok_or("缺少会话版本")?)?;
+                self.dirty=true;Ok(json!({"deleted":true}))
+            }
+            "deleted_conversations" => Ok(json!(self.repository.chat_deleted_conversations()?)),
+            "restore_conversation" => {
+                self.repository.chat_restore_conversation(req(&value,"conversation_id")?,value["revision"].as_i64().ok_or("缺少会话版本")?)?;
+                self.dirty=true;Ok(json!({"restored":true}))
+            }
             "close_conversation" => {
                 let cid=req(&value,"conversation_id")?;let c=self.repository.chat_conversation(cid)?;
                 if c.mode=="auto" {let w=self.repository.get_work_task(&c.task_id)?.ok_or("任务尚未委派")?;if !matches!(w.status,WorkflowStatus::Completed|WorkflowStatus::Cancelled){self.call("action",json!({"task_id":c.task_id,"action":"pause","expected_revision":w.revision}))?;}}
@@ -183,10 +217,11 @@ impl Scheduler {
                 if ["completed","cancelled"].contains(&status.as_str()){return Err("请先重新打开关联任务".into())}
                 self.repository.connection.execute("UPDATE chat_conversations SET closed=0,revision=revision+1 WHERE id=?1",[cid]).map_err(|e|e.to_string())?;self.dirty=true;Ok(json!({"saved":true}))
             }
-            "extract" => {let run=self.repository.chat_queue_extraction(req(&value,"conversation_id")?)?;self.runtime_error=None;self.dirty=true;Ok(json!(run))}
+            "extract" => {let run=self.repository.chat_queue_extraction_with_history(req(&value,"conversation_id")?,value.get("external_history").filter(|v|!v.is_null()))?;self.runtime_error=None;self.dirty=true;Ok(json!(run))}
             "retry_extract" => {
                 let rid=req(&value,"result_id")?;
                 let mut run:crate::chat_store::ChatRun={let mut s=self.repository.connection.prepare("SELECT id FROM chat_runs WHERE result_id=?1 ORDER BY started_at DESC LIMIT 1").map_err(|e|e.to_string())?;let id:String=s.query_row([rid],|r|r.get(0)).map_err(|e|e.to_string())?;self.repository.chat_run(&id)?};
+                self.repository.chat_conversation(&run.conversation_id)?;
                 let state:String=self.repository.connection.query_row("SELECT status FROM task_results WHERE id=?1",[rid],|r|r.get(0)).map_err(|e|e.to_string())?;
                 if state!="failed"{return Err("只有整理失败的结果可以重试".into())}
                 if self.repository.chat_active_run(&run.conversation_id)?.is_some(){return Err("请等待当前会话执行结束".into())}
@@ -222,7 +257,7 @@ impl Scheduler {
         }
     }
     fn chat_task_busy(&self,tid:&str)->Result<bool,String>{
-        if self.live.contains_key(tid)||self.repository.task_resources_pending(tid)?{return Ok(true)}
+        if self.recovering.values().any(|r|r.conversation.task_id==tid)||self.live.contains_key(tid)||self.repository.task_resources_pending(tid)?{return Ok(true)}
         for c in self.repository.chat_conversations()?.into_iter().filter(|c|c.task_id==tid){
             if self.live.contains_key(&format!("chat:{}",c.id))||self.repository.chat_active_run(&c.id)?.is_some_and(|r|self.live.contains_key(&format!("extract:{}",r.id))){return Ok(true)}
         }
@@ -244,6 +279,7 @@ impl Scheduler {
         Ok(())
     }
     fn chat_request_change(&mut self,tid:&str,kind:&str,payload:Value)->Result<(),String>{
+        self.check_recovery_mutation("task_change", &json!({"task_id":tid}))?;
         self.repository.chat_require_task(tid)?;
         let pending:bool=self.repository.connection.query_row("SELECT EXISTS(SELECT 1 FROM chat_pending_changes WHERE task_id=?1)",[tid],|r|r.get(0)).map_err(|e|e.to_string())?;
         if pending{return Err("此任务仍在确认停止并应用上次变更，请等待完成".into())}
@@ -295,7 +331,7 @@ impl Scheduler {
         self.chat_apply_changes()?;
         if self.runtime_error.is_some(){return Ok(())}
         for run in self.repository.chat_pending_runs()? {
-            if self.live.len()>=MAX_CONCURRENT_TASKS{break}
+            if self.live.len()+self.recovering.len()>=MAX_CONCURRENT_TASKS{break}
             let c=match self.repository.prepare_chat_workspace(&run.conversation_id) { Ok(c)=>c, Err(error)=>{self.repository.chat_finish(&run.id,"failed",Some(&error))?;self.dirty=true;continue} };
             if self.repository.chat_require_task(&c.task_id).is_err(){self.repository.chat_finish(&run.id,"interrupted",Some("任务已删除，执行不再启动"))?;continue}
             if run.kind=="chat" && (c.closed||!self.repository.chat_missing_dependencies(&c.task_id)?.is_empty()){continue}
@@ -386,3 +422,30 @@ impl Scheduler {
     }
 }
 fn current_chat_time(repository:&Repository)->String{repository.now_text()}
+
+#[cfg(test)]
+mod conversation_deletion_service_tests {
+    use super::*;
+
+    #[test]
+    fn failed_extraction_must_confirm_stop_before_conversation_deletion() {
+        let repository=Repository::open_in_memory().unwrap();
+        let task=repository.chat_create_task(&json!({"title":"人工会话"})).unwrap();
+        let c=repository.chat_create_conversation(&task,None).unwrap();
+        // 提取尝试工具后先持久化失败，异步停止尚未确认；不能把 ended_at 当成退出证明。
+        repository.connection.execute("INSERT INTO chat_runs(id,conversation_id,kind,status,prompt,started_at,ended_at) VALUES('extract-stop',?1,'extract','failed','x','now','now')",[&c.id]).unwrap();
+        let (sender,_receiver)=mpsc::channel();
+        let mut scheduler=Scheduler {
+            repository,runtime:None,emergency_runtime:Arc::new(Mutex::new(None)),
+            executable:String::new(),resolved_executable:None,runtime_error:None,sender,
+            live:HashMap::from([("extract:extract-stop".into(),LiveRun{run_id:"extract-stop".into(),workspace:PathBuf::from("/tmp")})]),
+            recovering:HashMap::new(),stop_deadlines:HashMap::new(),changed:Arc::new(||{}),last_notification:Instant::now(),dirty:false,
+        };
+        let params=json!({"conversation_id":c.id,"revision":c.revision});
+        assert!(scheduler.chat_call("delete_conversation",params.clone()).is_err());
+        assert!(scheduler.repository.chat_conversation(&c.id).is_ok());
+        scheduler.live.clear();
+        scheduler.chat_call("delete_conversation",params).unwrap();
+        assert!(scheduler.repository.chat_conversation(&c.id).is_err());
+    }
+}

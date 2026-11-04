@@ -17,7 +17,10 @@ def run(argv, **kwargs):
 def build_ui():
     run(['npm', '--prefix', 'src-ui', 'run', 'build'])
     ui = DESKTOP / 'ui'
-    ui.mkdir(exist_ok=True)
+    # 每次重新拷贝完整构建，避免上一版未被引用的 hash 资源残留进安装包。
+    if ui.exists():
+        shutil.rmtree(ui)
+    ui.mkdir()
     shutil.copytree(ROOT / 'src-ui' / 'dist', ui, dirs_exist_ok=True)
 
 def build_sidecar():

@@ -5,9 +5,16 @@ import {invoke} from '@tauri-apps/api/core';
 import {WorkspaceTerminal,type TerminalHandle} from './WorkspaceTerminal';
 const {instances}=vi.hoisted(()=>({instances:[] as any[]}));
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn()}));
-vi.mock('@xterm/xterm',()=>({Terminal:class {cols=80;rows=24;write=vi.fn();dispose=vi.fn();focus=vi.fn();constructor(){instances.push(this)}open(){}loadAddon(){}onData(fn:any){(this as any).input=fn;return{dispose(){}}}onResize(){return{dispose(){}}}}}));
+vi.mock('@xterm/xterm',()=>({Terminal:class {cols=80;rows=24;write=vi.fn();dispose=vi.fn();focus=vi.fn();constructor(public options:any=this.options){instances.push(this)}open(){}loadAddon(){}onData(fn:any){(this as any).input=fn;return{dispose(){}}}onResize(){return{dispose(){}}}}}));
 vi.mock('@xterm/addon-fit',()=>({FitAddon:class {fit(){}dispose(){}}}));
 afterEach(()=>{cleanup();vi.clearAllMocks();instances.length=0});
+it('uses CJK-capable fallback fonts for terminal display',async()=>{
+ vi.mocked(invoke).mockImplementation(async(_command,args:any)=>args.method==='start'?{id:'pty-font',workspace:'/project'}:args.method==='read'?{offset:0,start:0,dataBase64:'',exited:false}:{});
+ render(<WorkspaceTerminal taskId="conversation:one" workspace="/project" enabled active/>);
+ await waitFor(()=>expect(instances).toHaveLength(1));
+ expect(instances[0].options.fontFamily).toContain('PingFang SC');
+ expect(instances[0].options.fontFamily).toContain('Noto Sans CJK SC');
+});
 it('keeps two PTY identities and closes only the selected terminal',async()=>{
  let next=0;vi.mocked(invoke).mockImplementation(async(_command,args:any)=>args.method==='start'?{id:`pty-${++next}`,workspace:'/project'}:args.method==='read'?{offset:0,start:0,dataBase64:'',exited:false}:{});
  const one=createRef<TerminalHandle>(),two=createRef<TerminalHandle>();

@@ -60,7 +60,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const refreshDetail = useCallback(async () => {
     const cid = currentSelection.current.conversation;
     const n = ++detailSequence.current;
-    if (!cid) { setDetail(null); return; }
+    if (!cid||!latest.current.conversations.some(c=>c.id===cid)) { setDetail(null); return; }
     const value = await api.call<ConversationDetail>('detail', { conversation_id: cid });
     if (mounted.current && n === detailSequence.current && cid === currentSelection.current.conversation) setDetail(value);
   }, [api]);
@@ -101,7 +101,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   useEffect(()=>{const open=(event:Event)=>{const href=(event as CustomEvent<unknown>).detail;if(typeof href!=='string')return;if(isFileLink(href))openTool('files',href);else if(/^https?:\/\//.test(href))openTool('browser',href)};window.addEventListener('akb:open-link',open);return()=>window.removeEventListener('akb:open-link',open)},[openTool]);
   const openConversation=useCallback((id:string)=>{
     const c=latest.current.conversations.find(x=>x.id===id);
-    if(!c){notify('来源会话暂不可见，请恢复对应任务');return;}
+    if(!c){notify('来源会话暂不可见，请从「已删除」恢复会话或对应任务');return;}
     setSelection({task:c.task_id,conversation:id});
     if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');
     void api.call('visit',{conversation_id:id}).catch(e=>notify(String(e)));
@@ -157,6 +157,17 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     });
     setSelection(current=>current.task===selected.id&&!current.conversation?{task:selected.id,conversation:next.id}:current);
   },[data.tasks,data.conversations,selection.task,selection.conversation,drafts]);
+  useEffect(()=>{
+    if(!selection.conversation||data.conversations.some(c=>c.id===selection.conversation))return;
+    const t=data.tasks.find(t=>t.id===selection.task);
+    const all=data.conversations.filter(c=>c.task_id===t?.id).sort((a,b)=>b.updated_at.localeCompare(a.updated_at)||a.id.localeCompare(b.id));
+    const next=all.find(c=>c.id===t?.last_conversation_id)??all[0];
+    // 删除当前会话后只在同任务内落点；没有其他会话则回任务详情，绝不自动建会话。
+    const updated={task:t?.id,conversation:next?.id};
+    currentSelection.current=updated;detailSequence.current++;setDetail(null);setSelection(updated);
+    if(next)void api.call('visit',{conversation_id:next.id}).catch(e=>notify(String(e)));
+    else{setViewState('tasks');setTaskScreen('tree');}
+  },[data.conversations,data.tasks,selection,api,notify]);
   const conversation=data.conversations.find(c=>c.id===selection.conversation);
   const task=data.tasks.find(t=>t.id===selection.task||!selection.task&&t.id===conversation?.task_id);
   const draftKey=conversation?.id||(task?`task:${task.id}`:'new-chat');

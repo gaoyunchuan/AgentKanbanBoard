@@ -1,0 +1,11 @@
+{
+  "checked_no_build_processes": true,
+  "checked_no_open_build_files": true,
+  "removed": [
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-ui/dist",
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/ui",
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/desktop/dist-electron",
+    "/Users/gaoyunchuan/workspace/typescript/AgentKanbanBoard/src-tauri/target"
+  ],
+  "installed_app_preserved": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app"
+}

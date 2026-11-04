@@ -2796,6 +2796,55 @@ for line in sys.stdin:
 
     #[test]
     #[cfg(unix)]
+    fn service_conversation_deletion_and_restore_never_start_execution() {
+        let fixture = ServiceFixture::new();
+        let task = fixture
+            .service
+            .call("chat/create_task", json!({"title":"删除会话隔离验收"}))
+            .unwrap();
+        let cid = fixture
+            .service
+            .call(
+                "chat/create_conversation",
+                json!({"task_id":task["task_id"]}),
+            )
+            .unwrap();
+        fixture
+            .service
+            .call(
+                "chat/delete_conversation",
+                json!({"conversation_id":cid["id"],"revision":cid["revision"]}),
+            )
+            .unwrap();
+        assert!(fixture
+            .service
+            .call(
+                "chat/send",
+                json!({"conversation_id":cid["id"],"text":"不能发送"})
+            )
+            .is_err());
+        let deleted = fixture
+            .service
+            .call("chat/deleted_conversations", json!({}))
+            .unwrap();
+        assert_eq!(deleted.as_array().unwrap().len(), 1);
+        fixture
+            .service
+            .call(
+                "chat/restore_conversation",
+                json!({"conversation_id":cid["id"],"revision":deleted[0]["revision"]}),
+            )
+            .unwrap();
+        let detail = fixture
+            .service
+            .call("chat/detail", json!({"conversation_id":cid["id"]}))
+            .unwrap();
+        assert!(detail["runs"].as_array().unwrap().is_empty());
+        assert!(detail["conversation"]["current_run_id"].is_null());
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn service_manual_chats_and_extraction_keep_task_and_source_identity() {
         let fixture = ServiceFixture::new();
         let project = fixture

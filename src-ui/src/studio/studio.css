@@ -78,3 +78,10 @@
 
 /* 图片附件保持与文本附件相同的紧凑布局，预览不撑大输入框。 */
 .studio .attachment-thumbnail{width:40px;height:40px;object-fit:contain;border-radius:4px;background:#fff;flex:none}.studio .attachment-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.studio .attachment-chip button{flex:none}
+
+/* 会话切换与管理是独立按钮，菜单操作不能误触切换目标。 */
+.studio .conversation-switch-row{display:flex;align-items:center;gap:4px}
+.studio .conversation-switch-row>.popitem{flex:1;min-width:0}
+.studio .conversation-switch-row>.menu-anchor{flex:none}
+.studio .conversation-switch-row>.menu-anchor>.iconbtn{width:28px;height:28px}
+.studio .conversation-delete-reason{font-size:11px;line-height:1.5;margin:3px 10px 7px;color:#8a6970;white-space:normal;max-width:220px}

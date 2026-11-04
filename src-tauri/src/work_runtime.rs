@@ -167,7 +167,7 @@ impl CodexRuntime {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let terminals=crate::workspace_terminal::TerminalManager::new(server.clone());
+        let terminals = crate::workspace_terminal::TerminalManager::new(server.clone());
         let shared = Arc::new(RuntimeShared {
             server,
             terminals,
@@ -302,6 +302,13 @@ impl CodexRuntime {
             ) {
                 Ok(_) => thread_id,
                 Err(error) => {
+                    if crate::codex_errors::is_writer_conflict(&error) {
+                        // 外部写锁明确拒绝了恢复，没有启动 Turn；不能牵连共用进程的其他会话。
+                        let mut registry = self.shared.lock_registry()?;
+                        registry.tasks.remove(&config.task_id);
+                        registry.threads.remove(&thread_id);
+                        return Err(crate::codex_errors::explain("恢复 Codex 会话失败", &error));
+                    }
                     // A resumed thread may carry native continuation state. Do not
                     // release its workspace while that state cannot be reconciled.
                     self.shared.server.shutdown();
@@ -405,6 +412,57 @@ impl CodexRuntime {
                 None,
             );
         }
+    }
+
+    /// 用户已在外部归档；这里只恢复原连接，绝不创建业务 Turn。
+    pub fn recover_conversation(&self, mut config: TaskExecutionConfig) -> Result<(), String> {
+        validate_thread_config(&mut config)?;
+        let thread_id = config
+            .thread_id
+            .as_deref()
+            .ok_or("会话尚未建立 Codex Thread")?;
+        let _operation = self
+            .shared
+            .operations
+            .try_lock()
+            .map_err(|_| "Codex 正在建立其他会话连接，请稍后重试")?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let request = |method: &str, params: Value| {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err("会话恢复超时，请核对状态后重试；不会重发消息".into());
+            }
+            self.shared.server.request_with_timeout(
+                method,
+                params,
+                remaining.min(Duration::from_secs(30)),
+            )
+        };
+        let info = request("thread/read", json!({"threadId":thread_id}))
+            .map_err(|e| crate::codex_errors::explain("读取原会话失败", &e))?;
+        if info.pointer("/thread/id").and_then(Value::as_str) != Some(thread_id) {
+            return Err("Codex 返回的会话标识不一致，恢复已停止".into());
+        }
+        let archived = info
+            .pointer("/thread/path")
+            .and_then(Value::as_str)
+            .and_then(|p| Path::new(p).parent())
+            .and_then(Path::file_name)
+            .is_some_and(|p| p == "archived_sessions");
+        // 上次可能已恢复归档而在后续失败；非归档路径直接恢复，允许安全重试。
+        if archived {
+            request("thread/unarchive", json!({"threadId":thread_id}))
+                .map_err(|e| crate::codex_errors::explain("恢复归档失败", &e))?;
+        }
+        let mut params = execution_thread_params(&config)?;
+        params["threadId"] = json!(thread_id);
+        params["excludeTurns"] = json!(true);
+        let response = request("thread/resume", params)
+            .map_err(|e| crate::codex_errors::explain("恢复会话连接失败", &e))?;
+        if response.pointer("/thread/id").and_then(Value::as_str) != Some(thread_id) {
+            return Err("Codex 恢复的会话标识不一致，请核对连接".into());
+        }
+        self.pause_inherited_goal_with(thread_id, request)
     }
 
     pub fn send_message(
@@ -673,6 +731,7 @@ impl CodexRuntime {
                 | "mcpServerStatus/list"
                 | "skills/list"
                 | "config/read"
+                | "thread/list"
                 | "thread/read"
                 | "thread/items/list"
                 | "thread/turns/list"
@@ -708,7 +767,11 @@ impl CodexRuntime {
     pub fn read_workspace_file(&self, workspace: &str, path: &str) -> Result<Value, String> {
         let path = workspace_path(workspace, path)?;
         // 在请求前限制文件大小，避免 Base64 大响应中断 Agent 共用的协议连接。
-        if std::fs::metadata(&path).map_err(|error| format!("无法读取文件信息：{error}"))?.len() > 3_000_000 {
+        if std::fs::metadata(&path)
+            .map_err(|error| format!("无法读取文件信息：{error}"))?
+            .len()
+            > 3_000_000
+        {
             return Err("文件超过 3 MB，请使用终端或外部编辑器查看".into());
         }
         self.shared
@@ -855,7 +918,9 @@ impl CodexRuntime {
         Ok(())
     }
 
-    pub fn terminals(&self)->Arc<crate::workspace_terminal::TerminalManager>{self.shared.terminals.clone()}
+    pub fn terminals(&self) -> Arc<crate::workspace_terminal::TerminalManager> {
+        self.shared.terminals.clone()
+    }
 
     pub fn shutdown(&self) {
         self.shared.terminals.shutdown();
@@ -930,15 +995,21 @@ impl CodexRuntime {
     }
 
     fn pause_inherited_goal(&self, thread_id: &str) -> Result<(), String> {
-        match self
-            .shared
-            .server
-            .request("thread/goal/get", json!({"threadId":thread_id}))
-        {
+        self.pause_inherited_goal_with(thread_id, |method, params| {
+            self.shared.server.request(method, params)
+        })
+    }
+
+    fn pause_inherited_goal_with(
+        &self,
+        thread_id: &str,
+        request: impl Fn(&str, Value) -> Result<Value, String>,
+    ) -> Result<(), String> {
+        match request("thread/goal/get", json!({"threadId":thread_id})) {
             Ok(response)
                 if response.pointer("/goal/status").and_then(Value::as_str) == Some("active") =>
             {
-                self.shared.server.request(
+                request(
                     "thread/goal/set",
                     json!({"threadId":thread_id,"status":"paused","origin":"automatic"}),
                 )?;
@@ -1057,7 +1128,9 @@ impl RuntimeShared {
                 params,
                 request_id,
             } => {
-                if self.terminals.accept_output(&method,&params){return;}
+                if self.terminals.accept_output(&method, &params) {
+                    return;
+                }
                 if method == "runtime/internal/goal-pause-result" {
                     self.goal_pause_result(params);
                     return;
@@ -1643,6 +1716,10 @@ fn validate_config(config: &mut TaskExecutionConfig) -> Result<(), String> {
     if config.task_id.is_empty() || config.run_id.is_empty() || config.prompt.trim().is_empty() {
         return Err("任务、执行标识和任务内容不能为空".into());
     }
+    validate_thread_config(config)
+}
+
+fn validate_thread_config(config: &mut TaskExecutionConfig) -> Result<(), String> {
     let workspace = Path::new(&config.workspace);
     if !workspace.is_absolute() || !workspace.is_dir() {
         return Err("工作目录必须是存在的绝对目录".into());
@@ -1739,10 +1816,12 @@ fn execution_thread_params(config: &TaskExecutionConfig) -> Result<Value, String
                 let separator = if url.contains('?') { '&' } else { '?' };
                 let task_url = format!("{url}{separator}task={}", config.task_id);
                 json!({"url":task_url,"enabled":true,"required":false,"startup_timeout_sec":10,"tool_timeout_sec":60})
-            },
+            }
             _ => crate::browser_mcp::server_config(&config.task_id)?,
         };
-        if params.get("config").is_none() { params["config"] = json!({}); }
+        if params.get("config").is_none() {
+            params["config"] = json!({});
+        }
         params["config"]["mcp_servers.agentkanban_browser"] = server;
         let instructions = params["developerInstructions"].as_str().unwrap_or_default();
         params["developerInstructions"] = json!(format!("{instructions}\n本应用的侧边浏览器请使用 session_browser 工具：它已经绑定当前会话。先列出页面，再读取或操作目标。连接失败时如实报告，不要寻找日常Chrome/Arc或另起浏览器冒充当前页面。人工接管期间等待交还控制。"));
@@ -1956,20 +2035,31 @@ for line in sys.stdin:
             config.browser_enabled = enabled;
             let params = execution_thread_params(&config).unwrap();
             let server = &params["config"]["mcp_servers.agentkanban_browser"];
-            assert!(server["url"].as_str().unwrap().starts_with("http://127.0.0.1:"));
+            assert!(server["url"]
+                .as_str()
+                .unwrap()
+                .starts_with("http://127.0.0.1:"));
             assert_eq!(server["required"], false);
             assert!(server.get("command").is_none());
         }
         config.thread_id = Some("existing-thread".into());
-        assert!(execution_thread_params(&config).unwrap()["config"]["mcp_servers.agentkanban_browser"]["url"].is_string());
+        assert!(execution_thread_params(&config).unwrap()["config"]
+            ["mcp_servers.agentkanban_browser"]["url"]
+            .is_string());
         config.task_id = "extract:result".into();
-        assert!(execution_thread_params(&config).unwrap()["config"].get("mcp_servers.agentkanban_browser").is_none());
+        assert!(execution_thread_params(&config).unwrap()["config"]
+            .get("mcp_servers.agentkanban_browser")
+            .is_none());
     }
 
     fn receive_method(receiver: &mpsc::Receiver<RuntimeEvent>, method: &str) -> RuntimeEvent {
         loop {
-            let event = receiver.recv_timeout(Duration::from_secs(3)).expect("runtime event");
-            if event.method == method { return event; }
+            let event = receiver
+                .recv_timeout(Duration::from_secs(3))
+                .expect("runtime event");
+            if event.method == method {
+                return event;
+            }
         }
     }
 
@@ -2398,6 +2488,86 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn recovery_reuses_thread_without_turn_and_retries_after_unarchive() {
+        let script = r#"
+import json,sys
+calls=[];archived=sys.argv[1]!='active';reject=sys.argv[1]=='retry'
+for line in sys.stdin:
+ m=json.loads(line)
+ if 'id' not in m:continue
+ method=m['method'];calls.append(method)
+ if method=='thread/read':result={'thread':{'id':'owned-thread','path':'/home/test/.codex/'+('archived_sessions' if archived else 'sessions/2026/11/02')+'/rollout.jsonl'}}
+ elif method=='thread/unarchive':archived=False;result={'thread':{'id':'owned-thread'}}
+ elif method=='thread/resume':
+  assert m['params']['threadId']=='owned-thread'
+  if reject:
+   reject=False
+   print(json.dumps({'id':m['id'],'error':{'code':-32600,'message':'thread owned-thread already has an active writer'}}),flush=True);continue
+  result={'thread':{'id':'owned-thread'}}
+ elif method=='thread/goal/get':result={'goal':None}
+ elif method=='model/list':result={'data':[],'calls':calls}
+ elif method=='turn/start':raise RuntimeError('恢复连接不得执行业务')
+ else:result={}
+ print(json.dumps({'id':m['id'],'result':result}),flush=True)
+"#;
+        for mode in ["archived", "active", "retry"] {
+            let mut command = std::process::Command::new("python3");
+            command.args(["-u", "-c", script, mode]);
+            let (server, events) = AppServer::spawn_command(command).unwrap();
+            let runtime = CodexRuntime::from_server(server, events, Arc::new(|_| {})).unwrap();
+            let mut config = test_config();
+            config.prompt.clear();
+            config.task_id = "chat:recovery".into();
+            config.thread_id = Some("owned-thread".into());
+            if mode == "retry" {
+                assert!(runtime
+                    .recover_conversation(config.clone())
+                    .unwrap_err()
+                    .contains("归档"));
+                assert!(runtime.is_alive());
+            }
+            runtime.recover_conversation(config).unwrap();
+            let calls = runtime.rpc_read("model/list", json!({})).unwrap()["calls"]
+                .as_array()
+                .unwrap()
+                .clone();
+            assert!(!calls.contains(&json!("turn/start")));
+            assert_eq!(
+                calls
+                    .iter()
+                    .filter(|m| **m == json!("thread/unarchive"))
+                    .count(),
+                usize::from(mode != "active")
+            );
+            runtime.shutdown();
+        }
+    }
+
+    #[test]
+    fn writer_conflict_does_not_disconnect_shared_runtime() {
+        let script = r#"
+import json,sys
+for line in sys.stdin:
+ m=json.loads(line)
+ if 'id' not in m: continue
+ if m['method']=='thread/resume':
+  print(json.dumps({'id':m['id'],'error':{'code':-32600,'message':'thread owned-thread already has an active writer'}}),flush=True)
+ else: print(json.dumps({'id':m['id'],'result':{}}),flush=True)
+"#;
+        let mut command = std::process::Command::new("python3");
+        command.args(["-u", "-c", script]);
+        let (server, events) = AppServer::spawn_command(command).unwrap();
+        let runtime = CodexRuntime::from_server(server, events, Arc::new(|_| {})).unwrap();
+        let mut config = test_config();
+        config.thread_id = Some("owned-thread".into());
+        let error = runtime.start_task(config).unwrap_err();
+        assert!(error.contains("归档"));
+        assert!(runtime.is_alive(), "写锁拒绝不能关闭其他会话共用的连接");
+        runtime.rpc_read("model/list", json!({})).unwrap();
+        runtime.shutdown();
+    }
+
+    #[test]
     fn failed_turn_start_still_exposes_created_thread_for_recovery() {
         let script = r#"
 import json, sys
@@ -2697,10 +2867,18 @@ for line in sys.stdin:
         let root = std::env::temp_dir().join(format!("akb-file-size-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         // 使用稀疏文件验证读取之前的上限，不向共享协议连接发送大响应。
-        std::fs::File::create(root.join("large.bin")).unwrap().set_len(3_000_001).unwrap();
-        let error = runtime.read_workspace_file(&root.to_string_lossy(), "large.bin").unwrap_err();
+        std::fs::File::create(root.join("large.bin"))
+            .unwrap()
+            .set_len(3_000_001)
+            .unwrap();
+        let error = runtime
+            .read_workspace_file(&root.to_string_lossy(), "large.bin")
+            .unwrap_err();
         assert!(error.contains("3 MB"));
-        assert_eq!(runtime.rpc_read("model/list", json!({})).unwrap()["reads"], 0);
+        assert_eq!(
+            runtime.rpc_read("model/list", json!({})).unwrap()["reads"],
+            0
+        );
         assert!(runtime.is_alive());
         runtime.shutdown();
         let _ = std::fs::remove_dir_all(root);

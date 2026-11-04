@@ -40,3 +40,14 @@ it('Markdown文件请求复用当前文件工作区并支持再次打开相同�
  await screen.findByText('/project/a.md');
  expect(invoke).toHaveBeenCalledWith('workbench_read_file',{taskId:'conversation:one',path:'/project/a.md'});
 });
+
+it('renders Markdown from the file viewer and can switch back to source',async()=>{
+ const markdown='## 交付说明\n\n**已完成**\n\n- 中文内容';
+ const encoded=btoa(String.fromCharCode(...new TextEncoder().encode(markdown)));
+ vi.mocked(invoke).mockImplementation(async(command)=>command==='workbench_list_directory'?{entries:[]}:{dataBase64:encoded});
+ const user=userEvent.setup();render(<WorkspaceFiles taskId="conversation:one" workspace="/project" enabled openRequest={{target:'/project/README.md',sequence:1}}/>);
+ expect(await screen.findByRole('heading',{name:'交付说明'})).toBeVisible();
+ expect(screen.queryByText('## 交付说明')).not.toBeInTheDocument();
+ await user.click(screen.getByRole('button',{name:'查看 Markdown 源码'}));
+ expect(await screen.findByText('## 交付说明')).toBeVisible();
+});

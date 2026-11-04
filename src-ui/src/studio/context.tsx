@@ -10,10 +10,11 @@ export type DialogState =
   | { kind: "createTask"; parent?: string }
   | { kind: "dependencies" | "projectTask" | "deleteTask" | "completeTask"; task: string }
   | { kind: "context"; task: string; importTo?: string }
+  | { kind: "bindCodex"; task: string }
   | { kind: "project"; id?: string }
   | { kind: "models" | "permissions" | "deleted" }
   | { kind: "taskState"; task: string; state: "todo" | "in_progress" | "completed" | "cancelled" }
-  | { kind: "renameConversation"; conversation: string };
+  | { kind: "renameConversation" | "deleteConversation" | "recoverConnection"; conversation: string };
 export type Panel = "content" | "properties" | "context" | "results" | "browser" | "diff" | "workspace" | "files" | "terminal" | null;
 export type ModelConfig = Pick<TaskConfig, 'model' | 'reasoning_effort'>;
 export type Draft = { text: string; projectId?: string; modelConfig?: ModelConfig; importContext: boolean; attachments: { name: string; input?: unknown; text?: string }[] };

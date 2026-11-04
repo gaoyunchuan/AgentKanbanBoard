@@ -2,6 +2,34 @@
 
 ## Current Knowledge
 
+### 2026-11-04 绑定 Codex 会话
+
+- `codex_conversations.rs` 通过只读协议列出、读取原会话，actor 外用最多两个独立读进程及 60 秒期限；不能用执行连接读取大历史，单帧超限会断开所属传输。旧本地 items/list 不支持时回退有 16MiB 上限的 thread/read，并提供本地游标。
+- `chat_codex_bindings` 只保留每条外部会话的 ready 标记；Thread 原身份与原目录冻结，按任务权限创建人工会话。待交接时前后端禁止发送/提取，恢复成功才 ready；重复同任务返回已有记录，跨任务及已删除归属拒绝覆盖。
+- 原历史独立按需读取，800 条实际记录和每项 16KiB 展示上限，空页不消耗容量；按 turn/item 去重并排除本地已记录 turn。显式提取捕获原历史和本地事件，来源最多 20 页、600,000 字节，版本/本地边界/来源哈希复核后保存，不静默截断。
+
+### 2026-11-02 人工会话独立删除
+
+
+### 2026-11-02 半自动恢复会话连接
+
+- `chat_recovery.rs` 只在用户于 Codex 手动归档后恢复原 Thread。菜单与失败提示共用冻结 `conversation_id/thread_id/revision` 的弹窗；打开 Codex 永远针对打开时目标。
+- 恢复不创建 Turn、不复制会话、不发送消息、不改变任务状态。先 `thread/read` 判断归档路径，必要时 `thread/unarchive`，再 `thread/resume` 与 Goal 校验；归档后接续失败允许重试。
+- 活动执行、pending change、资源保留、关闭/删除、版本变化及已结束提取的运行时占用均拒绝恢复。actor 以 `recovering` 有界占用目标目录并围栏该会话/任务变更；其他目录执行和轮询可继续。
+- 外部写锁是启动前确定性拒绝：保留具体错误和“恢复会话连接”入口，不得 shutdown 其他会话共用的 app-server，也不以删除锁文件、终止进程或辅助功能自动化抢占。
+
+### 2026-11-02 右侧工具可读性
+
+- `RightDock.visible` 同时要求当前会话至少有一个标签；关闭最后标签后立即隐藏工作区和标签栏，顶部按钮改为打开工具菜单。不得用额外 effect 修正 collapsed，StrictMode 会重放旧闭包造成刚打开的标签被收起。
+- 交互终端显式注入 UTF-8 `LANG/LC_CTYPE`：继承有效 UTF-8 值，否则 macOS 使用 `en_US.UTF-8`、其他平台使用 `C.UTF-8`。xterm 字体必须包含 `PingFang SC`、`Microsoft YaHei`、`Noto Sans CJK SC` 回退。
+- `.md/.markdown` 文件复用 `Markdown` 安全渲染器，默认预览，源码查看保留行号；文件读取上限和目录权限不变。
+- `electron_local.build_ui` 每次清空 `desktop/ui` 后完整复制，避免旧 hash 资源进入安装包。
+
+- `conversation_deletion.rs` 事务维护 `chat_conversations.deleted_at`，普通读取和列表拒绝墓碑；恢复保留 closed、消息、结果与来源，不自动执行。迁移在既有初始化事务中幂等加列。
+- 删除仅允许空闲人工会话，检查版本、active run、资源保留及 actor 全部 live.run_id 归属，包含已 ended 但未确认停止的 extract。重试提取同样检查来源会话可见。
+- 下拉每行和侧栏共用 `ConversationMenu`；删除确认冻结目标版本。当前会话消失后回同任务其他会话，最后一个回任务详情；不清理其内存草稿，恢复可继续编辑。已删除窗口分任务/会话，所属任务归档时先恢复任务。
+
+
 ### 2026-11-02 首次发送前的模型设置
 
 - 任务树默认选择只允许在 `taskScreen=tree` 时补全；从任务页进入新聊天后，轮询不能选回首个任务并替换草稿。

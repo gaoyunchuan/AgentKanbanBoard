@@ -115,7 +115,7 @@ impl TerminalManager {
         } else {
             vec!["/bin/sh", "-i"]
         };
-        let params = json!({"command":shell,"processId":id,"cwd":workspace,"tty":true,"streamStdin":true,"streamStdoutStderr":true,"disableTimeout":true,"outputBytesCap":OUTPUT_LIMIT,"size":{"cols":cols,"rows":rows},"env":{"TERM":"xterm-256color","COLORTERM":"truecolor"},"sandboxPolicy":crate::work_runtime::sandbox_policy(sandbox,&workspace)});
+        let params = json!({"command":shell,"processId":id,"cwd":workspace,"tty":true,"streamStdin":true,"streamStdoutStderr":true,"disableTimeout":true,"outputBytesCap":OUTPUT_LIMIT,"size":{"cols":cols,"rows":rows},"env":terminal_environment(),"sandboxPolicy":crate::work_runtime::sandbox_policy(sandbox,&workspace)});
         // 同步写入启动请求后才返回身份，避免关闭请求先于启动请求发送。
         let reply = match self.server.request_background("command/exec", params) {
             Ok(reply) => reply,
@@ -294,6 +294,23 @@ impl TerminalManager {
         }
     }
 }
+
+fn terminal_environment() -> Value {
+    let inherited = std::env::var("LANG").ok().filter(|value| {
+        let lower = value.to_ascii_lowercase();
+        lower.contains("utf-8") || lower.contains("utf8")
+    });
+    let locale = inherited.unwrap_or_else(|| {
+        if cfg!(target_os = "macos") {
+            "en_US.UTF-8"
+        } else {
+            "C.UTF-8"
+        }
+        .into()
+    });
+    // Finder 启动的 GUI 进程通常没有 locale；显式 UTF-8 才能正确处理中文输入、文件名与程序输出。
+    json!({"TERM":"xterm-256color","COLORTERM":"truecolor","LANG":locale,"LC_CTYPE":locale})
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +325,8 @@ for line in sys.stdin:
  v=json.loads(line);m=v.get('method');p=v.get('params',{});i=v.get('id');pid=p.get('processId')
  if m=='command/exec':
   if sys.platform=='darwin':assert p['command']==['/bin/zsh','-f'],p['command']
+  assert p['env']['LANG'].lower().endswith('utf-8'),p['env']
+  assert p['env']['LC_CTYPE'].lower().endswith('utf-8'),p['env']
   running[pid]=i
   print(json.dumps({'method':'command/exec/outputDelta','params':{'processId':pid,'stream':'stdout','deltaBase64':base64.b64encode(p['cwd'].encode()).decode()}}),flush=True)
   continue

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen, LoaderCircle, RefreshCw, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Code2, File, Folder, FolderOpen, LoaderCircle, RefreshCw, Search } from 'lucide-react';
+import {Markdown} from './Markdown';
 import './workspace-tools.css';
 type Entry={fileName:string;isDirectory:boolean;isFile:boolean};
 type Preview={path:string;text?:string;image?:string};
 const join=(parent:string,name:string)=>`${parent.replace(/[\\/]+$/,'')}/${name}`;
+const isMarkdown=(path:string)=>/[.](md|markdown)$/i.test(path);
 export function WorkspaceFiles({taskId,workspace,enabled,openRequest}:{taskId:string;workspace:string;enabled:boolean;openRequest?:{target:string;sequence:number}}){
  const [directories,setDirectories]=useState<Record<string,Entry[]>>({}),[expanded,setExpanded]=useState<Set<string>>(new Set());
  const [preview,setPreview]=useState<Preview>(),[showTree,setShowTree]=useState(true),[filter,setFilter]=useState('');
  const [error,setError]=useState(''),[loading,setLoading]=useState(false);
  const generation=useRef(0),fileRequest=useRef(0);
+ const [markdownSource,setMarkdownSource]=useState(false);
  const loadDirectory=async(path:string,epoch=generation.current)=>{
   try{const result=await invoke<{entries:Entry[]}>('workbench_list_directory',{taskId,path});
    if(epoch===generation.current)setDirectories(value=>({...value,[path]:(result.entries||[]).sort((a,b)=>Number(b.isDirectory)-Number(a.isDirectory)||a.fileName.localeCompare(b.fileName))}));
@@ -20,6 +23,7 @@ export function WorkspaceFiles({taskId,workspace,enabled,openRequest}:{taskId:st
   if(enabled&&workspace)void loadDirectory(workspace,epoch);
   return()=>{generation.current++;fileRequest.current++};
  },[taskId,workspace,enabled]);
+ useEffect(()=>setMarkdownSource(false),[preview?.path]);
  const toggleDirectory=(path:string)=>{
   setExpanded(value=>{const next=new Set(value);next.has(path)?next.delete(path):next.add(path);return next});
   if(!directories[path])void loadDirectory(path);
@@ -57,10 +61,10 @@ export function WorkspaceFiles({taskId,workspace,enabled,openRequest}:{taskId:st
   </div>;
  });
  return <section className="workspace-files" aria-label="文件工作区">
-  <div className="workspace-tool-toolbar"><span className="workspace-path" title={preview?.path||workspace}>{preview?.path?.replace(`${workspace}/`,'')||workspace||'文件'}</span><span className="grow"/>{loading&&<LoaderCircle size={14} className="spin"/>}<button className="iconbtn" aria-label="刷新目录" onClick={()=>void loadDirectory(workspace)} disabled={!enabled}><RefreshCw size={14}/></button><button className={`iconbtn ${showTree?'selected':''}`} aria-label={showTree?'收起目录树':'展开目录树'} aria-expanded={showTree} onClick={()=>setShowTree(value=>!value)}><FolderOpen size={17}/></button></div>
+  <div className="workspace-tool-toolbar"><span className="workspace-path" title={preview?.path||workspace}>{preview?.path?.replace(`${workspace}/`,'')||workspace||'文件'}</span><span className="grow"/>{loading&&<LoaderCircle size={14} className="spin"/>}{preview?.text!==undefined&&isMarkdown(preview.path)&&<button className={`iconbtn ${markdownSource?'selected':''}`} aria-label={markdownSource?'查看 Markdown 预览':'查看 Markdown 源码'} title={markdownSource?'查看 Markdown 预览':'查看 Markdown 源码'} onClick={()=>setMarkdownSource(value=>!value)}><Code2 size={15}/></button>}<button className="iconbtn" aria-label="刷新目录" onClick={()=>void loadDirectory(workspace)} disabled={!enabled}><RefreshCw size={14}/></button><button className={`iconbtn ${showTree?'selected':''}`} aria-label={showTree?'收起目录树':'展开目录树'} aria-expanded={showTree} onClick={()=>setShowTree(value=>!value)}><FolderOpen size={17}/></button></div>
   {error&&<div role="alert" className="workspace-tool-error">{error}</div>}
   <div className="workspace-files-layout"><div className="workspace-file-content">
-   {preview?.image?<img src={preview.image} alt={preview.path.split('/').pop()}/>:preview?.text!==undefined?<pre className="workspace-code">{preview.text.split('\n').map((line,index)=><div className="workspace-code-line" key={index}><span className="workspace-line-number">{index+1}</span><code>{line||' '}</code></div>)}</pre>:<div className="workspace-tool-empty"><FolderOpen size={30}/><h3>打开文件</h3><p>{enabled?'从右侧项目目录树选择文件':'请在桌面应用中查看项目文件'}</p></div>}
+   {preview?.image?<img src={preview.image} alt={preview.path.split('/').pop()}/>:preview?.text!==undefined?(isMarkdown(preview.path)&&!markdownSource?<div className="workspace-markdown"><Markdown text={preview.text}/></div>:<pre className="workspace-code">{preview.text.split('\n').map((line,index)=><div className="workspace-code-line" key={index}><span className="workspace-line-number">{index+1}</span><code>{line||' '}</code></div>)}</pre>):<div className="workspace-tool-empty"><FolderOpen size={30}/><h3>打开文件</h3><p>{enabled?'从右侧项目目录树选择文件':'请在桌面应用中查看项目文件'}</p></div>}
   </div><aside className="workspace-file-tree" aria-label="项目目录树" hidden={!showTree}><label className="workspace-file-filter"><Search size={13}/><input aria-label="筛选文件" placeholder="筛选已加载文件…" value={filter} onChange={e=>setFilter(e.target.value)}/></label><div className="workspace-tree-root" title={workspace}><Folder size={13}/>{workspace.split('/').filter(Boolean).pop()}</div><div role="tree" aria-label="项目文件">{renderDirectory(workspace)}</div>{enabled&&!directories[workspace]&&<p className="note">正在读取目录…</p>}</aside></div>
  </section>;
 }

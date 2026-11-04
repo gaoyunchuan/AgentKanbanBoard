@@ -1,0 +1,10 @@
+{
+  "isolated_database": true,
+  "release_binary": true,
+  "task_preserved": true,
+  "only_target_hidden": true,
+  "stale_send_error": "会话不存在",
+  "restored_runs": 0,
+  "restored_conversations": 2,
+  "real_model_calls": 0
+}

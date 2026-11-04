@@ -1,3 +1,6 @@
+import { conversationDeleteReason } from './model';
+import {ConversationRecoveryDialog} from './ConversationRecoveryDialog';
+import {CodexBindingDialog} from './CodexBindingDialog';
 import { StudioSelect } from './StudioSelect';
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,7 +17,9 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   const s = useStudio();
   const tid = 'task' in dialog ? dialog.task : s.task?.id;
   const task = s.data.tasks.find(t => t.id === tid);
-  const c = dialog.kind === 'renameConversation' ? s.data.conversations.find(c => c.id === dialog.conversation) : s.conversation;
+  const c = (dialog.kind === 'renameConversation'||dialog.kind === 'deleteConversation') ? s.data.conversations.find(c => c.id === dialog.conversation) : s.conversation;
+  // 删除确认冻结目标版本，轮询不得把旧确认升级为对新内容的授权。
+  const [deletionBaseline]=useState(()=>dialog.kind==='deleteConversation'&&c?{id:c.id,title:c.title,revision:c.revision}:null);
   const [text, setText] = useState(dialog.kind === 'renameConversation' ? c?.title ?? '' : '');
   // 右键目标父任务可能并非当前选中任务；新子任务默认继承父级，不能串入当前项目。
   const [project, setProject] = useState(dialog.kind === 'createTask' && dialog.parent ? '' : task?.project_id ?? '');
@@ -25,6 +30,7 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   const [context, setContext] = useState<Record<string, unknown>>();
   const [err, setErr] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [deletedConversations,setDeletedConversations]=useState<Record<string,unknown>[]>([]);
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
   const [model, setModel] = useState((modelConfig ?? c?.config)?.model ?? '');
   const [effort, setEffort] = useState((modelConfig ?? c?.config)?.reasoning_effort ?? '');
@@ -45,6 +51,7 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   useEffect(() => {
     let valid = true;
     if (dialog.kind === 'context' && task) void s.api.call<Record<string, unknown>>('context', { task_id: task.id }).then(x => { if (valid) setContext(x); }).catch(e => { if (valid) setErr(String(e)); });
+    if (dialog.kind === 'deleted') void s.api.call<Record<string,unknown>[]>('deleted_conversations').then(x=>{if(valid)setDeletedConversations(x)}).catch(e=>{if(valid)setErr(String(e))});
     if (dialog.kind === 'deleted') void s.api.call<Record<string, unknown>[]>('deleted').then(x => { if (valid) setItems(x); }).catch(e => { if (valid) setErr(String(e)); });
     if (dialog.kind === 'models' && s.api.native) void invoke('workbench_rpc', { method: 'model/list', params: {} }).then(x => { const values = record(x).data; if (valid && Array.isArray(values)) setItems(values.map(record)); }).catch(e => { if (valid) setErr(String(e)); });
     if (dialog.kind === 'project' && dialog.id) { const p = s.data.projects.find(p => p.id === dialog.id); setText(p?.name ?? ''); setPath(p?.path ?? ''); }
@@ -53,6 +60,12 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   const cancel = <button className="textbtn outlined" disabled={busy} onClick={onClose}>取消</button>;
   const error = err ? <p className="form-error" role="alert">{err}</p> : null;
   const submit = (label: string, handler: () => Promise<unknown>, disabled = false) => <button className="textbtn primary" disabled={busy || disabled} onClick={() => void act(handler)}>{busy ? '处理中…' : label}</button>;
+  if(dialog.kind==='recoverConnection')return <ConversationRecoveryDialog conversationId={dialog.conversation} onClose={onClose}/>;
+  if(dialog.kind==='bindCodex')return <CodexBindingDialog taskId={dialog.task} onClose={onClose}/>;
+  if(dialog.kind==='deleteConversation') {
+    const reason=c?conversationDeleteReason(c,s.data)||(c.revision!==deletionBaseline?.revision?'会话已变化，请关闭后重新确认删除':undefined):'会话已删除或暂不可见';
+    return <Modal title="删除会话？" onClose={onClose} footer={<>{cancel}{submit('移入已删除',()=>s.command('delete_conversation',{conversation_id:dialog.conversation,revision:deletionBaseline?.revision},'会话已移入已删除，可随时恢复'),Boolean(reason))}</>}><p>「{deletionBaseline?.title||'已不可见的会话'}」</p><p className="modal-desc">只删除这条会话，所属任务和已提取结果保持不变。消息历史会保留，可在任务页或设置的「已删除」中恢复。</p>{reason&&<p className="warning-box">{reason}</p>}{error}</Modal>;
+  }
   if (dialog.kind === 'createTask' || dialog.kind === 'renameConversation') {
     const creating = dialog.kind === 'createTask';
     const parent = creating && dialog.parent ? s.data.tasks.find(t => t.id === dialog.parent) : undefined;
@@ -105,6 +118,6 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
     <p className="note">权限修改从下一轮开始生效；正在执行的回合仍按原权限完成，不需停止任务。</p>{permissionMode({sandbox_mode:sandbox,approval_policy:approval})==='full-access'&&<p className="warning-box">允许当前会话访问项目外文件、网络并运行命令，已启用 MCP 工具不再逐次请求操作批准。不会修改全局配置或其它会话；业务问题及登录仍需提供所需信息。</p>}
     <p className="note">保存后从下一轮执行生效，运行中也可保存；已有会话和工作目录保持不变。</p>
     <details><summary>高级设置</summary><label htmlFor="sandbox-select">文件与网络边界</label><StudioSelect id="sandbox-select" label="文件与网络边界" value={sandbox} onValueChange={setSandbox} options={[{value:'read-only',label:'只读'},{value:'workspace-write',label:'工作区写入'},{value:'danger-full-access',label:'不限制文件与网络'}]}/><label htmlFor="approval-select">审批策略</label><StudioSelect id="approval-select" label="审批策略" value={approval} onValueChange={setApproval} options={[{value:'on-request',label:'需要时由你确认'},{value:'untrusted',label:'不受信任操作需确认'},{value:'never',label:'不询问（在所选边界内执行）'},...(!['on-request','untrusted','never'].includes(approval)?[{value:approval,label:`旧策略：${approval}（保留）`}]:[])]}/></details></>}{c && isBusy(c) && <p className="note">先停止当前执行，再修改会话配置。</p>}{error}</Modal>;
-  if (dialog.kind === 'deleted') return <Modal title="已删除的任务" onClose={onClose} footer={<button className="textbtn outlined" onClick={onClose}>关闭</button>}><p className="modal-desc">删除采用归档方式。恢复后不自动重跑历史任务；从任务详情恢复执行。</p>{items.map(item => <div className="picker-row" key={String(item.id)}><span className="grow">{String(item.title)}</span><button className="textbtn outlined" disabled={busy} onClick={() => void act(async () => { await s.command('restore', { task_id: item.id }, '任务已恢复'); setItems(await s.api.call('deleted')); }, false)}>恢复</button></div>)}{!items.length && <p className="note">暂无已删除任务</p>}{error}</Modal>;
+  if (dialog.kind === 'deleted') return <Modal title="已删除" onClose={onClose} footer={<button className="textbtn outlined" onClick={onClose}>关闭</button>}><p className="modal-desc">删除采用归档方式。恢复后不自动重跑历史任务；从任务详情恢复执行。</p><h3>任务</h3>{items.map(item => <div className="picker-row" key={String(item.id)}><span className="grow">{String(item.title)}</span><button className="textbtn outlined" disabled={busy} onClick={() => void act(async () => { await s.command('restore', { task_id: item.id }, '任务已恢复'); setItems(await s.api.call('deleted'));setDeletedConversations(await s.api.call('deleted_conversations')); }, false)}>恢复</button></div>)}{!items.length && <p className="note">暂无已删除任务</p>}<h3>会话</h3>{deletedConversations.map(item=><div className="picker-row" key={String(item.id)}><div className="grow"><span>{String(item.title)}</span><p className="note">所属任务：{String(item.task_title)}{Boolean(item.task_deleted)&&' · 请先恢复任务'}</p></div><button className="textbtn outlined" aria-label={`恢复会话 ${item.title}`} disabled={busy||Boolean(item.task_deleted)} onClick={()=>void act(async()=>{await s.command('restore_conversation',{conversation_id:item.id,revision:item.revision},'会话已恢复，未启动执行');setDeletedConversations(await s.api.call('deleted_conversations'))},false)}>恢复</button></div>)}{!deletedConversations.length&&<p className="note">暂无已删除会话</p>}{error}</Modal>;
   return null;
 }

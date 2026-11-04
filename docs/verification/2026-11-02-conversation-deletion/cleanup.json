@@ -1,0 +1,11 @@
+{
+  "removed": [
+    "src-ui/dist",
+    "desktop/ui",
+    "desktop/dist-electron",
+    "src-tauri/target"
+  ],
+  "installed_app_preserved": true,
+  "old_app_backup_preserved": true,
+  "user_data_untouched": true
+}

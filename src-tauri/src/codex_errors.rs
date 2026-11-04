@@ -25,8 +25,14 @@ pub fn is_configuration_error(error: &str) -> bool {
                 .iter()
                 .any(|s| value.contains(s))
 }
+pub fn is_writer_conflict(error: &str) -> bool {
+    message(error).contains("already has an active writer")
+}
 pub fn explain(operation: &str, error: &str) -> String {
     let detail = message(error);
+    if is_writer_conflict(error) {
+        return format!("{operation}：会话仍被 Codex 或其他客户端占用。请在 Codex 中核对执行结束并手动归档，再通过“恢复会话连接”接续。原错误：{detail}");
+    }
     if is_configuration_error(error) {
         let hint = if error.contains("AgentRoleToml") {
             "[agents] 中至少一个值被解析为角色配置，但其类型不是角色表；可能是字段拼写/所属节错误，或当前 Codex 版本不支持该配置项。不能仅把数字改成字符串。"

@@ -1,0 +1,106 @@
+HEAD 格式检查退出码：1
+Diff in /private/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-fmt-baseline-ao4gooh6/src-tauri/examples/session_browser_driver.rs:4:
+ use std::io::{self, BufRead};
+ use std::path::PathBuf;
+ struct Cleanup;
+[31m-impl Drop for Cleanup { fn drop(&mut self) { browser_bridge::shutdown_all(); codex_kanban::browser_mcp::shutdown(); } }
+(B[m[32m+impl Drop for Cleanup {
+(B[m[32m+    fn drop(&mut self) {
+(B[m[32m+        browser_bridge::shutdown_all();
+(B[m[32m+        codex_kanban::browser_mcp::shutdown();
+(B[m[32m+    }
+(B[m[32m+}
+(B[m fn main() -> Result<(), String> {
+     let args = std::env::args().skip(1).collect::<Vec<_>>();
+     let db = PathBuf::from(args.first().ok_or("缺少隔离数据库路径")?);
+Diff in /private/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-fmt-baseline-ao4gooh6/src-tauri/examples/session_browser_driver.rs:11:
+[31m-    if !db.is_absolute() || db == std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".codex-kanban/app.db") { return Err("仅允许显式隔离数据库".into()); }
+(B[m[32m+    if !db.is_absolute()
+(B[m[32m+        || db
+(B[m[32m+            == std::env::var_os("HOME")
+(B[m[32m+                .map(PathBuf::from)
+(B[m[32m+                .unwrap_or_default()
+(B[m[32m+                .join(".codex-kanban/app.db")
+(B[m[32m+    {
+(B[m[32m+        return Err("仅允许显式隔离数据库".into());
+(B[m[32m+    }
+(B[m     std::fs::create_dir_all(db.parent().ok_or("缺少父目录")?).map_err(|e| e.to_string())?;
+     let repo = Repository::open_path(&db).map_err(|e| e.to_string())?;
+[31m-    browser_bridge::configure(repo.browser_state_root()?, PathBuf::from(&args[1]), PathBuf::from(&args[2]))?;
+(B[m[32m+    browser_bridge::configure(
+(B[m[32m+        repo.browser_state_root()?,
+(B[m[32m+        PathBuf::from(&args[1]),
+(B[m[32m+        PathBuf::from(&args[2]),
+(B[m[32m+    )?;
+(B[m     let _cleanup = Cleanup;
+     std::fs::create_dir_all(db.parent().unwrap().join("project")).map_err(|e| e.to_string())?;
+[31m-    repo.upsert_project(ProjectInput { id:"browser-e2e".into(),name:"浏览器隔离验证".into(),path:db.parent().unwrap().join("project").to_string_lossy().into_owned(),origin_url:None,aliases:vec![],active:true }).map_err(|e| e.to_string())?;
+(B[m[31m-    let mut owners=vec![];
+(B[m[31m-    for title in ["浏览器验收 A","浏览器验收 B"] {
+(B[m[31m-        let task=repo.chat_create_task(&json!({"title":title,"project_id":"browser-e2e"}))?;
+(B[m[31m-        let c=repo.chat_create_conversation(&task,Some("browser-e2e"))?;
+(B[m[32m+    repo.upsert_project(ProjectInput {
+(B[m[32m+        id: "browser-e2e".into(),
+(B[m[32m+        name: "浏览器隔离验证".into(),
+(B[m[32m+        path: db
+(B[m[32m+            .parent()
+(B[m[32m+            .unwrap()
+(B[m[32m+            .join("project")
+(B[m[32m+            .to_string_lossy()
+(B[m[32m+            .into_owned(),
+(B[m[32m+        origin_url: None,
+(B[m[32m+        aliases: vec![],
+(B[m[32m+        active: true,
+(B[m[32m+    })
+(B[m[32m+    .map_err(|e| e.to_string())?;
+(B[m[32m+    let mut owners = vec![];
+(B[m[32m+    for title in ["浏览器验收 A", "浏览器验收 B"] {
+(B[m[32m+        let task = repo.chat_create_task(&json!({"title":title,"project_id":"browser-e2e"}))?;
+(B[m[32m+        let c = repo.chat_create_conversation(&task, Some("browser-e2e"))?;
+(B[m         owners.push(json!({"owner":format!("chat:{}",c.id),"conversation_id":c.id,"title":title}));
+     }
+     println!("{}", json!({"ready":true,"owners":owners}));
+Diff in /private/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-fmt-baseline-ao4gooh6/src-tauri/examples/session_browser_driver.rs:25:
+     for line in io::stdin().lock().lines() {
+[31m-        let request: Value = serde_json::from_str(&line.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+(B[m[32m+        let request: Value =
+(B[m[32m+            serde_json::from_str(&line.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+(B[m         let owner = request["owner"].as_str().ok_or("缺少owner")?;
+         let method = request["method"].as_str().ok_or("缺少method")?;
+[31m-        let result = if method == "mcp_config" { codex_kanban::browser_mcp::server_config(owner) }
+(B[m[31m-            else { browser_bridge::call(owner, method, request.get("params").cloned().unwrap_or_else(|| json!({}))) };
+(B[m[31m-        println!("{}", match result { Ok(result) => json!({"id":request["id"],"result":result}), Err(error) => json!({"id":request["id"],"error":error}) });
+(B[m[32m+        let result = if method == "mcp_config" {
+(B[m[32m+            codex_kanban::browser_mcp::server_config(owner)
+(B[m[32m+        } else {
+(B[m[32m+            browser_bridge::call(
+(B[m[32m+                owner,
+(B[m[32m+                method,
+(B[m[32m+                request.get("params").cloned().unwrap_or_else(|| json!({})),
+(B[m[32m+            )
+(B[m[32m+        };
+(B[m[32m+        println!(
+(B[m[32m+            "{}",
+(B[m[32m+            match result {
+(B[m[32m+                Ok(result) => json!({"id":request["id"],"result":result}),
+(B[m[32m+                Err(error) => json!({"id":request["id"],"error":error}),
+(B[m[32m+            }
+(B[m[32m+        );
+(B[m     }
+     Ok(())
+ }
+Diff in /private/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-fmt-baseline-ao4gooh6/src-tauri/src/bin/akb_sidecar.rs:39:
+ 
+ fn broadcast() {
+     if let Ok(mut all) = clients().lock() {
+[31m-        all.retain_mut(|(_, stream)| stream.write_all(b"{\"event\":\"workbench/changed\"}\n").and_then(|()| stream.flush()).is_ok());
+(B[m[32m+        all.retain_mut(|(_, stream)| {
+(B[m[32m+            stream
+(B[m[32m+                .write_all(b"{\"event\":\"workbench/changed\"}\n")
+(B[m[32m+                .and_then(|()| stream.flush())
+(B[m[32m+                .is_ok()
+(B[m[32m+        });
+(B[m     }
+ }
+ 
+Diff in /private/var/folders/5c/53pxh85j389bzsyp82s2p5nm0000gp/T/akb-fmt-baseli

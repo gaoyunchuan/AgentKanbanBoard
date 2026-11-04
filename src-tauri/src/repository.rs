@@ -1086,6 +1086,19 @@ fn migrate_schema(connection: &Connection, now: &str) -> rusqlite::Result<()> {
     connection.execute_batch(THREAD_TASK_LINKS_SQL)?;
     connection.execute_batch(TASK_WORKFLOW_SQL)?;
     connection.execute_batch(include_str!("../db/004_chat_workspace.sql"))?;
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS chat_codex_bindings(conversation_id TEXT PRIMARY KEY REFERENCES chat_conversations(id) ON DELETE CASCADE,ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN (0,1)))")?;
+    // 会话软删除独立于任务归档；旧数据默认可见，迁移随既有事务串行执行。
+    let chat_columns = connection
+        .prepare("PRAGMA table_info(chat_conversations)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !chat_columns.iter().any(|name| name == "deleted_at") {
+        connection.execute(
+            "ALTER TABLE chat_conversations ADD COLUMN deleted_at TEXT",
+            [],
+        )?;
+    }
+
     connection.execute_batch("CREATE TABLE IF NOT EXISTS work_resource_leases(run_id TEXT PRIMARY KEY CHECK(length(CAST(run_id AS BLOB))<=512),owner TEXT NOT NULL CHECK(length(CAST(owner AS BLOB))<=512),connection_id TEXT NOT NULL CHECK(length(CAST(connection_id AS BLOB))<=512),workspace TEXT NOT NULL CHECK(length(CAST(workspace AS BLOB))<=4096),threads_json TEXT NOT NULL CHECK(length(CAST(threads_json AS BLOB))<=131072),state TEXT NOT NULL,error TEXT CHECK(length(CAST(error AS BLOB))<=4096),created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS work_resource_leases_owner ON work_resource_leases(owner); CREATE TRIGGER IF NOT EXISTS work_resource_leases_limit BEFORE INSERT ON work_resource_leases WHEN NOT EXISTS(SELECT 1 FROM work_resource_leases WHERE run_id=NEW.run_id) AND (SELECT COUNT(*) FROM work_resource_leases)>=256 BEGIN SELECT RAISE(ABORT,'原生命令占用达到上限，请先核对并清理历史占用'); END")?;
     crate::task_schedule::migrate(connection)?;
     connection.execute_batch(

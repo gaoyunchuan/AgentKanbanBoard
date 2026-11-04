@@ -1,0 +1,21 @@
+{
+  "installed_app": "/Users/gaoyunchuan/Applications/Codex Thread Kanban.app",
+  "ui_files_matched": 65,
+  "sidecar_sha256": "be9771260091785ff8a834506135f627d2e2f806fef1d19f1f6ce9d1e32c0829",
+  "main_js_matched": true,
+  "signature_verified": true,
+  "signature_type": "adhoc",
+  "native_tests": {
+    "dropdown_delete": true,
+    "current_conversation_fallback": true,
+    "restore": true,
+    "sidebar_delete_entry": true
+  },
+  "isolated_database_counts_after_restore": {
+    "todo_tasks": 1,
+    "chat_conversations": 2,
+    "chat_runs": 0,
+    "work_runs": 0
+  },
+  "real_business_operations": 0
+}

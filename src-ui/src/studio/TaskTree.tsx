@@ -23,6 +23,7 @@ export function TaskMenu({ menu, close }: { menu: Menu; close: () => void }) {
   return createPortal(<div className="studio context-menu-layer"><div ref={ref} className="inline-menu task-context-menu" role="menu" aria-label={menu.status ? `${t.title} 状态菜单` : `${t.title} 任务菜单`} style={{ left: Math.min(menu.x, window.innerWidth - 252), top: Math.max(12, Math.min(menu.y, window.innerHeight - (menu.status ? 220 : 330))) }}>
     {menu.status ? ([['todo','待办'],['in_progress','进行中'],['completed','已完成'],['cancelled','已取消']] as const).map(([value,label]) => <button role="menuitemradio" aria-checked={t.status === value} className="popitem" key={value} onClick={() => act(() => s.changeTaskState(t,value))}><StatusIcon status={value}/>{label}{t.status===value&&<span className="grow checkmark">✓</span>}</button>) : <>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openTask(t.id))}><MessageSquare size={15}/>打开任务会话</button>
+      <button role="menuitem" className="popitem" onClick={() => act(() => s.openDialog({kind:'bindCodex',task:t.id}))}><Link size={15}/>绑定 Codex 会话</button>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openDialog({kind:'createTask',parent:t.id}))}><ListTree size={15}/>添加子任务</button>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openDialog({kind:'dependencies',task:t.id}))}><Link size={15}/>设置前置任务</button>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.inspectTask(t.id,'properties'))}><Settings2 size={15}/>属性与设置</button>

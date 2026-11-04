@@ -2,6 +2,33 @@
 
 ## Current Knowledge
 
+### 2026-11-04 绑定 Codex 会话
+
+- `codex_conversations::tests` 覆盖分页协议、主会话过滤、唯一归属与不产生 run/event、目录/状态拒绝、历史去重、原历史提取快照及旧本地协议回退；17MiB 隔离假响应验证历史读取不能断开共享执行连接。
+- `CodexBinding.test.tsx` 覆盖非当前任务绑定、搜索/归档/分页复位、失败重试、重复定位及跨任务拒绝、草稿保留与交接门槛、历史去重及迟到读取隔离、连续空页不锁死原历史。
+- 真实 Codex 独立 CODEX_HOME 的原 Thread 先保持写锁，安装副本绑定并显示原历史，恢复失败后由持有者归档再成功接续；原 Thread/目录不变，草稿保留，SQLite run/event 均为 0。未发送真实模型 Turn。证据见 `docs/verification/2026-11-04-codex-binding/`。
+
+### 2026-11-02 人工会话独立删除
+
+
+### 2026-11-02 半自动恢复会话连接
+
+- `ConversationRecovery.test.tsx` 覆盖非当前目标冻结、取消不恢复、原生接口边界、写锁失败重试、成功清错误和不自动发送；前后端测试均验证保留未发送草稿。
+- `work_runtime` 的假 app-server 覆盖归档与已释放占用、接续失败重试、Goal 校验，并断言恢复不调用 `turn/start`；写锁拒绝后共享连接仍可读。
+- `chat_recovery` 服务测试覆盖异步 recovering 可读、恢复期间发送和结果重试被拒、目标/任务变更围栏、目录互斥、错误清理与成功恢复不产生 run/event。
+
+### 2026-11-02 右侧工具可读性
+
+- `RightDock.test.tsx` 覆盖最后标签关闭收起、无标签不创建资源以及跨会话终端选择；不能用额外 effect 修正 collapsed。
+- `WorkspaceTerminal.test.tsx` 覆盖 CJK 字体回退；Rust PTY 测试断言启动环境显式包含 UTF-8 `LANG/LC_CTYPE`，并验证中文写入与回读。
+- `WorkspaceFiles.test.tsx` 覆盖 Markdown 默认预览和源码切换，测试中文内容使用 UTF-8→base64，不能调用 Latin-1 `btoa` 生成夹具。
+- 原生验收使用真实 PTY 输出“中文终端测试”及 UTF-8 locale，并在侧栏打开真实 Markdown 文件检查多级标题。
+
+- `ConversationDeletion.test.tsx` 覆盖双入口、目标确认与取消、非当前删除不切换、当前及最后会话导航、历史与草稿恢复、排队和主会话拒绝。
+- `chat_store::tests::conversation_deletion_*` 覆盖消息/结果/任务保留、旧发送和提取拒绝、版本/资源/执行拒绝、归档任务恢复边界与原 closed 保留；服务测试证明恢复不生成执行。
+- `failed_extraction_must_confirm_stop_before_conversation_deletion` 模拟提取已落失败但 actor 未收到停止确认的窗口，存活时拒绝、清理后允许；不得只以 ended_at 判断执行已退出。
+
+
 ### 2026-11-02 首次发送前的模型设置
 
 - `ChatModelDraft.test.tsx` 覆盖无会话记录时模型/强度可保存和重开、取消不修改选择、新聊天与已有会话/任务草稿隔离、任务页进入新聊天后轮询不选回任务、首次发送先保存配置后执行、配置保存失败保留草稿且不发送、失败重试成功清理旧草稿、保存等待期间的新输入与选定模型均保留且重试先保存配置、恢复默认值、已有空闲会话可修改、运行中仍禁用模型保存。使用隔离demo业务API和固定测试模型，不能据此声称真实模型执行通过。

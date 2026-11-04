@@ -5,9 +5,7 @@ use crate::repository::Repository;
 use crate::work_runtime::{
     tool_result, CodexRuntime, RuntimeEvent, StartedTask, TaskExecutionConfig,
 };
-use crate::workflow::{
-    default_agent_profiles, TaskAction, TaskConfig, WorkTask, WorkflowStatus,
-};
+use crate::workflow::{default_agent_profiles, TaskAction, TaskConfig, WorkTask, WorkflowStatus};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -28,6 +26,11 @@ enum Message {
         reply: Reply,
     },
     Runtime(RuntimeEvent),
+    Recovered {
+        conversation_id: String,
+        result: Result<(), String>,
+        reply: Reply,
+    },
     ResourcesSettled {
         event: RuntimeEvent,
         result: Result<(), String>,
@@ -62,6 +65,7 @@ struct Scheduler {
     runtime_error: Option<String>,
     sender: mpsc::Sender<Message>,
     live: HashMap<String, LiveRun>,
+    recovering: HashMap<String, ConnectionRecovery>,
     stop_deadlines: HashMap<String, (String, Instant)>,
     changed: Arc<dyn Fn() + Send + Sync>,
     last_notification: Instant,
@@ -144,6 +148,7 @@ impl WorkService {
                     runtime_error: None,
                     sender: worker_sender,
                     live: HashMap::new(),
+                    recovering: HashMap::new(),
                     stop_deadlines: HashMap::new(),
                     changed,
                     last_notification: Instant::now(),
@@ -157,8 +162,18 @@ impl WorkService {
                             params,
                             reply,
                         }) => {
-                            let result = scheduler.call(&method, params);
-                            let _ = reply.send(result);
+                            if method == "chat/recover_connection" {
+                                let failure_reply = reply.clone();
+                                if let Err(error) = scheduler.begin_connection_recovery(params, reply) {
+                                    let _ = failure_reply.send(Err(error));
+                                }
+                            } else {
+                                let result = scheduler.call(&method, params);
+                                let _ = reply.send(result);
+                            }
+                        }
+                        Ok(Message::Recovered { conversation_id, result, reply }) => {
+                            let _ = reply.send(scheduler.finish_connection_recovery(&conversation_id, result));
                         }
                         Ok(Message::Runtime(event)) => {
                             if let Err(error) = scheduler.runtime_event(event) {
@@ -244,7 +259,36 @@ impl WorkService {
     pub(crate) fn enqueue_runtime_event_for_test(&self, event: RuntimeEvent) {
         self.sender.send(Message::Runtime(event)).unwrap();
     }
-    pub fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+    pub fn call(&self, method: &str, mut params: Value) -> Result<Value, String> {
+        // 历史与目录读取可能等待 Codex，留在调用线程，不能阻塞调度 actor。
+        if method == "chat/codex_threads" {
+            let reader = self.codex_reader()?;
+            return crate::codex_conversations::list_threads(&params, |name,p|reader.request(name,p));
+        }
+        if method == "chat/codex_history" {
+            let context = self.call("chat/codex_history_context",params.clone())?;
+            let reader = self.codex_reader()?;
+            return crate::codex_conversations::read_history(&context,&params,|name,p|reader.request(name,p));
+        }
+        if method == "chat/bind_codex_thread" {
+            let reader = self.codex_reader()?;
+            // 只信任当前连接回读的元信息，忽略前端提交的目录、名称与运行状态。
+            params["codex_thread"] = crate::codex_conversations::read_thread(&params,|name,p|reader.request(name,p))?;
+        }
+        if method == "chat/extract" {
+            params["external_history"]=Value::Null;
+            let context=self.call("chat/codex_extraction_context",params.clone())?;
+            if !context.is_null() {
+                let reader=self.codex_reader()?;
+                params["external_history"]=crate::codex_conversations::capture_history(&context,|name,p|reader.request(name,p))?;
+            }
+        }
+        // 恢复连接包含预检与最多 60 秒的协议步骤，不能沿用短于流程的普通等待。
+        let timeout = Duration::from_secs(if method == "chat/recover_connection" {
+            90
+        } else {
+            45
+        });
         let (reply, response) = mpsc::sync_channel(1);
         self.sender
             .send(Message::Call {
@@ -254,7 +298,7 @@ impl WorkService {
             })
             .map_err(|_| "任务调度器已停止".to_string())?;
         response
-            .recv_timeout(Duration::from_secs(45))
+            .recv_timeout(timeout)
             .map_err(|_| "操作仍未确认，请刷新状态后重试，勿重复提交".to_string())?
     }
 
@@ -266,6 +310,12 @@ impl WorkService {
         response
             .recv_timeout(Duration::from_secs(40))
             .map_err(|_| "Codex 连接超时".to_string())?
+    }
+
+    fn codex_reader(&self) -> Result<crate::codex_conversations::CodexReader,String> {
+        let executable=self.call("chat/codex_reader_executable",json!({}))?;
+        let path=executable.as_str().ok_or("Codex 程序路径不可用")?;
+        crate::codex_conversations::CodexReader::connect(Path::new(path))
     }
 
     pub fn shutdown(&self) {
@@ -281,7 +331,8 @@ impl WorkService {
     }
 
     pub fn task_config(&self, task_id: &str) -> Result<TaskConfig, String> {
-        serde_json::from_value(self.call("workspace_config",json!({"task_id":task_id}))?).map_err(|error|error.to_string())
+        serde_json::from_value(self.call("workspace_config", json!({"task_id":task_id}))?)
+            .map_err(|error| error.to_string())
     }
 
     pub fn execute_command(
@@ -291,7 +342,7 @@ impl WorkService {
         timeout_ms: u64,
     ) -> Result<Value, String> {
         // 用户明确要求：人工工具不占 Agent 的目录锁或并发额度。
-        let config=self.task_config(task_id)?;
+        let config = self.task_config(task_id)?;
         self.runtime()?.execute_workspace_command(
             task_id,
             &config.workspace,
@@ -304,6 +355,9 @@ impl WorkService {
 
 impl Scheduler {
     fn connect(&mut self, executable: Option<&str>) -> Result<CodexRuntime, String> {
+        if executable.is_some() && !self.recovering.is_empty() {
+            return Err("正在恢复会话连接，请完成后再切换 Codex 程序".into());
+        }
         if executable.is_some() && self.runtime.is_some() {
             if !self.live.is_empty() {
                 return Err(
@@ -401,6 +455,7 @@ impl Scheduler {
         if let Some(method) = method.strip_prefix("chat/") {
             return self.chat_call(method, value);
         }
+        self.check_recovery_mutation(method, &value)?;
         match method {
             "list" => Ok(json!({
                 "tasks":self.repository.list_work_tasks()?,
@@ -420,19 +475,19 @@ impl Scheduler {
             )
             .map_err(|e| e.to_string()),
             "workspace_config" => {
-                let target=required(&value,"task_id")?;
-                let config=if let Some(cid)=target.strip_prefix("conversation:") {
+                let target = required(&value, "task_id")?;
+                let config = if let Some(cid) = target.strip_prefix("conversation:") {
                     self.repository.prepare_chat_workspace(cid)?.config
-                } else if let Some(task)=self.repository.get_work_task(target)? {
+                } else if let Some(task) = self.repository.get_work_task(target)? {
                     task.config
                 } else {
-                    let mut config=TaskConfig::default();
-                    config.workspace=self.repository.chat_project_workspace(target)?;
+                    let mut config = TaskConfig::default();
+                    config.workspace = self.repository.chat_project_workspace(target)?;
                     self.repository.task_permissions(target)?.apply(&mut config);
                     config
                 };
                 canonical_workspace(&config.workspace)?;
-                serde_json::to_value(config).map_err(|error|error.to_string())
+                serde_json::to_value(config).map_err(|error| error.to_string())
             }
             "connect" => {
                 self.connect(value.get("executable").and_then(Value::as_str))?;
@@ -628,11 +683,13 @@ impl Scheduler {
         if self.repository.refresh_work_dependencies()? > 0 {
             self.dirty = true;
         }
-        if self.live.len() >= MAX_CONCURRENT_TASKS || self.runtime_error.is_some() {
+        if self.live.len() + self.recovering.len() >= MAX_CONCURRENT_TASKS
+            || self.runtime_error.is_some()
+        {
             return Ok(());
         }
         for task in self.repository.list_work_tasks()? {
-            if self.live.len() >= MAX_CONCURRENT_TASKS {
+            if self.live.len() + self.recovering.len() >= MAX_CONCURRENT_TASKS {
                 break;
             }
             if task.status != WorkflowStatus::Queued || self.live.contains_key(&task.task_id) {
@@ -752,12 +809,14 @@ impl Scheduler {
     }
 
     fn workspace_busy(&self, workspace: &Path) -> bool {
-        self.native_workspace_busy(workspace)
+        self.recovering
+            .values()
+            .any(|r| workspaces_overlap(&r.workspace, workspace))
+            || self.native_workspace_busy(workspace)
             || self
                 .live
                 .values()
                 .any(|run| workspaces_overlap(&run.workspace, workspace))
-
     }
 
     fn started(
@@ -1530,5 +1589,6 @@ mod tests {
 }
 
 include!("chat_service.rs");
+include!("chat_recovery.rs");
 
 include!("work_resources.rs");

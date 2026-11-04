@@ -1,4 +1,4 @@
-import {cleanup,render,screen,fireEvent} from '@testing-library/react';
+import {cleanup,render,screen,fireEvent,waitFor} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
 import {StrictMode} from 'react';
 import {StudioContext,type StudioState} from './context';
@@ -57,4 +57,12 @@ it('inactive task-list tools cannot create resources or replay ignored requests 
  ui.rerender(<StudioContext.Provider value={s}><RightDock available/></StudioContext.Provider>);
  expect(screen.queryByTestId('terminal-workspace')).not.toBeInTheDocument();
  expect(screen.queryByRole('tab',{name:'终端 1'})).not.toBeInTheDocument();
+});
+
+it('collapses the right workspace after its final tab closes',async()=>{
+ render(view(state('one','/one',1)));
+ expect(screen.getByLabelText('右侧工作区')).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'关闭终端标签'}));
+ await waitFor(()=>expect(screen.getByLabelText('右侧工作区')).not.toBeVisible());
+ expect(screen.queryByRole('tablist',{name:'右侧工具标签'})).not.toBeInTheDocument();
 });

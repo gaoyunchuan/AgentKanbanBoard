@@ -32,7 +32,7 @@ export const WorkspaceTerminal=forwardRef<TerminalHandle,{taskId:string;workspac
     if(!run.live){await closeRun(taskId,run);return}
     const [{Terminal},{FitAddon}]=await loadTerminal();
     if(!run.live){await closeRun(taskId,run);return}
-    const term=new Terminal({cursorBlink:true,fontSize:13,fontFamily:'Menlo, Monaco, monospace',scrollback:3000,theme:{background:'#ffffff',foreground:'#30415a',cursor:'#507dd1',selectionBackground:'#d9e7ff'}});
+    const term=new Terminal({cursorBlink:true,fontSize:13,fontFamily:'"SF Mono", Menlo, Monaco, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace',scrollback:3000,theme:{background:'#ffffff',foreground:'#30415a',cursor:'#507dd1',selectionBackground:'#d9e7ff'}});
     const fit=new FitAddon();run.terminal=term;run.fit=fit;term.loadAddon(fit);term.open(element.current!);
     const input=term.onData(text=>{run.input=run.input.then(async()=>{if(!run.closed)await terminalCall(taskId,'write',{id:value.id,text})}).catch(fail)});
     const resize=term.onResize(size=>{void terminalCall(taskId,'resize',{id:value.id,cols:size.cols,rows:size.rows}).catch(fail)});
