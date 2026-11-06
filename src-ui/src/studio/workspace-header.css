@@ -40,3 +40,37 @@
   .studio .workspace-header.platform-win32,
   .studio .workspace-header.platform-linux { padding-right: 150px; }
 }
+
+.studio.studio-app .task-conversation-title { gap: 3px; }
+.studio.studio-app .task-conversation-title.with-conversation-tabs { flex: 0 1 auto; max-width: 32%; }
+.studio .task-conversation-title .hover-host { display: block; min-width: 0; overflow: hidden; }
+.studio.studio-app .conversation-tabs {
+  flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+  border: 0;
+  scrollbar-width: thin;
+  -webkit-app-region: no-drag;
+}
+.studio.studio-app .conversation-tabs .dock-tab { max-width: min(164px, 100%); }
+.studio .conversation-tabs .dock-tab > button:first-child { min-width: 0; }
+.studio .conversation-tabs .dock-tab > button:first-child span:not(.unread-dot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio .conversation-tabs .dock-tab .tab-close { flex: none; opacity: 1; }
+.studio .conversation-tabs .dock-tab .tab-close:disabled { opacity: .3; }
+.studio .conversation-spinner { flex: none; color: #5b75a0; }
+.studio .conversation-awaiting-input { flex: none; color: #a36827; }
+.studio .conversation-picker { flex: none; }
+.studio .conversation-picker > .inline-menu { width: 280px; max-width: calc(100vw - 28px); }
+.studio .conversation-picker-list { max-height: min(50vh, 380px); overflow-y: auto; }
+.studio .conversation-history-label { flex: none; color: #6c7788; font-size: 11px; }
+.studio .conversation-row-actions { padding-left: 18px; border-left: 1px solid var(--line); margin-left: 9px; }
+@media (max-width: 850px) {
+  .studio .task-conversation-title.with-conversation-tabs .header-locate { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio .conversation-spinner { animation: none; }
+}

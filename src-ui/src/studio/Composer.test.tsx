@@ -18,16 +18,61 @@ async function composer() {
   const api = createDemoApi(), user = userEvent.setup();
   const data = await api.call<Workspace>('snapshot');
   const conversation = data.conversations.find(c => c.mode === 'manual')!;
+  const original = api.call.bind(api);
   const calls = vi.spyOn(api, 'call');
   render(<ChatApp api={api}/>);
   await user.click(screen.getByRole('button', { name: '会话' }));
   await user.click(await screen.findByRole('button', { name: conversation.title }));
   const input = screen.getByRole('textbox', { name: '聊天输入' });
   const sends = () => calls.mock.calls.filter(([method]) => method === 'send');
-  return { api, user, input, sends, conversation };
+  return { api, original, calls, user, input, sends, conversation };
 }
 
 describe('主会话输入', () => {
+  it('后端已接收消息，即使随后刷新详情失败也清空输入框', async () => {
+    const { original, calls, input, user, sends } = await composer();
+    let accepted = false;
+    calls.mockImplementation(async (method, params) => {
+      if (method === 'detail' && accepted) throw new Error('测试：会话详情暂时不可用');
+      const result = await original(method, params);
+      if (method === 'send') accepted = true;
+      return result;
+    });
+    await user.type(input, '后端已接收的消息');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    await screen.findByText(/会话详情暂时不可用/);
+    expect(sends()).toHaveLength(1);
+    expect(input).toHaveValue('');
+  });
+  it('发送失败后保留原草稿供重试', async () => {
+    const { original, calls, input, user } = await composer();
+    calls.mockImplementation(async (method, params) => {
+      if (method === 'send') throw new Error('测试：发送被拒绝');
+      return original(method, params);
+    });
+    await user.type(input, '可重试的消息');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    await screen.findByText(/发送被拒绝/);
+    expect(input).toHaveValue('可重试的消息');
+  });
+  it('发送确认时移除已发送附件，保留等待期间输入的新文字', async () => {
+    const { original, calls, input, user } = await composer();
+    let confirm!: () => void;
+    calls.mockImplementation(async (method, params) => {
+      if (method === 'send') await new Promise<void>(resolve => { confirm = resolve; });
+      return original(method, params);
+    });
+    pasteImage(input);
+    await screen.findByRole('img', { name: '粘贴图片.png' });
+    await user.type(input, '第一条消息');
+    await user.click(screen.getByRole('button', { name: '发送消息' }));
+    await user.clear(input);
+    await user.type(input, '下一条消息');
+    confirm();
+    await screen.findByRole('img', { name: '已发送的图片 1' });
+    expect(screen.queryByRole('button', { name: '移除 粘贴图片.png' })).not.toBeInTheDocument();
+    expect(input).toHaveValue('下一条消息');
+  });
   it('输入法确认 Enter 不发送，结束组合后的下一次 Enter 只发送一次完整文本', async () => {
     const { input, sends } = await composer();
     fireEvent.compositionStart(input);
@@ -67,6 +112,10 @@ describe('主会话输入', () => {
     await user.click(screen.getByRole('button', { name: '发送消息' }));
     await waitFor(() => expect(sends()).toHaveLength(1));
     expect(sends()[0][1]).toMatchObject({ conversation_id: conversation.id, text: '', attachments: [{ type: 'image', url: `data:image/png;base64,${png}` }] });
+    expect(await screen.findByRole('img',{name:'已发送的图片 1'})).toHaveAttribute('src',`data:image/png;base64,${png}`);
+    await user.click(screen.getByRole('button',{name:'任务'}));await user.click(screen.getByRole('button',{name:'会话'}));
+    await user.click(await screen.findByRole('button',{name:conversation.title}));
+    expect(await screen.findByRole('img',{name:'已发送的图片 1'})).toBeVisible();
   });
   it('粘贴后可移除图片，移除后空消息不能发送', async () => {
     const { input, user, sends } = await composer();

@@ -48,6 +48,7 @@ pub struct TerminalManager {
     server: AppServer,
     sessions: Mutex<HashMap<String, Session>>,
     settled: Condvar,
+    sealed: std::sync::atomic::AtomicBool,
     next: AtomicU64,
     prefix: String,
 }
@@ -57,6 +58,7 @@ impl TerminalManager {
             server,
             sessions: Mutex::new(HashMap::new()),
             settled: Condvar::new(),
+            sealed: std::sync::atomic::AtomicBool::new(false),
             next: AtomicU64::new(1),
             prefix: format!(
                 "pty-{}-{}",
@@ -86,6 +88,7 @@ impl TerminalManager {
             self.next.fetch_add(1, Ordering::Relaxed)
         );
         let mut sessions = self.sessions.lock().map_err(|_| "终端状态锁异常")?;
+        if self.sealed.load(Ordering::Acquire) { return Err("账户正在切换，请稍后重开终端".into()); }
         if sessions.len() >= TERMINAL_LIMIT {
             return Err("最多同时打开 8 个终端，请先关闭不需要的终端".into());
         }
@@ -261,6 +264,31 @@ impl TerminalManager {
         sessions.remove(id);
         Ok(())
     }
+
+    pub(crate) fn close_owner(&self, owner: &str) -> Result<(), String> {
+        let ids: Vec<String> = self.sessions.lock().map_err(|_| "终端状态锁异常")?
+            .iter().filter(|(_, session)| session.owner == owner)
+            .map(|(id, _)| id.clone()).collect();
+        for id in ids {
+            self.close(owner, &id)?;
+        }
+        Ok(())
+    }
+    pub(crate) fn is_idle(&self) -> bool {
+        self.sessions.lock().is_ok_and(|sessions| sessions.values().all(|session| session.exited))
+    }
+
+    pub(crate) fn seal_if_idle(&self) -> Result<(), String> {
+        let sessions = self.sessions.lock().map_err(|_| "终端状态锁异常")?;
+        if sessions.values().any(|session| !session.exited) { return Err("请先关闭活动终端，再切换账户".into()); }
+        self.sealed.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    pub(crate) fn unseal(&self) {
+        self.sealed.store(false, Ordering::Release);
+    }
+
     pub fn shutdown(&self) {
         let ids = self
             .sessions

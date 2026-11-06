@@ -1,6 +1,6 @@
 import { PanelLeft, Plus } from 'lucide-react';
 import { useStudio } from './context';
-import { ConversationHeader } from './ChatSurface';
+import { ConversationHeader } from './ConversationHeader';
 import './workspace-header.css';
 
 export function WorkspaceHeader({conversationVisible,sidebarVisible,onToggleSidebar,onToolHost}:{conversationVisible:boolean;sidebarVisible:boolean;onToggleSidebar:()=>void;onToolHost:(element:HTMLDivElement|null)=>void}) {

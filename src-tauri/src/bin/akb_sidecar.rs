@@ -2,44 +2,28 @@
 use codex_kanban::work_service::WorkService;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
-static CLIENTS: OnceLock<Mutex<Vec<(SocketAddr, TcpStream)>>> = OnceLock::new();
-fn clients() -> &'static Mutex<Vec<(SocketAddr, TcpStream)>> {
-    CLIENTS.get_or_init(|| Mutex::new(Vec::new()))
-}
+static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+const MAX_CONNECTIONS: usize = 64;
 
-// 广播 writer 的生命周期必须跟随原连接，不能等到下次广播失败才清理。
-struct ClientConnection {
-    peer: SocketAddr,
-}
+struct ClientConnection;
 impl ClientConnection {
-    fn register(stream: &TcpStream) -> std::io::Result<Self> {
-        let peer = stream.peer_addr()?;
-        let writer = stream.try_clone()?;
-        writer.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
-        let mut all = clients()
-            .lock()
-            .map_err(|_| std::io::Error::other("连接注册锁损坏"))?;
-        if all.len() >= 64 {
-            return Err(std::io::Error::other("后端连接已达上限"));
-        }
-        all.push((peer, writer));
-        Ok(Self { peer })
+    fn acquire() -> Option<Self> {
+        ACTIVE_CONNECTIONS
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |active| {
+                (active < MAX_CONNECTIONS).then_some(active + 1)
+            })
+            .ok()
+            .map(|_| Self)
     }
 }
 impl Drop for ClientConnection {
     fn drop(&mut self) {
-        if let Ok(mut all) = clients().lock() {
-            all.retain(|(peer, _)| *peer != self.peer);
-        }
-    }
-}
-
-fn broadcast() {
-    if let Ok(mut all) = clients().lock() {
-        all.retain_mut(|(_, stream)| stream.write_all(b"{\"event\":\"workbench/changed\"}\n").and_then(|()| stream.flush()).is_ok());
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -63,10 +47,12 @@ fn dispatch(service: &WorkService, method: &str, args: Value) -> Result<Value, S
         "workspace_terminal" => {
             let task=args["taskId"].as_str().ok_or("缺少项目任务")?;
             let method=args["method"].as_str().ok_or("缺少终端操作")?;
+            if method == "start" {
+                return service.call("workspace_terminal_start", json!({"task_id":task}));
+            }
             let runtime=service.runtime()?;let terminals=runtime.terminals();
             let id=args["id"].as_str().unwrap_or("");
             match method {
-                "start"=>{let config=service.task_config(task)?;let id=terminals.start(task,&config.workspace,&config.sandbox_mode,80,24)?;Ok(json!({"id":id,"workspace":config.workspace}))},
                 "read"=>terminals.read(task,id,args["after"].as_u64().unwrap_or(0)),
                 "write"=>{terminals.write(task,id,args["text"].as_str().ok_or("缺少终端输入")?)?;Ok(json!({"written":true}))},
                 "resize"=>{let cols=u16::try_from(args["cols"].as_u64().ok_or("缺少终端列数")?).map_err(|_|"终端列数超出范围")?;let rows=u16::try_from(args["rows"].as_u64().ok_or("缺少终端行数")?).map_err(|_|"终端行数超出范围")?;terminals.resize(task,id,cols,rows)?;Ok(json!({"resized":true}))},
@@ -75,6 +61,7 @@ fn dispatch(service: &WorkService, method: &str, args: Value) -> Result<Value, S
             }
         }
         "workbench_shutdown"=>{service.shutdown();Ok(json!({"stopped":true}))},
+        "workbench_switch_account" => service.call("switch_account", args),
         "workbench_connect" => service.call("connect", json!({"executable": args.get("executable").cloned().unwrap_or(Value::Null)})),
         "workbench_rpc" => {
             let runtime = service.runtime()?;
@@ -88,8 +75,11 @@ fn dispatch(service: &WorkService, method: &str, args: Value) -> Result<Value, S
         }
         "workbench_read_file" => {
             let task = args["taskId"].as_str().ok_or("缺少 taskId")?;
-            let config = service.task_config(task)?;
-            service.runtime()?.read_workspace_file(&config.workspace, args["path"].as_str().ok_or("缺少 path")?)
+            service.preview_local_file(task, args["path"].as_str().ok_or("缺少 path")?)
+        }
+        "workbench_open_file" => {
+            let task = args["taskId"].as_str().ok_or("缺少 taskId")?;
+            service.open_local_file(task, args["path"].as_str().ok_or("缺少 path")?)
         }
         "workbench_list_directory" => {
             let task = args["taskId"].as_str().ok_or("缺少 taskId")?;
@@ -130,11 +120,10 @@ fn dispatch(service: &WorkService, method: &str, args: Value) -> Result<Value, S
     }
 }
 
-fn serve(service: WorkService, stream: TcpStream) {
-    let _connection = match ClientConnection::register(&stream) {
-        Ok(connection) => connection,
-        Err(_) => return,
-    };
+fn serve(service: WorkService, stream: TcpStream, _connection: ClientConnection) {
+    if stream.set_write_timeout(Some(Duration::from_secs(5))).is_err() {
+        return;
+    }
     let mut reader = BufReader::new(stream);
     loop {
         let mut line = String::new();
@@ -150,13 +139,17 @@ fn serve(service: WorkService, stream: TcpStream) {
 }
 
 fn main() {
-    let service = WorkService::spawn(Arc::new(broadcast)).expect("启动后台服务失败");
+    // Electron 通过轮询更新。每条 RPC 连接只由请求处理线程写入，避免通知插进分段发送的 JSON。
+    let service = WorkService::spawn(Arc::new(|| {})).expect("启动后台服务失败");
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("监听 sidecar 端口失败");
     let port = listener.local_addr().expect("读取 sidecar 端口失败").port();
     println!("{}", json!({"sidecar": port}));
     for stream in listener.incoming().flatten() {
+        let Some(connection) = ClientConnection::acquire() else {
+            continue;
+        };
         let service = service.clone();
-        std::thread::spawn(move || serve(service, stream));
+        std::thread::spawn(move || serve(service, stream, connection));
     }
 }
 
@@ -166,7 +159,7 @@ mod tests {
     use std::net::Shutdown;
 
     #[test]
-    fn completed_rpc_unregisters_broadcast_writer_without_waiting_for_another_event() {
+    fn completed_rpc_releases_connection_slot() {
         let folder =
             std::env::temp_dir().join(format!("akb-sidecar-clients-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
@@ -175,7 +168,9 @@ mod tests {
         let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (stream, _) = listener.accept().unwrap();
         let worker_service = service.clone();
-        let worker = std::thread::spawn(move || serve(worker_service, stream));
+        let worker = std::thread::spawn(move || {
+            serve(worker_service, stream, ClientConnection::acquire().unwrap());
+        });
         client
             .write_all(b"{\"id\":1,\"method\":\"unknown-test-command\"}\n")
             .unwrap();
@@ -186,9 +181,9 @@ mod tests {
         assert!(response.contains("未知后端命令"));
         client.shutdown(Shutdown::Both).unwrap();
         worker.join().unwrap();
-        let remaining = clients().lock().unwrap().len();
+        let remaining = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
         service.shutdown();
         let _ = std::fs::remove_dir_all(folder);
-        assert_eq!(remaining, 0, "已完成连接的广播克隆必须立即释放");
+        assert_eq!(remaining, 0, "连接断开后必须立即释放配额");
     }
 }

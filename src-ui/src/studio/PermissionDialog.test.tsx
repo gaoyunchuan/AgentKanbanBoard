@@ -13,7 +13,7 @@ function state(command: StudioState['command']): StudioState {
     data: { tasks: [], projects: [], conversations: [conversation], work_tasks: [] }, detail: null, task: undefined, conversation,
     view: 'chat', panel: 'browser' as StudioState['panel'], setPanel: vi.fn(), openDialog: vi.fn(), setView: vi.fn(), openTask: vi.fn(),
     openConversation: vi.fn(), locateTask: vi.fn(), taskReveal: null, completeTaskReveal: vi.fn(), inspectTask: vi.fn(), changeTaskState: vi.fn(),
-    newConversation: vi.fn(async () => {}), refresh: vi.fn(async () => {}), command, notify: vi.fn(), busy: false,
+    newConversation: vi.fn(async () => {}), completeConversation: vi.fn(async () => {}), refresh: vi.fn(async () => {}), command, notify: vi.fn(), busy: false,
   };
 }
 

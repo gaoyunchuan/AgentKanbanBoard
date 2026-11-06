@@ -113,10 +113,21 @@ async fn workbench_read_file(
 ) -> Result<Value, String> {
     let service = service.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let config = service.task_config(&task_id)?;
-        service
-            .runtime()?
-            .read_workspace_file(&config.workspace, &path)
+        service.preview_local_file(&task_id, &path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn workbench_open_file(
+    service: State<'_, WorkService>,
+    task_id: String,
+    path: String,
+) -> Result<Value, String> {
+    let service = service.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        service.open_local_file(&task_id, &path)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -297,8 +308,11 @@ fn dispatch_sidecar(handle: &tauri::AppHandle, method: &str, params: Value) -> R
         }
         "workbench_read_file" => {
             let task = args["taskId"].as_str().ok_or("缺少 taskId")?;
-            let config = service.task_config(task)?;
-            service.runtime()?.read_workspace_file(&config.workspace, args["path"].as_str().ok_or("缺少 path")?)
+            service.preview_local_file(task, args["path"].as_str().ok_or("缺少 path")?)
+        }
+        "workbench_open_file" => {
+            let task = args["taskId"].as_str().ok_or("缺少 taskId")?;
+            service.open_local_file(task, args["path"].as_str().ok_or("缺少 path")?)
         }
         "workbench_list_directory" => {
             let task = args["taskId"].as_str().ok_or("缺少 taskId")?;
@@ -409,6 +423,7 @@ fn main() {
             workbench_connect,
             workbench_rpc,
             workbench_read_file,
+            workbench_open_file,
             workbench_list_directory,
             workbench_execute_command,
             workbench_terminate_command,

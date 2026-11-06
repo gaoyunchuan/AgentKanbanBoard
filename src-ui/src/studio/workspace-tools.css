@@ -2,3 +2,17 @@
 .studio .dock-tabbar{display:flex;align-items:center;flex:none;min-width:0;background:#f6f8fb;border-bottom:1px solid #e5e9ef;position:relative;z-index:6}.studio .dock-tabbar .dock-tabs{flex:1;min-width:0;border:0}.studio .dock-tab-actions{display:flex;align-items:center;padding:0 5px;flex:none}.studio .dock-tab-actions .iconbtn{width:27px;height:29px}.studio .dock-tab>button:first-child{max-width:190px}.studio .dock-tab>button:first-child span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.studio .dock-tab-actions .inline-menu{z-index:60;top:calc(100% + 6px)}.studio .workspace-diff{margin:0;padding:18px;overflow:auto;flex:1;white-space:pre;font:12px/1.8 ui-monospace,monospace;color:#45644e;background:#fff}.studio .right-dock{max-width:75vw}.studio .workspace-terminal{display:flex;flex:1;min-height:0;flex-direction:column;background:white}.studio .workspace-terminal-screen{flex:1;min-height:0;padding:10px 4px 4px 10px;overflow:hidden}.studio .workspace-terminal-screen .xterm{height:100%}.studio .workspace-terminal-screen .xterm-viewport{background:white!important}
 .studio .dock-content{position:relative}
 .studio .workspace-markdown{padding:18px 22px 32px;max-width:960px;font-size:13px;line-height:1.85;color:#46566c}.studio .workspace-markdown .markdown>:first-child{margin-top:0}
+
+.studio .dock-launcher { height: 100%; padding: 16px clamp(14px, 4%, 30px) 28px; overflow: auto; background: #f7f8fa; }
+.studio .dock-address { display: flex; align-items: center; gap: 8px; padding: 2px 7px 2px 12px; border: 1px solid #dde4ed; border-radius: 9px; background: #fff; color: #637389; }
+.studio .dock-address:focus-within { border-color: #6587ad; }
+.studio .dock-address input { flex: 1; min-width: 0; padding: 7px 0; border: 0; outline: none; background: transparent; }
+.studio .dock-launcher h3 { font-size: 13px; font-weight: 650; margin: 24px 0 10px; color: #344457; }
+.studio .dock-launcher-tools, .studio .dock-launcher-sites { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 8px; }
+.studio .dock-launcher button:not(.iconbtn) { min-width: 0; padding: 10px; border: 1px solid #e3e8ef; border-radius: 8px; background: #fff; color: #344457; text-align: left; }
+.studio .dock-launcher button:not(.iconbtn):hover { border-color: #a8bacf; background: #f1f6fc; }
+.studio .dock-launcher-tools button { display: flex; gap: 8px; align-items: center; }
+.studio .dock-launch-arrow { margin-left: auto; color: #758498; }
+.studio .dock-launcher-sites button { display: grid; justify-items: start; gap: 7px; }
+.studio .dock-launcher-sites span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio .dock-launcher-empty { margin: 0; color: #65758a; font-size: 13px; }

@@ -98,6 +98,7 @@ struct Registry {
     early_events: Vec<ServerMessage>,
     starting_thread: bool,
     processes: HashMap<String, Binding>,
+    account_sealed: bool,
     deferred_completions: HashMap<String, DeferredCompletion>,
     goal_pause_pending: HashMap<String, Binding>,
     pending_turn_starts: HashSet<String>,
@@ -129,26 +130,86 @@ struct RuntimeShared {
 #[derive(Clone)]
 pub struct CodexRuntime {
     shared: Arc<RuntimeShared>,
+    joycode: bool,
+    models: Option<Arc<ChannelModels>>,
+}
+
+struct ChannelModels {
+    default: String,
+    efforts: HashMap<String, HashSet<String>>,
+}
+
+impl ChannelModels {
+    fn read(config: &Value, result: &Value) -> Result<Self, String> {
+        let data = result["data"].as_array().ok_or("目标账户模型列表格式无效")?;
+        let model_name = |item: &Value| item["model"].as_str().map(str::to_owned);
+        let efforts: HashMap<String, HashSet<String>> = data.iter().filter_map(|item| {
+            let name = model_name(item)?;
+            let levels = item["supportedReasoningEfforts"].as_array().into_iter().flatten()
+                .filter_map(|value| value["reasoningEffort"].as_str().map(str::to_owned)).collect();
+            Some((name, levels))
+        }).collect();
+        let default = config.pointer("/config/model").and_then(Value::as_str)
+            .filter(|model| efforts.contains_key(*model)).map(str::to_owned)
+            .or_else(|| data.iter().find(|item| item["isDefault"] == true).and_then(model_name))
+            .or_else(|| data.iter().find_map(model_name)).ok_or("目标账户没有可用模型")?;
+        Ok(Self { default, efforts })
+    }
+
+    fn apply(&self, config: &mut TaskExecutionConfig) {
+        // 用户保存的偏好仍留在会话里；只替换本轮在该账户下不可用的模型或推理强度。
+        let saved = config.model.as_deref().filter(|model| self.efforts.contains_key(*model));
+        if saved.is_none() { config.reasoning_effort = None; }
+        let model = saved.unwrap_or(&self.default);
+        if config.reasoning_effort.as_ref().is_some_and(|effort| !self.efforts[model].contains(effort)) {
+            config.reasoning_effort = None;
+        }
+        config.model = Some(model.to_owned());
+    }
 }
 
 impl CodexRuntime {
     pub fn connect(executable: &Path, sink: RuntimeSink) -> Result<Self, String> {
-        let (server, events) = AppServer::spawn(executable)?;
-        let runtime = Self::from_server(server, events, sink)?;
-        // Read-only preflight: initialize alone does not prove config.toml loads.
-        // No Thread/Turn, tools, model execution, config writes or credential copies.
-        if let Err(error) = runtime.shared.server.request_with_timeout(
-            "config/read",
-            json!({"includeLayers":false}),
-            Duration::from_secs(8),
-        ) {
+        Self::connect_account(executable, sink, None, false)
+    }
+
+    pub(crate) fn connect_account(
+        executable: &Path,
+        sink: RuntimeSink,
+        joycode: Option<&crate::joycode_account::JoyCodeLaunch>,
+        check_models: bool,
+    ) -> Result<Self, String> {
+        let (server, events) = AppServer::spawn_with_account(executable, joycode)?;
+        let mut runtime = Self::from_server(server, events, sink)?;
+        if let Err(error) = runtime.preflight_account(joycode, check_models) {
             runtime.shutdown();
-            return Err(crate::codex_errors::explain(
-                &format!("连接预检失败（{}）", runtime.server_version()),
-                &error,
-            ));
+            return Err(error);
         }
         Ok(runtime)
+    }
+
+    fn preflight_account(
+        &mut self,
+        joycode: Option<&crate::joycode_account::JoyCodeLaunch>,
+        check_models: bool,
+    ) -> Result<(), String> {
+        let config = self.shared.server.request_with_timeout(
+            "config/read", json!({"includeLayers":false}), Duration::from_secs(8),
+        ).map_err(|error| crate::codex_errors::explain(
+            &format!("连接预检失败（{}）", self.server_version()), &error,
+        ))?;
+        if let Some(account) = joycode {
+            account.validate_endpoint(&config)?;
+            account.authorize(&self.shared.server)?;
+            self.joycode = true;
+        }
+        if check_models {
+            let result = self.shared.server.request_with_timeout(
+                "model/list", json!({}), Duration::from_secs(8),
+            ).map_err(|_| "无法读取目标账户的模型列表")?;
+            self.models = Some(Arc::new(ChannelModels::read(&config, &result)?));
+        }
+        Ok(())
     }
 
     fn from_server(
@@ -199,7 +260,7 @@ impl CodexRuntime {
                 }
             })
             .map_err(|error| format!("无法启动 Codex 事件处理：{error}"))?;
-        Ok(Self { shared })
+        Ok(Self { shared, joycode: false, models: None })
     }
 
     pub fn server_version(&self) -> &str {
@@ -232,6 +293,7 @@ impl CodexRuntime {
         attachments: Vec<Value>,
     ) -> Result<StartedTask, String> {
         let attachments = validate_attachments(attachments)?;
+        self.apply_channel_model(&mut config);
         validate_config(&mut config)?;
         if !self.is_alive() {
             return Err("Codex app-server 已断开，请恢复连接后再开始任务".into());
@@ -416,6 +478,7 @@ impl CodexRuntime {
 
     /// 用户已在外部归档；这里只恢复原连接，绝不创建业务 Turn。
     pub fn recover_conversation(&self, mut config: TaskExecutionConfig) -> Result<(), String> {
+        self.apply_channel_model(&mut config);
         validate_thread_config(&mut config)?;
         let thread_id = config
             .thread_id
@@ -742,13 +805,27 @@ impl CodexRuntime {
         self.shared.server.request(method, params)
     }
 
+    pub(crate) fn channel_model_names(&self) -> Option<Vec<&str>> {
+        self.models.as_ref().map(|models| {
+            let mut names: Vec<_> = models.efforts.keys().map(String::as_str).collect();
+            names.sort_unstable();
+            names
+        })
+    }
+
+    fn apply_channel_model(&self, config: &mut TaskExecutionConfig) {
+        if let Some(models) = &self.models { models.apply(config); }
+    }
+
     pub fn login_start(&self) -> Result<Value, String> {
+        if self.joycode { return Err("请在 JoyCode 桌面版管理登录".into()); }
         self.shared
             .server
             .request("account/login/start", json!({"type":"chatgpt"}))
     }
 
     pub fn login_cancel(&self, login_id: &str) -> Result<Value, String> {
+        if self.joycode { return Err("请在 JoyCode 桌面版管理登录".into()); }
         self.shared
             .server
             .request("account/login/cancel", json!({"loginId":login_id}))
@@ -849,10 +926,13 @@ impl CodexRuntime {
             self.connection_id(),
             self.shared.next_process_id.fetch_add(1, Ordering::Relaxed)
         );
-        self.shared
-            .lock_registry()?
-            .processes
-            .insert(process_id.clone(), binding.clone());
+        {
+            let mut registry = self.shared.lock_registry()?;
+            if registry.account_sealed {
+                return Err("账户正在切换，请稍后重试终端命令".into());
+            }
+            registry.processes.insert(process_id.clone(), binding.clone());
+        }
         self.shared.emit(
             Some(binding.clone()),
             "runtime/command/started",
@@ -920,6 +1000,28 @@ impl CodexRuntime {
 
     pub fn terminals(&self) -> Arc<crate::workspace_terminal::TerminalManager> {
         self.shared.terminals.clone()
+    }
+
+    pub(crate) fn account_switch_idle(&self) -> bool {
+        self.shared.registry.lock().is_ok_and(|registry| registry.processes.is_empty())
+            && self.shared.terminals.is_idle()
+    }
+
+    pub(crate) fn seal_account(&self) -> Result<(), String> {
+        let mut registry = self.shared.lock_registry()?;
+        if !registry.processes.is_empty() {
+            return Err("请等待当前终端命令完成，再切换账户".into());
+        }
+        self.shared.terminals.seal_if_idle()?;
+        registry.account_sealed = true;
+        Ok(())
+    }
+
+    pub(crate) fn unseal_account(&self) {
+        if let Ok(mut registry) = self.shared.lock_registry() {
+            registry.account_sealed = false;
+        }
+        self.shared.terminals.unseal();
     }
 
     pub fn shutdown(&self) {
@@ -1918,6 +2020,9 @@ pub fn task_tool_specs() -> Vec<Value> {
         }})
     };
     vec![
+        function("task_read_context_event", "Read a referenced original task event in bounded chunks. Follow next as offset if further text is needed.", json!({
+            "event_id":{"type":"integer"},"offset":{"type":"integer","minimum":0}
+        }), vec!["event_id"]),
         function("task_submit_result", "Submit a candidate task result with verifiable evidence. The host checks acceptance/review policy before completing the task.", json!({
             "summary":{"type":"string"},"evidence":{"type":"array","items":{"type":"string"}},"checks":{"type":"array","items":{"type":"string"}}
         }), vec!["summary","evidence"]),
@@ -2753,7 +2858,7 @@ for line in sys.stdin:
     #[test]
     fn tools_use_current_dynamic_tool_wire_format_and_no_complete_task_shortcut() {
         let tools = task_tool_specs();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 6);
         assert!(tools.iter().all(|tool| tool["type"] == "function"));
         let submit = tools
             .iter()

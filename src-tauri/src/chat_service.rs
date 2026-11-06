@@ -36,10 +36,16 @@ impl Scheduler {
                 if let Some(mode)=value.get("delegation_permission").and_then(Value::as_str) { self.repository.save_delegation_permission(mode)?; }
                 self.dirty=true;self.repository.studio_settings()
             }
+            "detail" if value["paged"]==true => self.repository.conversation_state(req(&value,"conversation_id")?),
             "detail" => self.repository.chat_detail(req(&value,"conversation_id")?),
+            "history_page" => self.repository.conversation_history(req(&value,"conversation_id")?, &value),
+            "history_diff" => self.repository.conversation_diff(req(&value,"conversation_id")?),
+            "history_image" => self.repository.conversation_event_image(req(&value,"conversation_id")?,value["event_id"].as_i64().ok_or("缺少历史记录 ID")?,value["slot"].as_u64().ok_or("缺少图片编号")?),
+            "history_chunk" => self.repository.conversation_event_chunk(req(&value,"conversation_id")?,value["event_id"].as_i64().ok_or("缺少历史记录 ID")?,value["offset"].as_u64().unwrap_or(0)),
+            "history_search" => self.repository.conversation_search(req(&value,"conversation_id")?,req(&value,"query")?,value["before"].as_i64().unwrap_or(i64::MAX)),
             "browser_owner" => {
                 let c=self.repository.chat_conversation(req(&value,"conversation_id")?)?;
-                Ok(json!({"key":if c.mode=="auto"{c.task_id.clone()}else{format!("chat:{}",c.id)},"enabled":c.config.browser_enabled}))
+                Ok(json!({"key":if c.mode=="auto"{c.task_id.clone()}else{format!("chat:{}",c.id)},"enabled":c.config.browser_enabled,"closed":c.closed}))
             }
             "work_action" => {
                 let tid=req(&value,"task_id")?.to_string();
@@ -88,6 +94,14 @@ impl Scheduler {
                 self.dirty=true;Ok(json!(result))
             }
             "visit" => {self.repository.chat_visit(req(&value,"conversation_id")?)?;Ok(json!({"saved":true}))}
+            "mark_unread" => {
+                self.repository.mark_conversation_unread(req(&value,"conversation_id")?)?;
+                self.dirty=true;Ok(json!({"saved":true}))
+            }
+            "mark_read" => {
+                self.repository.mark_conversation_read(req(&value,"conversation_id")?,value["boundary"].as_i64().ok_or("缺少阅读边界")?,value["read_version"].as_i64().ok_or("缺少阅读版本")?)?;
+                self.dirty=true;Ok(json!({"saved":true}))
+            }
             "config" => Ok(json!(self.repository.prepare_chat_workspace(req(&value,"conversation_id")?)?.config)),
             "update_conversation" => {
                 self.repository.chat_update_conversation(req(&value,"conversation_id")?,&value["patch"],value["revision"].as_i64().ok_or("缺少会话版本")?)?;
@@ -204,8 +218,10 @@ impl Scheduler {
                 self.repository.chat_restore_conversation(req(&value,"conversation_id")?,value["revision"].as_i64().ok_or("缺少会话版本")?)?;
                 self.dirty=true;Ok(json!({"restored":true}))
             }
+            "complete_conversation" => self.complete_conversation(&value),
             "close_conversation" => {
                 let cid=req(&value,"conversation_id")?;let c=self.repository.chat_conversation(cid)?;
+                self.close_conversation_terminals(cid)?;
                 if c.mode=="auto" {let w=self.repository.get_work_task(&c.task_id)?.ok_or("任务尚未委派")?;if !matches!(w.status,WorkflowStatus::Completed|WorkflowStatus::Cancelled){self.call("action",json!({"task_id":c.task_id,"action":"pause","expected_revision":w.revision}))?;}}
                 self.chat_stop(cid)?;
                 self.repository.connection.execute("UPDATE chat_conversations SET closed=1,revision=revision+1 WHERE id=?1",[cid]).map_err(|e|e.to_string())?;
@@ -256,6 +272,71 @@ impl Scheduler {
             _ => Err("未知会话操作".into()),
         }
     }
+    fn complete_conversation(&mut self, value: &Value) -> Result<Value, String> {
+        let cid = crate::chat_store::required(value, "conversation_id")?;
+        let conversation = self.repository.chat_conversation(cid)?;
+        self.repository.chat_require_task(&conversation.task_id)?;
+        if value["revision"].as_i64() != Some(conversation.revision) {
+            return Err("会话已变化，请刷新后再完成".into());
+        }
+        if conversation.closed {
+            return Ok(json!({"closed": true}));
+        }
+        if self.conversation_has_pending_execution(&conversation)? {
+            return Err("请等待会话执行结束并释放资源，再完成会话".into());
+        }
+        self.close_conversation_terminals(cid)?;
+        // 顶栏的 × 是人工确认会话已处理，不能暂停任务或中断执行。
+        self.repository.connection.execute(
+            "UPDATE chat_conversations SET closed=1,revision=revision+1 WHERE id=?1",
+            [cid],
+        ).map_err(|e| e.to_string())?;
+        self.dirty = true;
+        Ok(json!({"closed": true}))
+    }
+
+    fn close_conversation_terminals(&self, cid: &str) -> Result<(), String> {
+        // 启动与完成由同一调度器串行处理，避免完成后才创建出迟到的终端。
+        if let Some(runtime) = &self.runtime {
+            runtime.terminals().close_owner(&format!("conversation:{cid}"))?;
+        }
+        Ok(())
+    }
+
+    fn conversation_has_pending_execution(
+        &self,
+        conversation: &crate::chat_store::Conversation,
+    ) -> Result<bool, String> {
+        if conversation.current_run_id.is_some()
+            || conversation.resource_hold.is_some()
+            || matches!(conversation.runtime_status.as_str(), "queued" | "running" | "needs_input" | "stopping")
+            || self.repository.chat_active_run(&conversation.id)?.is_some()
+            || self.live.contains_key(&format!("chat:{}", conversation.id))
+        {
+            return Ok(true);
+        }
+        if conversation.mode == "auto"
+            && (self.live.contains_key(&conversation.task_id)
+                || self.repository.get_work_task(&conversation.task_id)?.is_some_and(|work| {
+                    matches!(work.status, WorkflowStatus::Queued | WorkflowStatus::Running | WorkflowStatus::Waiting)
+                }))
+        {
+            return Ok(true);
+        }
+        // 提取结果可能已写入终态，仍需等运行时确认停止。
+        for execution in self.live.values() {
+            let belongs: bool = self.repository.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM chat_runs WHERE id=?1 AND conversation_id=?2)",
+                rusqlite::params![execution.run_id, conversation.id],
+                |row| row.get(0),
+            ).map_err(|e| e.to_string())?;
+            if belongs {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn chat_task_busy(&self,tid:&str)->Result<bool,String>{
         if self.recovering.values().any(|r|r.conversation.task_id==tid)||self.live.contains_key(tid)||self.repository.task_resources_pending(tid)?{return Ok(true)}
         for c in self.repository.chat_conversations()?.into_iter().filter(|c|c.task_id==tid){
@@ -437,11 +518,12 @@ mod conversation_deletion_service_tests {
         let (sender,_receiver)=mpsc::channel();
         let mut scheduler=Scheduler {
             repository,runtime:None,emergency_runtime:Arc::new(Mutex::new(None)),
-            executable:String::new(),resolved_executable:None,runtime_error:None,sender,
+            executable:String::new(),account_channel:None,resolved_executable:None,runtime_error:None,sender,
             live:HashMap::from([("extract:extract-stop".into(),LiveRun{run_id:"extract-stop".into(),workspace:PathBuf::from("/tmp")})]),
             recovering:HashMap::new(),stop_deadlines:HashMap::new(),changed:Arc::new(||{}),last_notification:Instant::now(),dirty:false,
         };
         let params=json!({"conversation_id":c.id,"revision":c.revision});
+        assert!(scheduler.chat_call("complete_conversation",params.clone()).is_err());
         assert!(scheduler.chat_call("delete_conversation",params.clone()).is_err());
         assert!(scheduler.repository.chat_conversation(&c.id).is_ok());
         scheduler.live.clear();

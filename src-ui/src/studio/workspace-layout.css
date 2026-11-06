@@ -20,6 +20,10 @@
 .studio.studio-app .dock-tab-actions{padding:0;gap:2px}
 .studio.studio-app .dock-tab-actions .inline-menu{top:calc(100% + 10px)}
 .studio.studio-app .workspace-tool-region[hidden],.studio.studio-app .dock-tabs[hidden]{display:none}
+.studio.studio-app .main{position:relative}
+/* 刷新提示悬浮，出现或消失时不改变聊天内容和输入区的位置。 */
+.studio.studio-app .workspace-error{position:absolute;z-index:15;top:8px;left:10px;width:max-content;max-width:min(440px,calc(100% - 20px));border:1px solid #f0dfdb;border-radius:8px}
+.studio.studio-app .workspace-error button{flex:none}
 .studio.studio-app .work-center{flex:1;min-width:0;min-height:0;container-type:inline-size;position:relative;display:flex}
 .studio.studio-app .center-content{display:flex;flex:1;min-width:0;min-height:0;position:relative}
 .studio.studio-app .center-content>.chat-surface,.studio.studio-app .center-content>.task-page{flex:1;min-width:0;min-height:0}

@@ -38,10 +38,11 @@
 .studio .sidebar{width:248px}.studio .sidebar-row-button{display:flex;align-items:center;gap:8px;min-width:0;width:100%;text-align:left;padding:8px 0;font-size:13px;line-height:1.4}
 .studio .conv-row>.hover-host{min-width:0;flex:1;width:0}.studio .conv-row{min-height:35px;font-size:13px}.studio .row-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .studio .sb-head strong{font-size:15px}.studio .nav-item{font-size:13px;min-height:36px;width:100%}.studio .sb-search input{font-size:12px;height:34px}.studio .group-head{font-size:12px;height:30px}.studio .sb-footer{font-size:11px;min-height:40px;text-align:left;width:100%}
-.studio .frame{flex:1;min-height:0}.studio .main-head h1{font-size:15px}.studio .crumb{font-size:12px}.studio .chat-body{font-size:15px;line-height:1.85;max-width:760px}.studio .bubble{font-size:14px}.studio .assistant-name{font-size:12px}.studio .run-event{font-size:12px}.studio .composer textarea{font-size:14px;line-height:1.7}.studio .composer-meta{font-size:12px;height:32px}.studio .composer .permissions,.studio .model-btn{font-size:12px}.studio .composer-foot{font-size:10px}.studio .header-actions{flex-shrink:0;gap:2px}.studio .head-title{overflow:hidden}
+.studio .frame{flex:1;min-height:0}.studio .main-head h1{font-size:15px}.studio .crumb{font-size:12px}/* 会话正文、用户消息和输入框与侧栏任务名称保持相同字号。 */
+.studio .chat-body{font-size:13px;line-height:1.85;max-width:760px}.studio .bubble{font-size:13px}.studio .assistant-name{font-size:12px}.studio .run-event{font-size:12px}.studio .composer textarea{font-size:13px;line-height:1.7}.studio .composer-meta{font-size:12px;height:32px}.studio .composer .permissions,.studio .model-btn{font-size:12px}.studio .composer-foot{font-size:10px}.studio .header-actions{flex-shrink:0;gap:2px}.studio .head-title{overflow:hidden}
 .studio .page{padding:24px;min-width:0}.studio .page-header{margin-bottom:20px}.studio .page-header p{font-size:12px;line-height:1.7}.studio .page-header h2{font-size:22px}.studio .toolbar{min-width:0;flex-wrap:wrap}.studio .searchbox{max-width:100%;min-width:0}.studio .searchbox input{font-size:12px;min-width:0}.studio select{max-width:100%}
 .studio .task-page .table-head,.studio .task-page .task-row,.studio .content-split:has(>.right-dock)>.task-page .table-head,.studio .content-split:has(>.right-dock)>.task-page .task-row{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:12px}
-.studio .task-page{flex:1;min-width:0}.studio .task-page .table-head{font-size:12px}.studio .task-row{min-height:48px;padding:7px 8px}.studio .task-row.child{min-height:45px}.studio .task-row.root-pinned{background:#effaf4}.studio .task-row.highlight{box-shadow:inset 3px 0 #82a9e8;background:#f1f6fd}.studio .task-title{min-width:0;gap:5px;max-width:100%}.studio .task-name-stack{min-width:0;flex:1}.studio .task-title-btn{font-size:13px;max-width:100%}.studio .task-title-editor{font-size:13px;border:1px solid #aac5ed;border-radius:5px;width:100%;min-width:0;padding:5px 7px;outline:none;background:#fff}.studio .task-status-control{display:flex;flex-shrink:0;align-items:center;justify-content:center;width:22px;height:27px;border-radius:5px}.studio .task-status-control:hover{background:#e7effa}.studio .session-chip{max-width:100%;font-size:11px;min-width:0}.studio .sessions-cell{min-width:0;overflow:hidden}.studio .no-conversations{font-size:11px}.studio .dependency-tag{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.studio .new-task-conversation{opacity:.6}.studio .task-row:hover .new-task-conversation{opacity:1}
+.studio .task-page{flex:1;min-width:0}.studio .task-page .table-head{font-size:12px}.studio .task-row{min-height:34px;padding:3px 8px}.studio .task-row.child{min-height:34px}.studio .task-row.root-pinned{background:#effaf4}.studio .task-row.highlight{box-shadow:inset 3px 0 #82a9e8;background:#f1f6fd}.studio .task-title{min-width:0;gap:5px;max-width:100%}.studio .task-name-stack{min-width:0;flex:1;flex-direction:row;align-items:center;gap:6px}.studio .task-title-btn{font-size:13px;max-width:100%}.studio .task-title-editor{font-size:13px;border:1px solid #aac5ed;border-radius:5px;width:100%;min-width:0;padding:5px 7px;outline:none;background:#fff}.studio .task-status-control{display:flex;flex-shrink:0;align-items:center;justify-content:center;width:22px;height:27px;border-radius:5px}.studio .task-status-control:hover{background:#e7effa}.studio .session-chip{max-width:100%;font-size:11px;min-width:0}.studio .sessions-cell{min-width:0;overflow:hidden}.studio .no-conversations{font-size:11px}.studio .dependency-tag{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.studio .new-task-conversation{opacity:.6}.studio .task-row:hover .new-task-conversation{opacity:1}
 .studio .context-menu-layer{position:fixed;inset:0;background:transparent;z-index:170;pointer-events:none;height:100vh}.studio .task-context-menu{position:fixed;pointer-events:auto;z-index:171;width:224px;background:white;padding:6px;border:1px solid #e3e7ee;border-radius:10px;box-shadow:0 10px 35px #1b2c471f}.studio .task-context-menu .popitem{font-size:13px;padding:9px 10px}
 .studio .right-dock{position:relative;width:36vw;min-width:310px;max-width:65vw;flex:none;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line);background:#fcfcfd}
 .studio .dock-resize{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:20;touch-action:none}.studio .dock-resize:hover{background:#397cff22}
@@ -85,3 +86,40 @@
 .studio .conversation-switch-row>.menu-anchor{flex:none}
 .studio .conversation-switch-row>.menu-anchor>.iconbtn{width:28px;height:28px}
 .studio .conversation-delete-reason{font-size:11px;line-height:1.5;margin:3px 10px 7px;color:#8a6970;white-space:normal;max-width:220px}
+
+/* 列表优先展示更多任务：辅助标记同行且最多占一半宽度，长标题仍可悬停阅读。 */
+.studio .task-page .task-row-tags{display:flex;align-items:center;gap:5px;min-width:0;max-width:48%}
+.studio .task-page .task-row-tags:empty{display:none}
+.studio .task-page .task-row-tags> *{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.studio .task-page .task-row-tags svg{flex:none}
+.studio .task-page .task-name-stack>.hover-host{flex:1;min-width:0}
+.studio .task-page .task-title-editor{padding:2px 5px}
+/* 多会话保持全部可访问，以单元格内横向滚动代替换行撑高任务。 */
+.studio .task-page .sessions-cell{flex-wrap:nowrap;padding:0;overflow-x:auto;scrollbar-width:none}
+.studio .task-page .sessions-cell::-webkit-scrollbar{display:none}
+.studio .task-page .session-chip{flex:0 0 auto;max-width:min(200px,calc(100% - 34px));padding:2px 5px}
+.studio .task-page .session-chip svg{flex:none}
+.studio .task-page .session-chip .session-completed{color:#388265}
+.studio .task-page .new-task-conversation{height:26px}
+
+/* 侧栏沿用任务树的紧凑密度，移除行间外边距；分组保留少量间隔便于扫读。 */
+.studio .sidebar .conv-row{min-height:34px;margin:0}
+.studio .sidebar .sidebar-row-button{height:34px;padding:0}
+.studio .sidebar .nav-item{height:34px;min-height:34px}
+.studio .sidebar .sb-head{height:40px}
+.studio .sidebar .sb-top{gap:0;padding-bottom:8px}
+.studio .sidebar .sb-search{margin-bottom:8px}
+.studio .sidebar .group-head{height:28px}
+.studio .sidebar .group{margin-bottom:8px}
+
+/* 未读只占标题右侧一个蓝点，不改变任务行的边框与字号。 */
+.studio .unread-dot{display:inline-block;flex:none;width:6px;height:6px;border-radius:50%;background:#3b82f6;margin-left:2px}
+
+.studio .settings-sidebar .nav-item { min-height: 34px; }
+.studio .settings-page [id^="settings-"] { scroll-margin-top: 20px; }
+.studio .workspace-preference-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #e8ecf2; font-size: 13px; }
+.studio .workspace-preference-row > span:first-child, .studio .workspace-site-label { flex: 1; min-width: 0; }
+.studio .workspace-site-label { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.studio .workspace-site-label small { color: #667487; }
+.studio .shortcut-key { min-width: 76px; justify-content: center; }
+.studio .shortcut-key kbd { font: inherit; font-weight: 600; }

@@ -50,10 +50,21 @@ pub struct AppServer {
 
 impl AppServer {
     pub fn spawn(executable: &Path) -> Result<(Self, mpsc::Receiver<ServerMessage>), String> {
+        Self::spawn_with_account(executable, None)
+    }
+
+    pub(crate) fn spawn_with_account(
+        executable: &Path,
+        joycode: Option<&crate::joycode_account::JoyCodeLaunch>,
+    ) -> Result<(Self, mpsc::Receiver<ServerMessage>), String> {
         if executable.as_os_str().is_empty() {
             return Err("Codex 可执行文件路径不能为空".to_string());
         }
         let mut command = Command::new(executable);
+        // 回环凭证通过内存认证 RPC 传递，不能进入工具子进程的环境。
+        command.env_remove(crate::joycode_account::BRIDGE_KEY)
+            .env_remove(crate::joycode_account::BRIDGE_URL);
+        if let Some(account) = joycode { account.configure(&mut command); }
         command.arg("app-server");
         if let Some(path) = crate::local_environment::child_path(executable) {
             command.env("PATH", path);

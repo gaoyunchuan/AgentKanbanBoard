@@ -5,9 +5,9 @@ import type { TaskConfig, WorkTask, WorkEvent, TaskInteraction, WorkRun, Workben
 export type ResultRecord = { id:string; task_id:string; conversation_id:string; conversation_title:string; source_run_id?:string|null; source_boundary:number; method:"auto"|"manual"|"legacy"; stage:string; markdown:string; evidence:unknown; status:"pending"|"ready"|"failed"|"withdrawn"; usable:boolean; supersedes?:string|null; created_at:string; error?:string|null };
 export type ExecutionPermissions = Pick<TaskConfig,'sandbox_mode'|'approval_policy'>;
 export type StudioTask = BackendTodoTask & { execution_permissions?:ExecutionPermissions; scheduled_start_at?:string|null; project_id:string|null; effective_project_id:string|null; last_conversation_id?:string|null; metadata_revision:number; blocked_by:string[]; missing_dependencies:string[]; results:ResultRecord[]; pending_change?:string|null };
-export type Conversation = { codex_binding?:boolean|null; id:string; task_id:string; title:string; mode:"auto"|"manual"; project_id:string|null; config:TaskConfig; thread_id?:string|null; current_run_id?:string|null; runtime_status:string; pinned:boolean; closed:boolean; revision:number; created_at:string; updated_at:string; last_error?:string|null; resource_hold?:{run_id:string;state:string;error?:string|null}|null };
+export type Conversation = { activity_at?:string|null; last_output_event_id?:number; read_output_event_id?:number; manual_unread?:boolean; read_version?:number; unread?:boolean; codex_binding?:boolean|null; id:string; task_id:string; title:string; mode:"auto"|"manual"; project_id:string|null; config:TaskConfig; thread_id?:string|null; current_run_id?:string|null; runtime_status:string; pinned:boolean; closed:boolean; revision:number; created_at:string; updated_at:string; last_error?:string|null; resource_hold?:{run_id:string;state:string;error?:string|null}|null };
 export type Workspace = { tasks:StudioTask[]; projects:BackendProject[]; conversations:Conversation[]; work_tasks:WorkTask[]; settings?: { excluded_project_dirs:string[]; delegation_permission?:string }; runtime?:WorkbenchData["runtime"] };
-export type ConversationDetail = { conversation:Conversation; events:WorkEvent[]; runs:(WorkRun & {kind?:string; context?:unknown})[]; interactions:TaskInteraction[]; work?:WorkTask; results:ResultRecord[] };
+export type ConversationDetail = { history_paged?:boolean; conversation:Conversation; events:WorkEvent[]; runs:(WorkRun & {kind?:string; context?:unknown})[]; interactions:TaskInteraction[]; work?:WorkTask; results:ResultRecord[] };
 export type Group = "pinned"|"active"|"blocked"|"completed";
 export const emptyWorkspace:Workspace={tasks:[],projects:[],conversations:[],work_tasks:[]};
 export const groups: {id:Group;label:string}[]=[{id:"pinned",label:"置顶"},{id:"active",label:"活跃"},{id:"blocked",label:"阻塞"},{id:"completed",label:"完成"}];
@@ -29,8 +29,39 @@ export function ancestors(tasks:StudioTask[],id:string) {
 }
 export function rootId(tasks:StudioTask[],id:string){return ancestors(tasks,id)[0]?.id??id;}
 export function taskConversations(data:Workspace,taskId:string){return data.conversations.filter(c=>c.task_id===taskId);}
-export function preferredConversation(data:Workspace,t:StudioTask){const all=taskConversations(data,t.id);return all.find(c=>c.id===t.last_conversation_id)??all.find(c=>c.mode==="auto")??all[0];}
+export function orderedTaskConversations(data:Workspace,taskId:string){
+  return taskConversations(data,taskId).sort((a,b)=>
+    Number(a.closed)-Number(b.closed)||a.created_at.localeCompare(b.created_at)||a.id.localeCompare(b.id));
+}
+export function preferredConversation(data:Workspace,t:StudioTask){
+  const all=taskConversations(data,t.id).sort(compareConversationActivity);
+  // 任务聚合未读时先带用户到新内容；没有未读仍保留上次查看的位置。
+  return all.find(c=>c.unread)??all.find(c=>c.id===t.last_conversation_id&&!c.closed)
+    ??all.find(c=>c.mode==="auto"&&!c.closed)??all.find(c=>!c.closed)
+    ??all.find(c=>c.id===t.last_conversation_id)??all[0];
+}
+export function compareConversationActivity(a:Conversation,b:Conversation){
+  return activityTime(b)-activityTime(a)||a.id.localeCompare(b.id);
+}
+function activityTime(c:Conversation){return Date.parse(c.activity_at||c.created_at)||0;}
+export function sidebarTasks(data:Workspace){
+  const times=new Map<string,number>(),created=new Map<string,number>();
+  for(const c of data.conversations){
+    const messageAt=Date.parse(c.activity_at||'');
+    if(Number.isFinite(messageAt))times.set(c.task_id,Math.max(times.get(c.task_id)||0,messageAt));
+    created.set(c.task_id,Math.max(created.get(c.task_id)||0,Date.parse(c.created_at)||0));
+  }
+  // 有消息时只比较真实消息；新建空会话不能把旧讨论伪装成最新活动。
+  const time=(t:StudioTask)=>times.get(t.id)??created.get(t.id)??(Date.parse(t.created_at)||0);
+  // 只派生侧栏顺序，不能回写全局任务树的 position 或业务 activity_at。
+  return [...data.tasks].sort((a,b)=>time(b)-time(a)||a.id.localeCompare(b.id));
+}
 export function isBusy(c:Conversation){return Boolean(c.current_run_id)||["running","needs_input","stopping","recovering"].includes(c.runtime_status);}
+export function conversationCompletionBlocked(c:Conversation,data:Workspace){
+  return isBusy(c)||c.runtime_status==='queued'||Boolean(c.resource_hold)
+    ||data.tasks.some(t=>t.results.some(r=>r.conversation_id===c.id&&r.status==='pending'))
+    ||c.mode==='auto'&&data.work_tasks.some(w=>w.task_id===c.task_id&&['queued','running','waiting'].includes(w.status));
+}
 export function conversationRecoveryReason(c:Conversation,data:Workspace):string|undefined {
   if(!c.thread_id)return '发送过消息并建立 Codex 会话后才能恢复连接';
   if(c.closed)return '请先重新打开会话';

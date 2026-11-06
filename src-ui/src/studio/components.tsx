@@ -7,13 +7,15 @@ import { ancestors,flattenedTasks,rootId,visibleResults } from "./model";
 export {Markdown} from "./Markdown";
 import {Markdown} from "./Markdown";
 
-export function Modal({title,children,footer,onClose,wide=false}:{title:string;children:React.ReactNode;footer?:React.ReactNode;onClose:()=>void;wide?:boolean}) {
+export function Modal({title,children,footer,onClose,wide=false,initialFocus}:{title:string;children:React.ReactNode;footer?:React.ReactNode;onClose:()=>void;wide?:boolean;initialFocus?:React.RefObject<HTMLElement>}) {
   const ref=useRef<HTMLDivElement>(null),close=useRef(onClose);close.current=onClose;
-  useEffect(()=>{const old=document.activeElement as HTMLElement|null;const dialog=ref.current;dialog?.querySelector<HTMLElement>('input,textarea,select,button,[tabindex="0"]')?.focus();
+  useEffect(()=>{const old=document.activeElement as HTMLElement|null;const dialog=ref.current;
+    const target=initialFocus?.current??dialog?.querySelector<HTMLElement>('input,textarea,select,button,[tabindex="0"]');
+    target?.focus();
     const handler=(e:KeyboardEvent)=>{
       // portal 列表的键盘事件归其自身，不能误触发外层弹窗关闭或焦点环。
       if(e.defaultPrevented||(e.target instanceof Node&&!dialog?.contains(e.target)))return;
-      if(e.key==="Escape"){e.preventDefault();close.current();}if(e.key==="Tab"&&dialog){const all=Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')).filter(el=>el.offsetParent!==null);const first=all[0],last=all[all.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}};document.addEventListener("keydown",handler);return()=>{document.removeEventListener("keydown",handler);old?.focus();};},[]);
+      if(e.key==="Escape"){e.preventDefault();close.current();}if(e.key==="Tab"&&dialog){const all=Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]')).filter(el=>el.offsetParent!==null);const first=all[0],last=all[all.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}};document.addEventListener("keydown",handler);return()=>{document.removeEventListener("keydown",handler);old?.focus();};},[initialFocus]);
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><div className={`modal ${wide?"wide":""}`} ref={ref} role="dialog" aria-modal="true" aria-label={title}><header className="modal-header"><h2>{title}</h2><button className="iconbtn" onClick={onClose} aria-label="关闭对话框"><X/></button></header><div className="modal-body">{children}</div>{footer&&<footer className="modal-footer">{footer}</footer>}</div></div>;
 }
 export function HoverInfo({children,task,conversation,data,onOpen,onResults,onTask}:{children:React.ReactNode;task:StudioTask;conversation?:Conversation|boolean;data:Workspace;onOpen:()=>void;onResults?:()=>void;onTask?:(id:string)=>void}) {

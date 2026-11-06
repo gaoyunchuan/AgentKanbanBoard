@@ -9,6 +9,7 @@ export function ConversationMenu({conversation:c,onClose}:{conversation:Conversa
     <button className="popitem" onClick={()=>act(()=>s.locateTask(c.task_id))}>在任务树中定位</button>
     <button className="popitem" onClick={()=>act(()=>{void s.newConversation(c.task_id)})}>新建同任务会话</button>
     <button className="popitem" onClick={()=>act(()=>{void s.command('update_conversation',{conversation_id:c.id,revision:c.revision,patch:{pinned:!c.pinned}}).catch(()=>{})})}>{c.pinned?'取消单独置顶':'单独置顶会话'}</button>
+    <button className="popitem" onClick={()=>act(()=>{void s.command('mark_unread',{conversation_id:c.id}).catch(()=>{})})}>标为未读</button>
     <button className="popitem" onClick={()=>act(()=>s.openDialog({kind:'renameConversation',conversation:c.id}))}>重命名会话</button>
     <button className="popitem" title={conversationRecoveryReason(c,s.data)} disabled={Boolean(conversationRecoveryReason(c,s.data))||s.busy} onClick={()=>act(()=>s.openDialog({kind:'recoverConnection',conversation:c.id}))}>恢复会话连接</button>
     <button className="popitem" onClick={()=>act(()=>{void s.command(c.closed?'reopen_conversation':'close_conversation',{conversation_id:c.id}).catch(()=>{})})}>{c.closed?'恢复会话':'停止并收起为完成'}</button>

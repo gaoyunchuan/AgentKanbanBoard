@@ -51,3 +51,19 @@ it('renders Markdown from the file viewer and can switch back to source',async()
  await user.click(screen.getByRole('button',{name:'查看 Markdown 源码'}));
  expect(await screen.findByText('## 交付说明')).toBeVisible();
 });
+
+it('项目外的文件无法预览时，用户可以用系统应用打开原路径',async()=>{
+ vi.mocked(invoke).mockImplementation(async(command)=>{
+  if(command==='workbench_list_directory')return {entries:[]};
+  if(command==='workbench_read_file')return {dataBase64:btoa('%PDF-1.7')};
+  return {opened:true};
+ });
+ const target='file:///other/design%20draft.pdf';
+ render(<WorkspaceFiles taskId="conversation:one" workspace="/project" enabled openRequest={{target,sequence:1}}/>);
+ const args={taskId:'conversation:one',path:'/other/design draft.pdf'};
+ const button=await screen.findByRole('button',{name:'用系统应用打开'});
+ expect(invoke).toHaveBeenCalledWith('workbench_read_file',args);
+ expect(invoke).not.toHaveBeenCalledWith('workbench_open_file',args);
+ await userEvent.click(button);
+ expect(invoke).toHaveBeenCalledWith('workbench_open_file',args);
+});

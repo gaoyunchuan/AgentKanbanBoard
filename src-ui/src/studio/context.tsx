@@ -5,6 +5,9 @@ import type { StudioApi } from "./api";
 import type { Workspace, StudioTask, Conversation, ConversationDetail } from "./model";
 import type { TaskConfig } from "../workbench/types";
 
+import type { SettingsSection } from "./WorkspaceSettings";
+import type { RecommendedSite, Shortcuts } from "./workspacePreferences";
+
 export type View = "chat" | "tasks" | "projects" | "attention" | "settings";
 export type DialogState =
   | { kind: "createTask"; parent?: string }
@@ -19,6 +22,14 @@ export type Panel = "content" | "properties" | "context" | "results" | "browser"
 export type ModelConfig = Pick<TaskConfig, 'model' | 'reasoning_effort'>;
 export type Draft = { text: string; projectId?: string; modelConfig?: ModelConfig; importContext: boolean; attachments: { name: string; input?: unknown; text?: string }[] };
 export type StudioState = {
+  readSession?:number;
+  settingsSection?: SettingsSection;
+  openSettingsSection?: (section: SettingsSection) => void;
+  shortcuts?: Shortcuts;
+  saveShortcuts?: (value: Shortcuts) => void;
+  recommendations?: RecommendedSite[];
+  saveRecommendations?: (value: RecommendedSite[]) => void;
+  dockShortcut?: { action: 'newTab' | 'close'; sequence: number };
   taskQuery: TaskQuery;
   setTaskQuery: Dispatch<SetStateAction<TaskQuery>>;
   api: StudioApi;
@@ -40,6 +51,7 @@ export type StudioState = {
   setView: (view: View) => void;
   openTask: (id: string) => void;
   openConversation: (id: string) => void;
+  completeConversation: (conversation: Conversation) => Promise<void>;
   locateTask: (id: string) => void;
   taskReveal: string | null;
   completeTaskReveal: (id: string) => void;

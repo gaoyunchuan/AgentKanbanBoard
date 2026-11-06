@@ -677,6 +677,23 @@ impl Repository {
         get_task(&self.connection, task_id)
     }
 
+    pub(crate) fn pending_work_interaction(&self, task: &str, run: &str, id: &str) -> Result<TaskInteraction, String> {
+        self.connection.query_row(
+            "SELECT id,task_id,run_id,request_id_json,kind,method,payload_json,status,response_json,created_at,resolved_at
+             FROM work_interactions WHERE task_id=?1 AND run_id=?2 AND id=?3 AND status='pending'",
+            params![task, run, id], interaction_row,
+        ).optional().map_err(db)?.ok_or_else(|| "请求已失效或不属于当前任务".into())
+    }
+
+    pub(crate) fn pending_work_interactions(&self, task: &str, run: Option<&str>) -> Result<Vec<Value>, String> {
+        let mut statement = self.connection.prepare(
+            "SELECT id,task_id,run_id,request_id_json,kind,method,payload_json,status,response_json,created_at,resolved_at
+             FROM work_interactions WHERE task_id=?1 AND status='pending' AND (run_id=?2 OR kind='question') ORDER BY created_at,id LIMIT 16"
+        ).map_err(db)?;
+        let rows = statement.query_map(params![task, run], interaction_row).map_err(db)?;
+        rows.map(|row| serde_json::to_value(row.map_err(db)?).map_err(|e| e.to_string())).collect()
+    }
+
     pub fn load_task_execution(&self, task_id: &str) -> Result<TaskExecutionDetail, String> {
         let task = required_task(&self.connection, task_id)?;
         let mut statement = self.connection.prepare(
@@ -2711,6 +2728,8 @@ for line in sys.stdin:
             .iter()
             .find(|interaction| interaction.status == "pending")
             .unwrap();
+        let paged = fixture.service.call("chat/detail", json!({"conversation_id":"main:e2e-question","paged":true})).unwrap();
+        assert_eq!(paged["interactions"][0]["id"], question.id);
         fixture.service.call("respond",json!({"task_id":"e2e-question","interaction_id":question.id,"run_id":question.run_id,"response":{"answer":"blue"}})).unwrap();
         let completed = fixture.wait_for("e2e-question", |detail| {
             detail.task.status == WorkflowStatus::Completed
@@ -3078,10 +3097,41 @@ for line in sys.stdin:
 
     #[test]
     #[cfg(unix)]
+    fn service_completes_only_the_selected_idle_conversation() {
+        let fixture = ServiceFixture::new();
+        let task = fixture.service.call("chat/create_task", json!({"title":"并行会话验收"})).unwrap();
+        let tid = &task["task_id"];
+        let first = fixture.service.call("chat/create_conversation", json!({"task_id":tid})).unwrap();
+        let other = fixture.service.call("chat/create_conversation", json!({"task_id":tid})).unwrap();
+        let target = json!({"conversation_id":first["id"],"revision":first["revision"]});
+        fixture.service.call("chat/mark_unread", target.clone()).unwrap();
+        fixture.service.call("chat/complete_conversation", target.clone()).unwrap();
+        let snapshot = fixture.service.call("chat/snapshot", json!({})).unwrap();
+        let rows = snapshot["conversations"].as_array().unwrap();
+        let completed = rows.iter().find(|c| c["id"] == first["id"]).unwrap();
+        assert_eq!(completed["closed"], true);
+        assert_eq!(completed["unread"], true);
+        assert_eq!(rows.iter().find(|c| c["id"] == other["id"]).unwrap()["closed"], false);
+        assert_eq!(snapshot["tasks"].as_array().unwrap().iter().find(|t| &t["id"] == tid).unwrap()["status"], "todo");
+        assert!(fixture.service.call("chat/complete_conversation", target.clone()).is_err());
+        let detail = fixture.service.call("chat/detail", target.clone()).unwrap();
+        assert!(detail["runs"].as_array().unwrap().is_empty());
+        fixture.service.call("chat/reopen_conversation", target.clone()).unwrap();
+        let reopened = fixture.service.call("chat/detail", target).unwrap();
+        assert_eq!(reopened["conversation"]["closed"], false);
+        assert!(reopened["runs"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn explicitly_resuming_a_closed_main_conversation_restarts_the_task() {
         let fixture = ServiceFixture::new();
         fixture.delegate("e2e-cancel");
         fixture.wait_for("e2e-cancel", |d| !d.interactions.is_empty());
+        let detail = fixture.service.call("chat/detail", json!({"conversation_id":"main:e2e-cancel"})).unwrap();
+        assert!(fixture.service.call("chat/complete_conversation",
+            json!({"conversation_id":"main:e2e-cancel","revision":detail["conversation"]["revision"]})).is_err());
+        assert!(!fixture.service.call("chat/detail", json!({"conversation_id":"main:e2e-cancel"})).unwrap()["conversation"]["closed"].as_bool().unwrap());
         fixture
             .service
             .call(

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { Draft } from './context';
+import { inlineImageUrl } from '../lib/imageUrl';
 
 const MAX_ATTACHMENTS = 16;
 const MAX_FILE_BYTES = 4_000_000;
@@ -40,7 +41,7 @@ function readFile(file: File, signal: AbortSignal): Promise<Draft['attachments']
 export function attachmentImage(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return;
   const value = input as { type?: string; url?: string };
-  if (value.type === 'image' && /^data:image\/(png|jpeg|webp|gif);base64,/.test(value.url || '')) return value.url;
+  if (value.type === 'image') return inlineImageUrl(value.url);
 }
 
 export function clipboardImages(data: DataTransfer): File[] {

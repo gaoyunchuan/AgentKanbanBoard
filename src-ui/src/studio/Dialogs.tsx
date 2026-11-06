@@ -2,12 +2,13 @@ import { conversationDeleteReason } from './model';
 import {ConversationRecoveryDialog} from './ConversationRecoveryDialog';
 import {CodexBindingDialog} from './CodexBindingDialog';
 import { StudioSelect } from './StudioSelect';
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Folder, Check, Clock, Link, ArrowUpRight, AlertCircle } from "lucide-react";
 import { Modal, Markdown } from "./components";
 import { useStudio, type DialogState, type ModelConfig } from "./context";
 import { ancestors, rootId, flattenedTasks, dependencyReason, isBusy, taskLabel } from "./model";
+import { ProjectSelect } from './ProjectSelect';
 import { ProjectPicker } from "./ProjectPicker";
 import { permissionMode, permissionPresets, type PermissionMode } from './permissions';
 import { record } from "../workbench/events";
@@ -21,6 +22,7 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   // 删除确认冻结目标版本，轮询不得把旧确认升级为对新内容的授权。
   const [deletionBaseline]=useState(()=>dialog.kind==='deleteConversation'&&c?{id:c.id,title:c.title,revision:c.revision}:null);
   const [text, setText] = useState(dialog.kind === 'renameConversation' ? c?.title ?? '' : '');
+  const titleInput = useRef<HTMLInputElement>(null);
   // 右键目标父任务可能并非当前选中任务；新子任务默认继承父级，不能串入当前项目。
   const [project, setProject] = useState(dialog.kind === 'createTask' && dialog.parent ? '' : task?.project_id ?? '');
   const [path, setPath] = useState('');
@@ -69,7 +71,7 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   if (dialog.kind === 'createTask' || dialog.kind === 'renameConversation') {
     const creating = dialog.kind === 'createTask';
     const parent = creating && dialog.parent ? s.data.tasks.find(t => t.id === dialog.parent) : undefined;
-    return <Modal title={creating ? parent ? '添加子任务' : '新建任务' : '重命名'} onClose={onClose} footer={<>{cancel}{submit(creating ? '创建任务' : '保存', async () => {
+    return <Modal title={creating ? parent ? '添加子任务' : '新建任务' : '重命名'} initialFocus={creating ? undefined : titleInput} onClose={onClose} footer={<>{cancel}{submit(creating ? '创建任务' : '保存', async () => {
       if (creating) {
         const result = await s.command<{ task_id: string }>('create_task', { title: text.trim(), parent_id: dialog.parent ?? null, project_id: project || null });
         // 任务入口创建后继续完善任务树中的详情；会话入口保持原有打开方式。
@@ -78,8 +80,8 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
       else if (c) await s.command('update_conversation', { conversation_id: c.id, revision: c.revision, patch: { title: text.trim() } });
     }, !text.trim())}</>}>
       <p className="modal-desc">{creating ? parent ? `属于「${parent.title}」。仅创建标题，不会立即启动 Agent。` : '一个标题就可以开始。项目和其他属性随时可补充。' : '只更改显示名称，保留已有会话、结果和关联。'}</p>
-      <label htmlFor="item-title">标题</label><input id="item-title" value={text} onChange={e => setText(e.target.value)} maxLength={500} autoFocus onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.closest('.modal')?.querySelector<HTMLButtonElement>('.modal-footer .primary')?.click(); }}/>
-      {creating && <><label htmlFor="task-project">默认项目 · 可选</label><StudioSelect id="task-project" label="默认项目 · 可选" value={project} onValueChange={setProject} options={[{value:'',label:parent?'继承上级项目':'暂不设置'},...s.data.projects.map(p=>({value:p.id,label:p.name}))]}/></>}{error}
+      <label htmlFor="item-title">标题</label><input ref={titleInput} id="item-title" value={text} onChange={e => setText(e.target.value)} maxLength={500} autoFocus={creating} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.closest('.modal')?.querySelector<HTMLButtonElement>('.modal-footer .primary')?.click(); }}/>
+      {creating && <><label htmlFor="task-project">默认项目 · 可选</label><ProjectSelect id="task-project" label="默认项目 · 可选" value={project} onValueChange={setProject} projects={s.data.projects} emptyLabel={parent?'继承上级项目':'暂不设置'}/></>}{error}
     </Modal>;
   }
   if (dialog.kind === 'dependencies' && task) {
@@ -96,7 +98,7 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
       {stopping && <div className="warning-box"><AlertCircle size={16}/><div><strong>当前有 {active.length} 个会话正在执行或排队</strong><p>先停止本任务的执行，确认后保存依赖。已有修改和聊天保留，不回滚文件。</p><label className="checkline"><input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)}/>确认停止当前执行并应用新依赖</label></div></div>}{error}
     </Modal>;
   }
-  if (dialog.kind === 'projectTask' && task) return <Modal title="任务默认项目" onClose={onClose} footer={<>{cancel}{submit('保存项目', () => s.command('update_task', { task_id: task.id, patch: { project_id: project || null }, before: { project_id: task.project_id } }, '后续新会话使用新项目；已有会话目录不变'))}</>}><p className="modal-desc">项目由任务继承给新会话。已有 Codex Thread 的工作目录不会被移动。</p><button className={`picker-row ${!project ? 'chosen' : ''}`} onClick={() => setProject('')}>继承上级项目／暂不设置{!project && <Check size={14}/>}</button><ProjectPicker projects={s.data.projects} selected={project} onSelect={setProject}/>{!s.data.projects.some(p=>p.id===task.project_id)&&task.project_id&&<p className="note">原项目已被隐藏或不可用；选择新项目不会移动已有 Thread。</p>}{error}</Modal>;
+  if (dialog.kind === 'projectTask' && task) return <Modal title="任务默认项目" onClose={onClose} footer={<>{cancel}{submit('保存项目', () => s.command('update_task', { task_id: task.id, patch: { project_id: project || null }, before: { project_id: task.project_id } }, '后续新会话使用新项目；已有会话目录不变'))}</>}><p className="modal-desc">项目由任务继承给新会话。已有 Codex Thread 的工作目录不会被移动。</p><ProjectPicker projects={s.data.projects} selected={project} emptyLabel="继承上级项目／暂不设置" onSelect={setProject}/>{!s.data.projects.some(p=>p.id===task.project_id)&&task.project_id&&<p className="note">原项目已被隐藏或不可用；选择新项目不会移动已有 Thread。</p>}{error}</Modal>;
   if (dialog.kind === 'project') return <Modal title={dialog.id ? '编辑项目' : '添加本地项目'} onClose={onClose} footer={<>{cancel}{submit('保存项目', async () => { const result = await s.command<{ id?: string }>('project', { id: dialog.id, name: text.trim(), path: path.trim() }, '项目已保存'); if (result.id) onNewProject?.(result.id); }, !text.trim() || !path.trim())}</>}><p className="modal-desc">工作目录是你本机的项目目录，不会上传文件。绑定任务后，新会话默认使用它。</p><label htmlFor="project-name">项目名称</label><input id="project-name" value={text} onChange={e => setText(e.target.value)}/><label htmlFor="project-path">工作目录</label><div className="path-input"><input id="project-path" placeholder="/Users/you/Projects/project" value={path} onChange={e => setPath(e.target.value)}/><button className="textbtn outlined" disabled={!s.api.native || busy} onClick={() => void act(async () => { const chosen = await invoke<string | null>('chat_pick_directory'); if (chosen) { setPath(chosen); if (!text) setText(chosen.split('/').filter(Boolean).pop() || '新项目'); } }, false)}>选择目录</button></div>{error}</Modal>;
   if (dialog.kind === 'taskState' && task) return <Modal title="停止执行并变更任务状态？" onClose={onClose} footer={<>{cancel}{submit('确认变更', () => s.command('task_state', {task_id:task.id,state:dialog.state,confirm_stop:true}, '已请求停止当前执行，确认后应用任务状态'))}</>}><p>「{task.title}」存在活动执行。</p><p className="modal-desc">先停止本任务的会话，再切换为{({todo:'待办',in_progress:'进行中',completed:'已完成',cancelled:'已取消'})[dialog.state]}。不会停止子任务，也不会回滚已经产生的文件修改。标记待办会暂停自动推进。</p>{error}</Modal>;
   if ((dialog.kind === 'completeTask' || dialog.kind === 'deleteTask') && task) {
@@ -109,7 +111,7 @@ export function Dialogs({ dialog, onClose, onImport, onNewProject, modelConfig, 
   if (dialog.kind === 'context' && task) return <Modal title="本次任务上下文" wide onClose={onClose} footer={<><button className="textbtn outlined" onClick={onClose}>关闭</button>{dialog.importTo && <button className="textbtn primary" disabled={!context} onClick={() => { onImport(dialog.importTo!); onClose(); }}>带入下一条消息</button>}</>}><p className="modal-desc">当前根任务树、当前任务、各级父任务，以及本次依赖交付。真正执行时再次捕获版本快照，不修改任务原文。</p>{context ? <><details className="context-block" open><summary>当前任务</summary><div className="context-pad"><Markdown text={task.process_tracking || task.title}/></div></details><details className="context-block" open><summary>当前根任务树</summary><pre className="context-tree">{flattenedTasks(s.data.tasks).filter(x => rootId(s.data.tasks, x.task.id) === rootId(s.data.tasks, task.id)).map(({ task: n, depth }) => `${'  '.repeat(depth)}${n.id === task.id ? '→ ' : '· '}${n.title} [${taskLabel(n)}]`).join('\n')}</pre></details><details className="context-block"><summary>来源与完整输入快照</summary><pre>{JSON.stringify(context, null, 2)}</pre></details></> : <p className="note">正在读取上下文…</p>}{error}</Modal>;
   if (dialog.kind === 'models' || dialog.kind === 'permissions') return <Modal title={dialog.kind === 'models' ? '模型与推理强度' : '会话权限'} onClose={onClose} footer={<>{cancel}{submit('保存会话设置', () => dialog.kind==='models' ? saveModel({model:model||null,reasoning_effort:effort||null}) : c ? s.command('update_conversation', { conversation_id:permissionBaseline?.id, revision:permissionBaseline?.revision, patch:permissionPatch }, '会话设置已保存') : Promise.reject('请先创建会话'), dialog.kind==='models' ? Boolean(c&&isBusy(c))||!c&&!onSaveModel : !permissionBaseline)}</>}>
     {!c && <p className="modal-desc">{dialog.kind==='models'?'设置将用于此会话的首条消息，发送前可以随时调整。':'先创建或选择一个会话。未设置时使用按需确认权限。'}</p>}
-    {dialog.kind === 'models' ? <><label htmlFor="model-select">可用模型</label><StudioSelect id="model-select" label="可用模型" value={model} onValueChange={setModel} options={[{value:'',label:'Codex 默认模型'},...items.map(m=>({value:String(m.model||m.id),label:String(m.displayName||m.model||m.id)}))]}/><label htmlFor="effort-select">推理强度</label><StudioSelect id="effort-select" label="推理强度" value={effort} onValueChange={setEffort} options={[{value:'',label:'模型默认'},...['minimal','low','medium','high','xhigh'].map(value=>({value,label:value}))]}/><p className="note">模型列表由当前连接返回；选择模型不授予额外权限。</p></> : <><label htmlFor="permission-mode">权限模式</label><StudioSelect id="permission-mode" label="权限模式" value={permissionMode({sandbox_mode:sandbox,approval_policy:approval})} onValueChange={value=>{
+    {dialog.kind === 'models' ? <><label htmlFor="model-select">可用模型</label><StudioSelect id="model-select" label="可用模型" value={model} onValueChange={setModel} options={[{value:'',label:s.data.runtime?.account_channel==='joycode'?'JoyCode 默认模型':'Codex 默认模型'},...items.map(m=>({value:String(m.model||m.id),label:String(m.displayName||m.model||m.id)}))]}/><label htmlFor="effort-select">推理强度</label><StudioSelect id="effort-select" label="推理强度" value={effort} onValueChange={setEffort} options={[{value:'',label:'模型默认'},...['minimal','low','medium','high','xhigh'].map(value=>({value,label:value}))]}/><p className="note">模型列表由当前连接返回；选择模型不授予额外权限。</p></> : <><label htmlFor="permission-mode">权限模式</label><StudioSelect id="permission-mode" label="权限模式" value={permissionMode({sandbox_mode:sandbox,approval_policy:approval})} onValueChange={value=>{
       const mode=value as PermissionMode;
       if(mode==='custom')return;
       // 预设一起变更沙箱与审批策略，保留原有打开时版本保护。

@@ -61,6 +61,7 @@ struct Scheduler {
     runtime: Option<CodexRuntime>,
     emergency_runtime: Arc<Mutex<Option<CodexRuntime>>>,
     executable: String,
+    account_channel: Option<String>,
     resolved_executable: Option<PathBuf>,
     runtime_error: Option<String>,
     sender: mpsc::Sender<Message>,
@@ -139,11 +140,15 @@ impl WorkService {
                     return;
                 }
                 let _=repository.connection.execute("UPDATE work_resource_leases SET state='uncertain',error='应用重新启动，原生命令退出尚未确认'",[]);
+                let account_channel = repository.connection.query_row(
+                    "SELECT value FROM work_settings WHERE key='account_channel'", [], |row| row.get(0)
+                ).optional().ok().flatten();
                 let mut scheduler = Scheduler {
                     repository,
                     runtime: None,
                     emergency_runtime: worker_runtime,
                     executable,
+                    account_channel,
                     resolved_executable: None,
                     runtime_error: None,
                     sender: worker_sender,
@@ -335,6 +340,23 @@ impl WorkService {
             .map_err(|error| error.to_string())
     }
 
+    fn local_file_workspace(&self, task_id: &str, path: &str) -> Result<String, String> {
+        if crate::local_files::is_independent_path(path) {
+            return Ok(String::new());
+        }
+        Ok(self.task_config(task_id)?.workspace)
+    }
+
+    pub fn preview_local_file(&self, task_id: &str, path: &str) -> Result<Value, String> {
+        let workspace = self.local_file_workspace(task_id, path)?;
+        crate::local_files::preview_local_file(&workspace, path)
+    }
+
+    pub fn open_local_file(&self, task_id: &str, path: &str) -> Result<Value, String> {
+        let workspace = self.local_file_workspace(task_id, path)?;
+        crate::local_files::open_local_file(&workspace, path)
+    }
+
     pub fn execute_command(
         &self,
         task_id: &str,
@@ -414,33 +436,9 @@ impl Scheduler {
                 }
             }
         }
-        let candidates = match crate::local_environment::codex_candidates(&self.executable) {
-            Ok(path) => path,
-            Err(error) => {
-                self.runtime_error = Some(error.clone());
-                self.dirty = true;
-                return Err(error);
-            }
-        };
-        let checked = crate::local_environment::choose_compatible(&candidates, |path| {
-            let sender = self.sender.clone();
-            CodexRuntime::connect(
-                path,
-                Arc::new(move |event| {
-                    let _ = sender.send(Message::Runtime(event));
-                }),
-            )
-        });
-        match checked {
+        match self.prepare_account(self.account_channel.as_deref()) {
             Ok((resolved, runtime)) => {
-                self.resolved_executable = Some(resolved);
-                self.runtime = Some(runtime.clone());
-                *self
-                    .emergency_runtime
-                    .lock()
-                    .map_err(|_| "执行进程锁已损坏")? = Some(runtime.clone());
-                self.runtime_error = None;
-                self.dirty = true;
+                self.install_runtime(resolved, runtime.clone())?;
                 Ok(runtime)
             }
             Err(error) => {
@@ -449,6 +447,76 @@ impl Scheduler {
                 Err(error)
             }
         }
+    }
+
+    fn prepare_account(&self, channel: Option<&str>) -> Result<(PathBuf, CodexRuntime), String> {
+        let joycode = if channel == Some("joycode") {
+            Some(crate::joycode_account::JoyCodeLaunch::discover()?)
+        } else {
+            None
+        };
+        let candidates = if let Some(resolved) = &self.resolved_executable {
+            // 切换账户沿用已连接的二进制；不会借预检改用另一个内核。
+            vec![resolved.clone()]
+        } else {
+            crate::local_environment::codex_candidates(&self.executable)?
+        };
+        crate::local_environment::choose_compatible(&candidates, |path| {
+            let sender = self.sender.clone();
+            CodexRuntime::connect_account(
+                path,
+                Arc::new(move |event| { let _ = sender.send(Message::Runtime(event)); }),
+                joycode.as_ref(),
+                channel.is_some(),
+            )
+        })
+    }
+
+    fn install_runtime(&mut self, resolved: PathBuf, runtime: CodexRuntime) -> Result<(), String> {
+        let mut emergency = self.emergency_runtime.lock().map_err(|_| "执行进程锁已损坏")?;
+        self.resolved_executable = Some(resolved);
+        let previous = self.runtime.replace(runtime.clone());
+        *emergency = Some(runtime);
+        drop(emergency);
+        if let Some(previous) = previous { previous.shutdown(); }
+        self.runtime_error = None;
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn switch_account(&mut self, channel: &str) -> Result<Value, String> {
+        if !matches!(channel, "personal" | "joycode") { return Err("未知账户渠道".into()); }
+        if !self.live.is_empty() || !self.recovering.is_empty() {
+            return Err("请等待当前执行或恢复结束，再切换账户".into());
+        }
+        let leased = self.repository.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM work_resource_leases)", [], |row| row.get::<_, bool>(0)
+        ).map_err(|e| e.to_string())?;
+        if leased || self.runtime.as_ref().is_some_and(|runtime| !runtime.account_switch_idle()) {
+            return Err("请先关闭终端并处理未释放的原生命令，再切换账户".into());
+        }
+        let (path, candidate) = self.prepare_account(Some(channel))?;
+        // 预检不会启动 Turn。候选失败时原运行时仍可用，调度 actor 不会在交接中途领取任务。
+        let sealed = if let Some(runtime) = &self.runtime {
+            if let Err(error) = runtime.seal_account() {
+                candidate.shutdown();
+                return Err(error);
+            }
+            true
+        } else { false };
+        if let Err(error) = self.repository.connection.execute(
+            "INSERT INTO work_settings(key,value) VALUES('account_channel',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [channel],
+        ) {
+            if sealed {
+                if let Some(runtime) = &self.runtime { runtime.unseal_account(); }
+            }
+            candidate.shutdown();
+            return Err(error.to_string());
+        }
+        self.account_channel = Some(channel.into());
+        self.install_runtime(path, candidate)?;
+        self.call("list", json!({}))
     }
 
     fn call(&mut self, method: &str, value: Value) -> Result<Value, String> {
@@ -465,6 +533,9 @@ impl Scheduler {
                     "status":if self.runtime.as_ref().is_some_and(CodexRuntime::is_alive) {"connected"} else {"disconnected"},
                     "executable":self.resolved_executable.as_ref().map(|p|p.to_string_lossy().into_owned()),
                     "configured_executable":self.executable,"last_error":self.runtime_error,
+                    "account_channel":self.account_channel.as_deref().unwrap_or("personal"),
+                    "channel_models":self.runtime.as_ref().and_then(CodexRuntime::channel_model_names),
+                    "joycode_available":std::env::var_os(crate::joycode_account::BRIDGE_URL).is_some_and(|v|!v.is_empty()),
                     "server_version":self.runtime.as_ref().map(CodexRuntime::server_version),
                     "max_concurrent_tasks":MAX_CONCURRENT_TASKS
                 }
@@ -489,6 +560,20 @@ impl Scheduler {
                 canonical_workspace(&config.workspace)?;
                 serde_json::to_value(config).map_err(|error| error.to_string())
             }
+            "workspace_terminal_start" => {
+                let owner = required(&value, "task_id")?;
+                if let Some(cid) = owner.strip_prefix("conversation:") {
+                    if self.repository.chat_conversation(cid)?.closed {
+                        return Err("请先恢复会话，再打开终端".into());
+                    }
+                }
+                let runtime = self.connect(None)?;
+                let config: TaskConfig = serde_json::from_value(self.call("workspace_config", json!({"task_id":owner}))?)
+                    .map_err(|error| error.to_string())?;
+                let id = runtime.terminals().start(owner, &config.workspace, &config.sandbox_mode, 80, 24)?;
+                Ok(json!({"id":id,"workspace":config.workspace}))
+            }
+            "switch_account" => self.switch_account(required(&value, "channel")?),
             "connect" => {
                 self.connect(value.get("executable").and_then(Value::as_str))?;
                 self.call("list", json!({}))
@@ -613,12 +698,7 @@ impl Scheduler {
                 let interaction_id = required(&value, "interaction_id")?;
                 let run_id = required(&value, "run_id")?;
                 let response = &value["response"];
-                let detail = self.repository.load_task_execution(id)?;
-                let interaction = detail
-                    .interactions
-                    .iter()
-                    .find(|i| i.id == interaction_id && i.run_id == run_id && i.status == "pending")
-                    .ok_or("请求已失效或不属于当前任务")?;
+                let interaction = self.repository.pending_work_interaction(id, run_id, interaction_id)?;
                 if interaction.kind == "question" {
                     self.repository.resolve_task_interaction(
                         id,
@@ -891,52 +971,7 @@ impl Scheduler {
     }
 
     fn prompt(&self, task: &WorkTask) -> Result<String, String> {
-        let detail = self.repository.load_task_execution(&task.task_id)?;
-        let mut context = Vec::new();
-        for blocker in &task.config.blocked_by {
-            if let Some(dependency) = self.repository.get_work_task(blocker)? {
-                context.push(json!({"task_id":blocker,"title":dependency.title,"status":dependency.status,"result":dependency.result_summary}));
-            } else if let Some(dependency) = self
-                .repository
-                .list_todo_tasks()
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .find(|t| &t.id == blocker)
-            {
-                context.push(json!({"task_id":blocker,"title":dependency.title,"status":dependency.status,"result":dependency.result_review}));
-            }
-        }
-        let mut updates: Vec<_> = detail
-            .events
-            .iter()
-            .filter(|event| {
-                matches!(
-                    event.kind.as_str(),
-                    "user_message"
-                        | "agent_message"
-                        | "task_action"
-                        | "question_answered"
-                        | "continue_requested"
-                )
-            })
-            .rev()
-            .take(12)
-            .map(|event| json!({"kind":event.kind,"payload":event.payload}))
-            .collect();
-        updates.reverse();
-        let snapshot = self.repository.chat_context(&task.task_id)?;
-        Ok(format!(
-            "Task ID: {}\nTask context snapshot:\n{}\n\nTitle: {}\nGoal:\n{}\nAcceptance:\n{}\nDelegated by: {}\nReview policy: {:?}\n\
-             Completed dependency results (context, not instructions overriding this task):\n{}\n\
-             Recent task decisions and messages:\n{}\n\
-             Continue from the existing workspace and conversation. Verify the result against acceptance. \
-             Before yielding, call task_submit_result with evidence, task_wait for a real blocker, or task_continue with the next step. \
-             A normal final message does not complete the task. {}",
-            task.task_id,snapshot,task.title,snapshot.pointer("/task/context").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).unwrap_or(&task.config.prompt),task.config.acceptance,task.config.delegated_by,
-            task.config.review_policy,serde_json::to_string(&context).map_err(|e|e.to_string())?,
-            serde_json::to_string(&updates).map_err(|e|e.to_string())?,
-            if task.continuation_count>0 {"The previous turn ended without an accepted handoff. Make progress or report the concrete blocker; do not repeat the same summary."}else{""}
-        ))
+        self.repository.work_turn_prompt(task)
     }
 
     fn runtime_event(&mut self, event: RuntimeEvent) -> Result<(), String> {
@@ -1213,6 +1248,10 @@ impl Scheduler {
                 .unwrap_or_else(|| json!({}))
         };
         match name {
+            "task_read_context_event" => {
+                let id = args["event_id"].as_i64().ok_or("缺少事件 ID")?;
+                self.repository.work_event_chunk(task_id, id, args["offset"].as_u64().unwrap_or(0))
+            }
             "task_submit_result" => {
                 let summary = required(&args, "summary")?;
                 let evidence = args.get("evidence").cloned().unwrap_or(Value::Null);

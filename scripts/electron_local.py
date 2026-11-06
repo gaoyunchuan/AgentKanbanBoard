@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """构建、打包并安装 Electron 版 Codex Thread Kanban（开发制品，ad-hoc 签名）。"""
 import argparse
+import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +28,18 @@ def build_ui():
 def build_sidecar():
     run(['cargo', 'build', '--release', '--offline', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'akb_sidecar'])
 
+def verify_app(app):
+    run(['codesign', '--verify', '--deep', '--strict', str(app)])
+    # 主应用与每个 Helper 都必须具备系统级音频输入限制，安装时再次核验。
+    for bundle in [app, *app.rglob('*.app')]:
+        signature = subprocess.run(['codesign', '-dv', str(bundle)], capture_output=True, check=True)
+        entitlements = subprocess.run(
+            ['codesign', '-d', '--entitlements', ':-', str(bundle)], capture_output=True, check=True)
+        values = plistlib.loads(entitlements.stdout)
+        flags = re.search(rb'flags=0x([0-9a-f]+)', signature.stderr)
+        if not flags or not int(flags.group(1), 16) & 0x10000 or values.get('com.apple.security.device.audio-input', False):
+            raise RuntimeError(f'应用签名未禁止音频输入：{bundle}')
+
 def package_app():
     packager = DESKTOP / 'node_modules' / '.bin' / 'electron-packager'
     output = DESKTOP / 'dist-electron'
@@ -33,8 +47,9 @@ def package_app():
          '--overwrite', '--app-bundle-id=local.codex.thread-kanban', '--app-version=0.1.0',
          '--icon=src-tauri/icons/icon.icns', '--extra-resource=src-tauri/target/release/akb_sidecar'])
     app = output / (APP_NAME + '-darwin-arm64') / (APP_NAME + '.app')
-    run(['codesign', '--force', '--deep', '--sign', '-', str(app)])
-    run(['codesign', '--verify', '--deep', '--strict', str(app)])
+    run(['codesign', '--force', '--deep', '--options', 'runtime',
+         '--entitlements', DESKTOP / 'entitlements.plist', '--sign', '-', str(app)])
+    verify_app(app)
     return app
 
 def install(app, open_after):
@@ -44,7 +59,7 @@ def install(app, open_after):
         target.rename(backup)
         print(f'已保留旧版本：{backup}')
     shutil.copytree(app, target, symlinks=True)
-    run(['codesign', '--verify', '--deep', '--strict', str(target)])
+    verify_app(target)
     if open_after:
         run(['open', '-a', str(target)])
     print(f'已安装：{target}')

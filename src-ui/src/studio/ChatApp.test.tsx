@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, within, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, within, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ChatApp from './ChatApp';
 import { createDemoApi } from './demo';
@@ -14,6 +14,102 @@ async function chooseOption(user:ReturnType<typeof userEvent.setup>,trigger:HTML
   await user.click(trigger);await user.click(await screen.findByRole('option',{name:label}));
 }
 describe('task-focused workspace',()=>{
+ it('shows the task title and active conversations, and keeps completed conversations readable',async()=>{
+   const {api,user}=await tasksPage();
+   const before=await api.call<Workspace>('snapshot');
+   await user.click(row('diff').querySelector('.task-title-btn')!);
+   const tabs=await screen.findByRole('tablist',{name:'本任务会话标签'});
+   const discussion=within(tabs).getByRole('tab',{name:'交互方案讨论'});
+   await user.click(discussion);
+   expect(discussion).toHaveAttribute('aria-selected','true');
+   expect(within(screen.getByRole('toolbar',{name:'会话与任务操作'})).getByRole('heading',{name:'实现部署前 Diff'})).toBeVisible();
+   await user.type(screen.getByRole('textbox',{name:'聊天输入'}),'保留会话草稿');
+   await user.click(within(tabs).getByRole('button',{name:'完成会话：交互方案讨论'}));
+   await waitFor(()=>expect(discussion).not.toBeInTheDocument());
+   expect(within(tabs).getByRole('tab',{name:'实现部署前 Diff'})).toHaveAttribute('aria-selected','true');
+   const after=await api.call<Workspace>('snapshot');
+   expect(after.tasks.find(t=>t.id==='diff')?.status).toBe(before.tasks.find(t=>t.id==='diff')?.status);
+   await user.click(screen.getByRole('button',{name:'切换本任务会话'}));
+   const list=screen.getByRole('group',{name:'本任务全部会话'});
+   const history=within(list).getByRole('button',{name:'交互方案讨论 已完成'});
+   expect(within(list).getByRole('button',{name:'实现部署前 Diff'}).compareDocumentPosition(history)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+   await user.click(history);
+   expect(within(tabs).queryByRole('tab',{name:'交互方案讨论'})).not.toBeInTheDocument();
+   expect(screen.queryByRole('textbox',{name:'聊天输入'})).not.toBeInTheDocument();
+   await user.click(screen.getByRole('button',{name:'恢复此会话'}));
+   await within(tabs).findByRole('tab',{name:'交互方案讨论',selected:true});
+   expect(screen.getByRole('textbox',{name:'聊天输入'})).toHaveValue('保留会话草稿');
+ });
+ it('shows execution before unread, and keeps the unread dot once the background run ends',async()=>{
+   const api=createDemoApi(),call=api.call.bind(api),user=userEvent.setup();
+   let running=true;
+   const {id}= (await api.call<Workspace>('snapshot')).conversations[1];
+   api.call=async <T,>(method:string,params?:Record<string,unknown>)=>{
+     const result=await call<T>(method,params);
+     if(method==='snapshot'){
+       const c=(result as Workspace).conversations.find(x=>x.id===id)!;
+       Object.assign(c,{runtime_status:running?'running':'idle',current_run_id:running?'test-run':null,unread:true});
+     }
+     return result;
+   };
+   render(<ChatApp api={api}/>);
+   await screen.findByText('隔离演示 · 不调用模型');
+   await user.click(row('diff').querySelector('.task-title-btn')!);
+   const tabs=await screen.findByRole('tablist',{name:'本任务会话标签'});
+   await user.click(within(tabs).getByRole('tab',{name:'实现部署前 Diff'}));
+   const tab=within(tabs).getByRole('tab',{name:'交互方案讨论'});
+   expect(tab).toHaveAccessibleDescription('执行中');
+   expect(within(tabs).getByRole('button',{name:'完成会话：交互方案讨论'})).toBeDisabled();
+   running=false;
+   await waitFor(()=>expect(tab).toHaveAccessibleDescription('有未读消息'),{timeout:3500});
+   expect(within(tabs).getByRole('button',{name:'完成会话：交互方案讨论'})).toBeEnabled();
+ });
+ it('does not restart a slow conversation read on every polling tick',async()=>{
+   const api=createDemoApi();
+   const call=api.call.bind(api);
+   let deferDetail=false;
+   let inFlight=0;
+   let resolveDetail!: ()=>void;
+   const pending=new Promise<void>(resolve=>{resolveDetail=resolve;});
+   api.call=async (method,params)=>{
+     if(method==='detail'&&deferDetail){inFlight++;await pending;inFlight--;}
+     return call(method,params);
+   };
+   vi.useFakeTimers();
+   try{
+     await act(async()=>{render(<ChatApp api={api}/>);});
+     deferDetail=true;
+     await act(async()=>{fireEvent.click(row('diff').querySelector('.task-title-btn')!);});
+     await act(async()=>{await vi.advanceTimersByTimeAsync(3600);});
+     expect(inFlight).toBe(1);
+   }finally{
+     await act(async()=>{resolveDetail();});
+     vi.useRealTimers();
+   }
+ });
+ it('keeps a conversation refresh error visible across a successful workspace refresh',async()=>{
+   const api=createDemoApi();
+   const call=api.call.bind(api);
+   let failDetail=true;
+   api.call=async (method,params)=>{
+     if(method==='detail'&&failDetail)throw new Error('后端响应格式无效');
+     return call(method,params);
+   };
+   vi.useFakeTimers();
+   try{
+     await act(async()=>{render(<ChatApp api={api}/>);});
+     await act(async()=>{fireEvent.click(row('diff').querySelector('.task-title-btn')!);});
+     await act(async()=>{await vi.advanceTimersByTimeAsync(1200);});
+     expect(screen.getByRole('alert')).toHaveTextContent('后端响应格式无效');
+     await act(async()=>{await vi.advanceTimersByTimeAsync(1300);});
+     expect(screen.getByRole('alert')).toHaveTextContent('后端响应格式无效');
+     failDetail=false;
+     await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'重试'}));});
+     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+   }finally{
+     vi.useRealTimers();
+   }
+ });
  it('enables the right workspace only in conversations and restores it after leaving the task tree',async()=>{
    const {user}=await tasksPage();
    expect(screen.queryByRole('toolbar',{name:'右侧工具操作'})).not.toBeInTheDocument();
@@ -370,7 +466,7 @@ describe('task-focused workspace',()=>{
  it('excluded projects disappear while tasks and old sessions stay',async()=>{const {api,user}=await tasksPage();const before=await api.call<Workspace>('snapshot');await user.click(screen.getByRole('button',{name:'设置'}));await user.type(screen.getByLabelText('添加一个或多个目录（每行一个）'),'/Users/yc/Projects/release-console');await user.click(screen.getByRole('button',{name:'添加目录'}));await user.click(screen.getByRole('button',{name:'保存排除目录'}));await waitFor(async()=>expect((await api.call<Workspace>('snapshot')).projects).toHaveLength(1));const after=await api.call<Workspace>('snapshot');expect(after.tasks.length).toBe(before.tasks.length);expect(after.conversations.length).toBe(before.conversations.length);});
  it('utility panels share a right tabstrip and preserve inspector selection',async()=>{const {user}=await tasksPage();await user.click(row('diff').querySelector('.task-title-btn')!);await screen.findByRole('textbox',{name:'聊天输入'});await user.click(screen.getByRole('button',{name:'会话属性'}));await user.click(screen.getByRole('tab',{name:'属性与设置'}));await user.click(screen.getByRole('button',{name:'侧边浏览器'}));await user.click(screen.getByRole('button',{name:'文件'}));const tabs=screen.getByRole('tablist',{name:'右侧工具标签'});expect(within(tabs).getByRole('tab',{name:'新标签页'})).toBeInTheDocument();expect(within(tabs).getByRole('tab',{name:'文件'})).toHaveAttribute('aria-selected','true');expect(within(tabs).queryByRole('tab',{name:'任务详情'})).not.toBeInTheDocument();expect(screen.getByRole('tab',{name:'属性与设置'})).toHaveAttribute('aria-selected','true');});
  it('renders native Markdown without executing HTML',()=>{const {container}=render(<Markdown text={'## 成果\n<script>alert(1)</script>\n[坏链接](javascript:alert)\n[安全文档](https://example.com)\n```sh\necho test\n```'}/>);expect(container.querySelector('script')).toBeNull();expect(container.querySelector('a[href^="javascript:"]')).toBeNull();expect(screen.getByRole('link',{name:'安全文档'})).toHaveAttribute('rel','noreferrer noopener');});
- it('ignores a late detail response after selecting a different conversation',async()=>{const api=createDemoApi(),original=api.call.bind(api);let release:((x:unknown)=>void)|undefined;const d=await api.call<Workspace>('snapshot'),first=d.conversations[0],second=d.conversations[1];const delayed={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>method==='detail'&&params?.conversation_id===first.id?new Promise(resolve=>{release=resolve}):original(method,params))} as typeof api;const user=userEvent.setup();render(<ChatApp api={delayed}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:first.title}));await user.click(screen.getByRole('button',{name:second.title}));await waitFor(()=>expect(delayed.call).toHaveBeenCalledWith('detail',{conversation_id:second.id}));release?.(await original('detail',{conversation_id:first.id}));await waitFor(()=>expect(screen.queryByText('已明确的边界')).not.toBeInTheDocument());});
+ it('ignores a late detail response after selecting a different conversation',async()=>{const api=createDemoApi(),original=api.call.bind(api);let release:((x:unknown)=>void)|undefined;const d=await api.call<Workspace>('snapshot'),first=d.conversations[0],second=d.conversations[1];const delayed={...api,call:vi.fn(async(method:string,params?:Record<string,unknown>)=>method==='detail'&&params?.conversation_id===first.id?new Promise(resolve=>{release=resolve}):original(method,params))} as typeof api;const user=userEvent.setup();render(<ChatApp api={delayed}/>);await user.click(screen.getByRole('button',{name:'会话'}));await user.click(await screen.findByRole('button',{name:first.title}));await user.click(screen.getByRole('button',{name:second.title}));await waitFor(()=>expect(delayed.call).toHaveBeenCalledWith('detail',{conversation_id:second.id,paged:true}));release?.(await original('detail',{conversation_id:first.id}));await waitFor(()=>expect(screen.queryByText('已明确的边界')).not.toBeInTheDocument());});
  it('preserves multiselect, week, project and collapsed filters across navigation',async()=>{
    const {user}=await tasksPage();
    await user.click(screen.getByRole('button',{name:'筛选任务状态'}));
@@ -451,4 +547,23 @@ describe('task-focused workspace',()=>{
    expect(row('contract')).toHaveClass('context-only');
  });
 
+});
+
+describe('项目搜索入口',()=>{
+ it('新建任务可以搜索并用键盘选择项目',async()=>{
+  const {user}=await tasksPage();await user.click(screen.getByRole('button',{name:'新建任务'}));
+  const trigger=screen.getByRole('combobox',{name:'默认项目 · 可选'});await user.click(trigger);
+  await user.type(screen.getByLabelText('搜索任务项目'),'RELEASE');await user.keyboard('[ArrowDown][ArrowUp][Enter]');
+  expect(trigger).toHaveTextContent('release-console');expect(screen.getByRole('dialog',{name:'新建任务'})).toBeInTheDocument();
+ });
+ it('项目筛选的键盘确认支持多选与取消，Esc 返回触发器',async()=>{
+  const {user}=await tasksPage();const trigger=screen.getByRole('button',{name:'筛选任务项目'});await user.click(trigger);
+  const search=screen.getByLabelText('搜索筛选项目');expect(search).toHaveFocus();
+  await user.type(search,'RELEASE');await user.keyboard('[ArrowDown][Enter]');
+  expect(screen.getByLabelText('release-console')).toBeChecked();expect(trigger).toHaveTextContent('1 个项目');
+  await user.keyboard('[Enter]');expect(screen.getByLabelText('release-console')).not.toBeChecked();
+  await user.clear(search);await user.type(search,'no-match');await user.keyboard('[ArrowDown][Enter]');expect(trigger).toHaveTextContent('全部项目');
+  await user.click(screen.getByRole('button',{name:'全部项目（不限）'}));
+  await user.keyboard('[Escape]');expect(screen.queryByLabelText('搜索筛选项目')).not.toBeInTheDocument();expect(trigger).toHaveFocus();
+ });
 });

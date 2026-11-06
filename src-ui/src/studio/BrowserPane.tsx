@@ -28,8 +28,8 @@ function NativeBrowserSurface({ active, conversationId }: { active: boolean; con
 }
 
 export type BrowserController={state?:BrowserState;started:boolean;operation:(method:string,params?:Record<string,unknown>)=>Promise<BrowserState|undefined>;start:(method?:string)=>Promise<void>};
-type BrowserPaneProps={active?:boolean;externalTabs?:boolean;occluded?:boolean;selectedPage?:string;onController?:(controller:BrowserController)=>void};
-export function BrowserPane({ active = true,externalTabs=false,occluded=false,selectedPage,onController }: BrowserPaneProps) {
+type BrowserPaneProps={active?:boolean;restore?:boolean;externalTabs?:boolean;occluded?:boolean;selectedPage?:string;onController?:(controller:BrowserController)=>void};
+export function BrowserPane({ active = true,restore=false,externalTabs=false,occluded=false,selectedPage,onController }: BrowserPaneProps) {
   const studio = useStudio();
   const opened = useRef(new Set<string>());
   const remember = useCallback((owner: string) => {
@@ -39,15 +39,15 @@ export function BrowserPane({ active = true,externalTabs=false,occluded=false,se
   const forget = useCallback((owner: string) => { opened.current.delete(owner); }, []);
   const owner = studio.conversation?.id;
   // 按会话重新挂载，旧异步结果与旧连接不能进入新会话；仅恢复最近打开的会话。
-  return <SessionBrowserPane key={owner || 'none'} active={active} previouslyOpened={Boolean(owner && opened.current.has(owner))} remember={remember} forget={forget} externalTabs={externalTabs} occluded={occluded} selectedPage={selectedPage} onController={onController}/>;
+  return <SessionBrowserPane key={owner || 'none'} active={active} restore={restore} previouslyOpened={Boolean(owner && opened.current.has(owner))} remember={remember} forget={forget} externalTabs={externalTabs} occluded={occluded} selectedPage={selectedPage} onController={onController}/>;
 }
-function SessionBrowserPane({ active, previouslyOpened, remember, forget,externalTabs,occluded,selectedPage,onController }: {
-  active: boolean; previouslyOpened: boolean; remember: (owner: string) => void; forget: (owner: string) => void;
+function SessionBrowserPane({ active, restore, previouslyOpened, remember, forget,externalTabs,occluded,selectedPage,onController }: {
+  active: boolean; restore: boolean; previouslyOpened: boolean; remember: (owner: string) => void; forget: (owner: string) => void;
   externalTabs?:boolean;occluded?:boolean;selectedPage?:string;onController?:(controller:BrowserController)=>void;
 }) {
   const studio = useStudio(), conversation = studio.conversation;
   const nativeBrowser = typeof window !== 'undefined' && Boolean((window as any).akb?.browser);
-  const browser = useSessionBrowser(conversation?.id, studio.api.native, active, previouslyOpened);
+  const browser = useSessionBrowser(conversation?.id, studio.api.native, active, previouslyOpened, restore && nativeBrowser);
   const { state, started, waiting, error, operation } = browser;
   useEffect(()=>{onController?.({state,started,operation,start:browser.start})},[state,started,operation,browser.start,onController]);
   useEffect(()=>{if(active&&started&&selectedPage&&state?.target_id!==selectedPage&&state?.pages.some(p=>p.id===selectedPage))void operation('activate_page',{target_id:selectedPage})},[active,started,selectedPage,operation]);

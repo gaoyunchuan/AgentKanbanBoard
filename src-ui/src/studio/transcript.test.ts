@@ -9,9 +9,35 @@ test('子Agent的final留在折叠的智能体过程，不冒充主会话结果'
  expect(turns.flatMap(t=>t.final.map(i=>i.text))).toEqual(['用户可见的结果']);
  expect(JSON.stringify(turns.flatMap(t=>t.process))).toContain('内部子任务结果');
 });
-test('真实无turnId的中途补充留在原来的过程位置',()=>{
+test('无 turnId 的中途补充保留在前后过程之间',()=>{
  const turns=transcriptTurns([user(1,'最初请求'),item(2,'main','main-turn','过程开头'),user(3,'中途补充'),item(4,'main','main-turn','收到补充')],[run],'r');
- const process=turns.flatMap(t=>t.process).filter(i=>!('kind'in i));
- expect(process.map(i=>'text'in i?i.text:'')).toEqual(['过程开头','中途补充','收到补充']);
- expect(turns.flatMap(t=>t.user.map(i=>i.text))).toEqual(['最初请求']);
+ const visible=turns.flatMap(t=>[...t.user,...t.process,...t.final]);
+ expect(visible.map(i=>'text'in i?i.text:'')).toEqual(['最初请求','过程开头','中途补充','收到补充']);
+ expect(turns.flatMap(t=>t.user.map(i=>i.text))).toEqual(['最初请求','中途补充']);
+});
+
+test('历史中保留用户的任务问题回复与返工留言',()=>{
+ const answer:WorkEvent={...user(2,''),kind:'question_answered',payload:{response:{text:'先查告警规则'}}};
+ const feedback:WorkEvent={...user(4,''),run_id:null,kind:'task_action',payload:{action:'rework',feedback:'补上原始证据'}};
+ const pause:WorkEvent={...user(5,''),kind:'task_action',payload:{action:'pause'}};
+ const turns=transcriptTurns([user(1,'检查机器'),answer,item(3,'main','main-turn','已核对','final_answer'),feedback,pause],[run]);
+ expect(turns.flatMap(t=>t.user.map(i=>i.text))).toEqual(['检查机器','先查告警规则','补上原始证据']);
+});
+
+test('向上接入同回合更早输入后，仍用同一标识渲染已经显示的最终回答',()=>{
+ const final=item(5,'main','main-turn','完整结果','final_answer');
+ const recent=transcriptTurns([final],[run]).find(t=>t.final.length);
+ const older:WorkEvent={...user(2,'中途输入'),kind:'item/completed',payload:{threadId:'main',turnId:'main-turn',item:{id:'older-input',type:'userMessage',content:[{type:'text',text:'中途输入'}]}}};
+ const merged=transcriptTurns([item(1,'main','main-turn','检查'),older,final],[run]).find(t=>t.final.length);
+ expect(merged?.id).toBe(recent?.id);
+});
+
+test('大型协议回显合并到已发送气泡时保留全部图片引用',()=>{
+ const echo:WorkEvent={...item(2,'main','main-turn',''),payload:{
+  threadId:'main',turnId:'main-turn',item_type:'userMessage',item_id:'echo',preview:'带图消息',image_slots:[1,2,3],
+ }};
+ const projected={...echo,truncated:true};
+ const bubbles=transcriptTurns([user(1,'带图消息'),projected],[run]).flatMap(turn=>turn.user);
+ expect(bubbles).toHaveLength(1);
+ expect(bubbles[0].imageRefs).toEqual([1,2,3].map(slot=>({eventId:2,slot})));
 });

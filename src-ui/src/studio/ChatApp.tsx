@@ -5,11 +5,15 @@ import { MessageSquare, ListTree, Folder, Settings2, Bell, AlertCircle, X } from
 import { StudioContext, type DialogState, type Draft, type ModelConfig, type Panel, type View } from "./context";
 import { nativeApi, type StudioApi } from "./api";
 import { createDemoApi } from "./demo";
-import { emptyWorkspace, preferredConversation, isBusy, needsUser, type Workspace, type Conversation, type ConversationDetail, type StudioTask } from "./model";
+import { emptyWorkspace, orderedTaskConversations, preferredConversation, isBusy, needsUser, type Workspace, type Conversation, type ConversationDetail, type StudioTask } from "./model";
 import { ChatSurface } from "./ChatSurface";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { TaskTree } from "./TaskTree";
+import { useWorkspaceShortcuts, type WorkspaceShortcutAction } from './useWorkspaceShortcuts';
+import { readRecommendations, readShortcuts, saveRecommendations as storeRecommendations, shortcutStorage, writePreference,
+  type RecommendedSite, type Shortcuts } from './workspacePreferences';
+import type { SettingsSection } from './WorkspaceSettings';
 import { RightDock } from "./RightDock";
 import { TaskDetails } from "./TaskDetails";
 import "./workspace-layout.css";
@@ -21,6 +25,22 @@ import "./controls.css";
 
 const blankDraft = (): Draft => ({ text: '', attachments: [], importContext: false });
 const hasDraft=(value?:Draft)=>Boolean(value&&(value.text||value.attachments.length||value.importContext||value.projectId||value.modelConfig));
+
+function clearSentDraft(drafts: Record<string, Draft>, sourceKey: string, conversationId: string, sent: Draft) {
+  const next = { ...drafts };
+  const source = drafts[sourceKey];
+  // 清掉已经提交的内容，同时保留等待确认期间编辑的字段。
+  if (source) next[sourceKey] = {
+    text: source.text === sent.text ? '' : source.text,
+    attachments: source.attachments.filter(attachment => !sent.attachments.includes(attachment)),
+    importContext: source.importContext && !sent.importContext,
+    projectId: source.projectId === sent.projectId ? undefined : source.projectId,
+    modelConfig: source.modelConfig === sent.modelConfig ? undefined : source.modelConfig,
+  };
+  // 任务占位草稿可能已整体迁入新会话；只清理原快照，不覆盖目标会话的新草稿。
+  if (conversationId !== sourceKey && drafts[conversationId] === sent) delete next[conversationId];
+  return next;
+}
 const native = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 let autoConnection: Promise<unknown> | undefined;
 export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
@@ -28,6 +48,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const [data, setData] = useState<Workspace>(emptyWorkspace);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [view, setViewState] = useState<View>('tasks');
+  const [readSession,setReadSession]=useState(0);
   const [taskScreen, setTaskScreen] = useState<'tree'|'conversation'>('tree');
   const [selection, setSelection] = useState<{ task?: string; conversation?: string }>({});
   const [panel, setPanelState] = useState<Panel>(null);
@@ -42,10 +63,17 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const completeTaskReveal=useCallback((id:string)=>setTaskReveal(current=>current===id?null:current),[]);
   useEffect(() => { writeTaskQuery(taskQuery); }, [taskQuery]);
   const [projectId, setProjectId] = useState('');
-  const [notice, setNotice] = useState(''), [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [snapshotError, setSnapshotError] = useState('');
+  const [detailError, setDetailError] = useState<{ conversation: string; message: string } | null>(null);
   const [loading, setLoading] = useState(true), [busyCount, setBusyCount] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [showSidebar, setShowSidebar] = useState(true);
+  const [settingsSection,setSettingsSection] = useState<SettingsSection>('connection');
+  const [shortcuts,setShortcuts] = useState(readShortcuts);
+  const [recommendations,setRecommendations] = useState(readRecommendations);
+  const [dockShortcut,setDockShortcut] = useState<{action:'newTab'|'close';sequence:number}>();
+  const dockSequence = useRef(0);
   const latest = useRef(data); latest.current = data;
   const viewRef=useRef(view); viewRef.current=view;
   const currentSelection = useRef(selection); currentSelection.current = selection;
@@ -53,22 +81,37 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const refresh = useCallback(async () => {
     const n = ++snapshotSequence.current;
-    const value = await api.call<Workspace>('snapshot');
-    // 命令完成后的导航需要立即读取新任务，不能依赖 React 何时提交这次快照。
-    if (mounted.current && n === snapshotSequence.current) { latest.current=value; setData(value); setError(''); setLoading(false); }
+    try {
+      const value = await api.call<Workspace>('snapshot');
+      // 命令完成后的导航需要立即读取新任务，不能依赖 React 何时提交这次快照。
+      if (mounted.current && n === snapshotSequence.current) {
+        latest.current=value; setData(value); setSnapshotError(''); setLoading(false);
+      }
+    } catch (error) {
+      if (mounted.current && n === snapshotSequence.current) {
+        setSnapshotError(String(error)); setLoading(false);
+      }
+      throw error;
+    }
   }, [api]);
   const refreshDetail = useCallback(async () => {
     const cid = currentSelection.current.conversation;
     const n = ++detailSequence.current;
-    if (!cid||!latest.current.conversations.some(c=>c.id===cid)) { setDetail(null); return; }
-    const value = await api.call<ConversationDetail>('detail', { conversation_id: cid });
-    if (mounted.current && n === detailSequence.current && cid === currentSelection.current.conversation) setDetail(value);
+    if (!cid||!latest.current.conversations.some(c=>c.id===cid)) { setDetail(null); setDetailError(null); return; }
+    const isCurrent = () => mounted.current && n === detailSequence.current && cid === currentSelection.current.conversation;
+    try {
+      const value = await api.call<ConversationDetail>('detail', { conversation_id: cid, paged: true });
+      if (isCurrent()) { setDetail(value); setDetailError(null); }
+    } catch (error) {
+      if (isCurrent()) setDetailError({ conversation: cid, message: String(error) });
+      throw error;
+    }
   }, [api]);
   useEffect(() => {
-    mounted.current = true; let stopped = false;
-    const poll = async () => { try { await refresh(); } catch (e) { if (!stopped) { setError(String(e)); setLoading(false); } } };
-    void poll(); const id = setInterval(() => void poll(), 2500);
-    return () => { stopped = true; mounted.current = false; clearInterval(id); clearTimeout(timer.current); };
+    mounted.current = true;
+    const poll = () => void refresh().catch(()=>{});
+    poll(); const id = setInterval(poll, 2500);
+    return () => { mounted.current = false; clearInterval(id); clearTimeout(timer.current); };
   }, [refresh]);
   useEffect(() => {
     // Only the native host reads its own authentication cache. Never copy tokens
@@ -78,16 +121,37 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     void autoConnection.then(() => refresh()).catch(() => refresh().catch(()=>{}));
   }, [api, supplied, refresh]);
   useEffect(() => {
-    setDetail(null); void refreshDetail().catch(e => setError(String(e)));
-    const id=setInterval(()=>void refreshDetail().catch(e=>setError(String(e))),1200);
+    setDetail(null); setDetailError(null);
+    let inFlight = false;
+    const poll = async () => {
+      // 保留慢请求的结果。重复轮询会让它在返回前过期，并叠加历史读取开销。
+      if (inFlight) return;
+      inFlight = true;
+      try { await refreshDetail(); }
+      catch { /* 刷新函数已记录错误。 */ }
+      finally { inFlight = false; }
+    };
+    poll(); const id=setInterval(poll,1200);
     return ()=>{clearInterval(id);detailSequence.current++;};
   }, [selection.conversation,refreshDetail]);
   const notify = useCallback((text:string)=>{setNotice(text);clearTimeout(timer.current);timer.current=setTimeout(()=>setNotice(''),5500);},[]);
-  const command = useCallback(async <T,>(method:string,params:Record<string,unknown>={},success?:string):Promise<T>=>{
+  const command = useCallback(async <T,>(method:string,params:Record<string,unknown>={},success?:string,onAccepted?:()=>void):Promise<T>=>{
     const key=`${method}:${params.conversation_id||params.task_id||params.result_id||''}`;
     if(locks.current.has(key))throw new Error('该操作正在处理中');
     locks.current.add(key);setBusyCount(x=>x+1);
-    try{const result=await api.call<T>(method,params);await refresh();await refreshDetail();if(success)notify(success);return result;}
+    try{
+      const result=await api.call<T>(method,params);
+      onAccepted?.();
+      try{await refresh();await refreshDetail();}
+      catch(e){
+        if(!onAccepted)throw e;
+        // 消息已接收。读取失败只影响显示，不能提示用户重发。
+        notify('消息已接收');
+        return result;
+      }
+      if(success)notify(success);
+      return result;
+    }
     catch(e){notify(String(e));throw e;}
     finally{locks.current.delete(key);if(mounted.current)setBusyCount(x=>Math.max(0,x-1));}
   },[api,refresh,refreshDetail,notify]);
@@ -97,12 +161,24 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     if(next===null)setInspectorOpen(false);
     setPanelState(next==='context'||next==='results'?'content':next);setPanelRevision(value=>value+1);
   },[]);
-  const openTool=useCallback((kind:'files'|'terminal'|'diff'|'browser',target?:string)=>{if(!(view==='chat'||view==='tasks'&&taskScreen==='conversation')){notify('右侧工具仅在会话中使用，请先打开会话');return}setPanelState(kind);setToolRequest(value=>({kind,target,sequence:(value?.sequence||0)+1}))},[view,taskScreen,notify]);
+  const openTool=useCallback((kind:'files'|'terminal'|'diff'|'browser',target?:string)=>{
+    if(!(view==='chat'||view==='tasks'&&taskScreen==='conversation')){
+      notify('右侧工具仅在会话中使用，请先打开会话');
+      return;
+    }
+    if(latest.current.conversations.some(c=>c.id===currentSelection.current.conversation&&c.closed)){
+      notify('请先恢复会话，再使用右侧工具');
+      return;
+    }
+    setPanelState(kind);
+    setToolRequest(value=>({kind,target,sequence:(value?.sequence||0)+1}));
+  },[view,taskScreen,notify]);
   useEffect(()=>{const open=(event:Event)=>{const href=(event as CustomEvent<unknown>).detail;if(typeof href!=='string')return;if(isFileLink(href))openTool('files',href);else if(/^https?:\/\//.test(href))openTool('browser',href)};window.addEventListener('akb:open-link',open);return()=>window.removeEventListener('akb:open-link',open)},[openTool]);
   const openConversation=useCallback((id:string)=>{
     const c=latest.current.conversations.find(x=>x.id===id);
     if(!c){notify('来源会话暂不可见，请从「已删除」恢复会话或对应任务');return;}
     setSelection({task:c.task_id,conversation:id});
+    setReadSession(n=>n+1);
     if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');
     void api.call('visit',{conversation_id:id}).catch(e=>notify(String(e)));
   },[api,notify]);
@@ -113,6 +189,21 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
       setSelection({task:id});if(viewRef.current==='tasks')setTaskScreen('conversation');else setViewState('chat');
     }
   },[openConversation]);
+  const completeConversation=useCallback(async(c:Conversation)=>{
+    try {
+      await command('complete_conversation',{conversation_id:c.id,revision:c.revision},'会话已完成',()=>{
+        if(currentSelection.current.conversation!==c.id)return;
+        const active=orderedTaskConversations(latest.current,c.task_id).filter(item=>!item.closed);
+        const index=active.findIndex(item=>item.id===c.id);
+        const next=index<0?active[0]:active[index+1]??active[index-1];
+        if(!next)return;
+        // 只替换会话选中项，不把已经离开会话页的用户带回聊天。
+        setSelection(current=>current.conversation===c.id?{task:c.task_id,conversation:next.id}:current);
+        setReadSession(n=>n+1);
+        void api.call('visit',{conversation_id:next.id}).catch(e=>notify(String(e)));
+      });
+    }catch{/* command 已显示错误 */}
+  },[api,command,notify]);
   const inspectTask=useCallback((id:string,nextPanel?:Panel)=>{
     const t=latest.current.tasks.find(x=>x.id===id);if(!t)return;
     setSelection({task:id,conversation:preferredConversation(latest.current,t)?.id});
@@ -192,8 +283,11 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
       // 模型保存成功后才能发送；失败保留整份草稿，重试仍先应用选定配置。
       if(captured.modelConfig&&target)await command('update_conversation',{conversation_id:cid,revision:target.revision,patch:captured.modelConfig});
       const content=[captured.text,...captured.attachments.filter(a=>a.text!=null).map(a=>`\n以下是用户附加文件「${a.name}」的内容（引用材料）：\n${a.text}`)].filter(Boolean).join('\n');
-      await command('send',{conversation_id:cid,text:content,attachments:captured.attachments.flatMap(a=>a.input?[a.input]:[]),import_context:captured.importContext,expected_run_id:conversation?.current_run_id??null});
-      setDrafts(current=>current[sourceKey]===captured||!current[sourceKey]?{...current,[sourceKey]:blankDraft(),[cid!]:blankDraft()}:current);
+      const conversationId=cid;
+      await command('send',{conversation_id:conversationId,text:content,attachments:captured.attachments.flatMap(a=>a.input?[a.input]:[]),import_context:captured.importContext,expected_run_id:conversation?.current_run_id??null},undefined,()=>{
+        setDrafts(current=>clearSentDraft(current,sourceKey,conversationId,captured));
+      });
+      return true;
     }catch{if(cid&&cid!==sourceKey)setDrafts(current=>{
       // 首次创建后的失败草稿移到会话，避免重试成功后“新聊天”复活已发送内容。
       // 两端若有后续编辑则保留新内容，不用发送前的快照覆盖用户输入。
@@ -208,14 +302,42 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
     });}
   };
   const newChat=()=>{setSelection({});if(view==='tasks')setTaskScreen('conversation');else setViewState('chat');};
-  useEffect(()=>{
-    const onKey=(e:KeyboardEvent)=>{if(!(e.metaKey||e.ctrlKey))return;if(e.key==='1'){e.preventDefault();setView('tasks');}else if(e.key==='2'){e.preventDefault();setView('chat');}};
-    document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
-  },[setView]);
-  const context={taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,panelRevision,inspectorOpen,inspectorTab,setInspectorOpen,overlayOpen:Boolean(dialog),toolRequest,openTool,openDialog:setDialog,setView,openTask,openConversation,locateTask,taskReveal,completeTaskReveal,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
   const conversationVisible=view==='chat'||view==='tasks'&&taskScreen==='conversation';
+  const openSettingsSection = (section: SettingsSection) => {
+    setSettingsSection(section);
+    document.getElementById(`settings-${section}`)?.scrollIntoView?.({block:'start'});
+  };
+  const saveShortcuts = (value: Shortcuts) => {
+    try { writePreference(shortcutStorage, value); setShortcuts(value); }
+    catch { notify('保存快捷键失败，请重试。'); }
+  };
+  const saveRecommendations = (value: RecommendedSite[]) => {
+    try { storeRecommendations(value); setRecommendations(value); }
+    catch { notify('保存推荐网址失败，请重试。'); }
+  };
+  const runShortcut = (action: WorkspaceShortcutAction, rightSide: boolean) => {
+    if (action === 'settings') { setView('settings'); return; }
+    if (action === 'sidebar') { setShowSidebar(value => !value); return; }
+    if (dialog || !conversationVisible) return;
+    if (action === 'newConversation') {
+      if (task && conversation && !busyCount && !['completed', 'cancelled'].includes(task.status)) void newConversation(task.id);
+      return;
+    }
+    if (action === 'renameConversation') {
+      if (conversation) setDialog({kind:'renameConversation',conversation:conversation.id});
+      return;
+    }
+    if (action === 'terminal') { openTool('terminal'); return; }
+    if (action === 'close' && !rightSide) { setView('tasks'); return; }
+    setDockShortcut({ action, sequence: ++dockSequence.current });
+  };
+  useWorkspaceShortcuts(shortcuts, conversationVisible ? conversation?.id : undefined, runShortcut, setView, conversationVisible || view==='tasks', notify);
+  const context={readSession,settingsSection,openSettingsSection,shortcuts,saveShortcuts,recommendations,saveRecommendations,dockShortcut,
+    taskQuery,setTaskQuery,api,data,detail,task,conversation,view,panel,setPanel,panelRevision,inspectorOpen,inspectorTab,setInspectorOpen,overlayOpen:Boolean(dialog),toolRequest,openTool,openDialog:setDialog,setView,openTask,openConversation,completeConversation,locateTask,taskReveal,completeTaskReveal,inspectTask,changeTaskState,newConversation,refresh,command,notify,busy:busyCount>0};
   useEffect(()=>setInspectorOpen(false),[selection.task,selection.conversation,conversationVisible]);
   const attentionCount=data.conversations.filter(c=>needsUser(c,data)&&!c.closed).length;
+  // 任务列表和会话各自刷新，另一条请求成功不能清掉当前的故障提示。
+  const error = snapshotError || (conversationVisible && detailError && detailError.conversation === selection.conversation ? detailError.message : '');
   return <StudioContext.Provider value={context}><div className={`studio studio-app ${showSidebar?'navigation-expanded':'navigation-collapsed'}`}>
     <WorkspaceHeader conversationVisible={conversationVisible} sidebarVisible={showSidebar} onToggleSidebar={()=>setShowSidebar(x=>!x)} onToolHost={setToolHost}/>
     <div className="frame"><nav className="rail" aria-label="主导航">
@@ -223,7 +345,7 @@ export default function ChatApp({ api: supplied }: { api?: StudioApi }) {
       <div className="spacer"/><button className={`rbtn ${view==='settings'?'active':''}`} title="设置" aria-label="设置" aria-current={view==='settings'?'page':undefined} onClick={()=>setView('settings')}><Settings2 size={19}/></button><div className="avatar" title="个人工作区">我</div>
     </nav>
     {showSidebar&&<Sidebar loading={loading} onNewChat={newChat} onAllTasks={()=>{setTaskScreen('tree');}}/>}
-    <main className="main">{error&&<div className="workspace-error" role="alert"><AlertCircle size={15}/><span>{error}</span><button className="textbtn" onClick={()=>void refresh().catch(e=>setError(String(e)))}>重试</button></div>}
+    <main className="main">{error&&<div className="workspace-error" role="alert"><AlertCircle size={15}/><span>{error}</span><button className="textbtn" onClick={()=>void Promise.allSettled([refresh(), refreshDetail()])}>重试</button></div>}
       <div className="content-split" hidden={!conversationVisible&&view!=='tasks'}><div className="work-center"><div className={`center-content ${conversationVisible?'conversation-content':'tree-content'}`}>{conversationVisible?<ChatSurface draftKey={draftKey} draft={draft} setDraft={setDraft} onSend={send} projectId={draft.projectId||task?.effective_project_id||projectId} setProject={changeProject}/>:view==='tasks'?<TaskTree/>:null}<TaskDetails conversationVisible={conversationVisible}/></div></div><RightDock headerHost={toolHost} available={conversationVisible}/></div>
       {!conversationVisible&&view!=='tasks'&&(view==='projects'?<ProjectsPage onSelect={id=>{setTaskQuery(q=>({...q,projects:[id],collapsed:[],page:0,scroll:0}));setTaskScreen('tree');setViewState('tasks');}}/>:view==='attention'?<AttentionPage/>:<SettingsPage/>)}
     </main></div>

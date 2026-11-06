@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Pin, ChevronDown, ChevronRight, MessageSquare, Clock,  Link, ListTree, Settings2, Trash2, ArrowUpRight } from 'lucide-react';
+import { Plus, Pin, ChevronDown, ChevronRight, CircleCheck, MessageSquare, Clock,  Link, ListTree, Settings2, Trash2, ArrowUpRight } from 'lucide-react';
 import { useStudio } from './context';
-import { ancestors, flattenedTasks, taskConversations, taskLabel, type StudioTask } from './model';
+import { ancestors, flattenedTasks, runtimeLabel, taskConversations, taskLabel, preferredConversation, type Conversation, type StudioTask } from './model';
 import { HoverInfo } from './components';
+import { ConversationIndicator, conversationExecutionIndicator } from './ConversationIndicator';
 import { StatusIcon } from './TaskStatusIcon';
 import { TaskFilters } from './TaskFilterBar';
 import { queryTasks, TASK_PAGE_SIZE } from './taskFilters';
@@ -20,9 +21,11 @@ export function TaskMenu({ menu, close }: { menu: Menu; close: () => void }) {
   }, [close]);
   const act = (fn: () => void) => { close(); fn(); };
   const t = menu.task;
+  const unreadTarget=preferredConversation(s.data,t);
   return createPortal(<div className="studio context-menu-layer"><div ref={ref} className="inline-menu task-context-menu" role="menu" aria-label={menu.status ? `${t.title} 状态菜单` : `${t.title} 任务菜单`} style={{ left: Math.min(menu.x, window.innerWidth - 252), top: Math.max(12, Math.min(menu.y, window.innerHeight - (menu.status ? 220 : 330))) }}>
     {menu.status ? ([['todo','待办'],['in_progress','进行中'],['completed','已完成'],['cancelled','已取消']] as const).map(([value,label]) => <button role="menuitemradio" aria-checked={t.status === value} className="popitem" key={value} onClick={() => act(() => s.changeTaskState(t,value))}><StatusIcon status={value}/>{label}{t.status===value&&<span className="grow checkmark">✓</span>}</button>) : <>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openTask(t.id))}><MessageSquare size={15}/>打开任务会话</button>
+      <button role="menuitem" className="popitem" disabled={!unreadTarget} title={unreadTarget?undefined:"有会话后可标为未读"} onClick={()=>act(()=>{void s.command("mark_unread",{conversation_id:unreadTarget!.id}).catch(()=>{})})}><MessageSquare size={15}/>标为未读</button>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openDialog({kind:'bindCodex',task:t.id}))}><Link size={15}/>绑定 Codex 会话</button>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openDialog({kind:'createTask',parent:t.id}))}><ListTree size={15}/>添加子任务</button>
       <button role="menuitem" className="popitem" onClick={() => act(() => s.openDialog({kind:'dependencies',task:t.id}))}><Link size={15}/>设置前置任务</button>
@@ -32,6 +35,20 @@ export function TaskMenu({ menu, close }: { menu: Menu; close: () => void }) {
     </>}
   </div></div>,document.body);
 }
+function SessionChip({conversation, open}: {conversation: Conversation; open: (id: string) => void}) {
+  const execution = conversationExecutionIndicator(conversation);
+  const status = conversation.closed ? '已完成' : execution ?? runtimeLabel(conversation);
+  // 完成状态和阅读状态独立，已完成的会话也可能有待查看的消息。
+  const description = conversation.unread ? `${status} · 有未读消息` : status;
+  return <button className="session-chip" title={`${conversation.title} · ${description}`} aria-description={description}
+    onClick={event => { event.stopPropagation(); open(conversation.id); }}>
+    {conversation.closed ? <CircleCheck className="session-completed" size={12} aria-hidden="true"/>
+      : execution ? <ConversationIndicator status={execution}/> : <MessageSquare size={12} aria-hidden="true"/>}
+    <span className="truncate">{conversation.title}</span>
+    {conversation.unread && <ConversationIndicator status="有未读消息"/>}
+  </button>;
+}
+
 export function TaskTree() {
   const s = useStudio();
   const query=s.taskQuery.text, page=s.taskQuery.page;
@@ -111,12 +128,14 @@ export function TaskTree() {
         <button className="collapse" aria-label={`${collapsed.has(t.id)?'展开':'折叠'} ${t.title}`} disabled={!s.data.tasks.some(x=>x.parent_id===t.id)} onClick={e=>{e.stopPropagation();setCollapsed(current=>{const next=new Set(current);if(next.has(t.id))next.delete(t.id);else next.add(t.id);return next})}}>{s.data.tasks.some(x=>x.parent_id===t.id)?collapsed.has(t.id)?<ChevronRight size={13}/>:<ChevronDown size={13}/>:<span className="tree-spacer"/>}</button>
         <button className="task-status-control" aria-label={`${t.title}：${taskLabel(t)}，点击完成，右键改状态`} title="点击完成 · 右键设置状态" onClick={e=>{e.stopPropagation();if(t.status!=='completed')s.changeTaskState(t,'completed')}} onContextMenu={e=>openMenu(e,t,true)}><StatusIcon status={t.status} blocked={Boolean(t.missing_dependencies.length)}/></button>
         <div className="task-name-stack">{editing?.id===t.id?<input ref={editInput} className="task-title-editor" aria-label={`编辑任务名称 ${t.id}`} value={editing.text} onChange={e=>setEditing({...editing,text:e.target.value})} onClick={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()} onKeyDown={e=>void editKey(e,t)} onBlur={()=>{if(!editLock.current)void persistTitle().catch(e=>s.notify(String(e)))}}/>:<HoverInfo data={s.data} task={t} onOpen={()=>s.inspectTask(t.id,'content')} onResults={()=>s.inspectTask(t.id,'content')}><button className="task-title-btn" onClick={e=>{e.stopPropagation();selectAndOpen(t)}} onDoubleClick={e=>{e.preventDefault();e.stopPropagation();edit(t)}} onKeyDown={e=>{if(e.key==='F2'){e.preventDefault();edit(t)}}}>{t.title}</button></HoverInfo>}
-        {contextOnly&&<span className="ancestor-label">同树上下文</span>}
-        {t.scheduled_start_at&&s.data.work_tasks.some(w=>w.task_id===t.id&&w.wait_reason==='scheduled')&&<span className="scheduled-tag"><Clock size={12}/>等待开始 · {new Date(t.scheduled_start_at).toLocaleString('zh-CN')}</span>}
-        {t.blocked_by.length>0&&<button className={`dependency-tag ${t.missing_dependencies.length?'waiting':'ready'}`} onClick={e=>{e.stopPropagation();s.openDialog({kind:'dependencies',task:t.id})}}><Link size={11}/>{t.missing_dependencies.length===1?`等待：${s.data.tasks.find(x=>x.id===t.missing_dependencies[0])?.title||'前置交付'}`:t.missing_dependencies.length?`等待 ${t.missing_dependencies.length} 项`:`${t.blocked_by.length} 项前置已就绪`}</button>}</div>
+        <div className="task-row-tags">
+        {contextOnly&&<span className="ancestor-label" title="未直接符合筛选，作为同树上下文展示">同树上下文</span>}
+        {t.scheduled_start_at&&s.data.work_tasks.some(w=>w.task_id===t.id&&w.wait_reason==='scheduled')&&<span className="scheduled-tag" title={`等待开始 · ${new Date(t.scheduled_start_at).toLocaleString('zh-CN')}`}><Clock size={12}/><span className="truncate">等待开始 · {new Date(t.scheduled_start_at).toLocaleString('zh-CN')}</span></span>}
+        {t.blocked_by.length>0&&<button className={`dependency-tag ${t.missing_dependencies.length?'waiting':'ready'}`} onClick={e=>{e.stopPropagation();s.openDialog({kind:'dependencies',task:t.id})}}><Link size={11}/><span className="truncate">{t.missing_dependencies.length===1?`等待：${s.data.tasks.find(x=>x.id===t.missing_dependencies[0])?.title||'前置交付'}`:t.missing_dependencies.length?`等待 ${t.missing_dependencies.length} 项`:`${t.blocked_by.length} 项前置已就绪`}</span></button>}
+        </div></div>
         {!t.parent_id&&t.pinned&&<Pin size={12} className="pin-mark"/>}
       </div>
-      <div className="sessions-cell">{taskConversations(s.data,t.id).map(c=><button key={c.id} className="session-chip" title={c.title} onClick={e=>{e.stopPropagation();s.openConversation(c.id)}}><MessageSquare size={12}/><span className="truncate">{c.title}</span></button>)}{!taskConversations(s.data,t.id).length&&<span className="muted no-conversations">尚无会话</span>}<button className="iconbtn new-task-conversation" aria-label={`为 ${t.title} 新建会话`} title="新建同任务会话" disabled={s.busy||['completed','cancelled'].includes(t.status)} onClick={e=>{e.stopPropagation();void s.newConversation(t.id)}}><Plus size={16}/></button></div>
+      <div className="sessions-cell">{taskConversations(s.data,t.id).map(c=><SessionChip key={c.id} conversation={c} open={s.openConversation}/>)}{!taskConversations(s.data,t.id).length&&<span className="muted no-conversations">尚无会话</span>}<button className="iconbtn new-task-conversation" aria-label={`为 ${t.title} 新建会话`} title="新建同任务会话" disabled={s.busy||['completed','cancelled'].includes(t.status)} onClick={e=>{e.stopPropagation();void s.newConversation(t.id)}}><Plus size={16}/></button></div>
     </div>)}
     {!rows.length&&<div className="empty-search">{query?'没有匹配的任务':'创建一个任务开始工作'}</div>}
     <div className="tree-foot"><span>符合筛选 {matched.size} 项 · 纳入结果 {visible.size} 项 · 当前展开 {rows.length} 项（含同树上下文）</span><div className="flex gap"><button className="textbtn" disabled={!currentPage} onClick={()=>setPage(currentPage-1)}>上一页</button><span>{currentPage+1} / {lastPage+1}</span><button className="textbtn" disabled={currentPage===lastPage} onClick={()=>setPage(currentPage+1)}>下一页</button></div></div>

@@ -12,7 +12,11 @@ export type BrowserFrame = {
 };
 export type BrowserInput = Record<string, unknown> & { type: string };
 
-export function useSessionBrowser(conversationId: string | undefined, native: boolean, visible: boolean, previouslyOpened = false) {
+function newerBrowserState(previous: BrowserState | undefined, next: BrowserState) {
+  return previous?.revision !== undefined && next.revision !== undefined && previous.revision >= next.revision ? previous : next;
+}
+
+export function useSessionBrowser(conversationId: string | undefined, native: boolean, visible: boolean, previouslyOpened = false, restore = false) {
   const [state, setState] = useState<BrowserState>();
   const [started, setStarted] = useState(previouslyOpened);
   const [waiting, setWaiting] = useState(false);
@@ -27,7 +31,7 @@ export function useSessionBrowser(conversationId: string | undefined, native: bo
     if(!akb?.onBrowserChanged||!conversationId)return;
     return akb.onBrowserChanged((value:BrowserState)=>{
       if(!live.current||value.conversation_id!==conversationId)return;
-      setState(previous=>(previous?.revision||0)>(value.revision||0)?previous:value);setStarted(true);
+      setState(previous=>newerBrowserState(previous,value));setStarted(true);
     });
   },[conversationId]);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
@@ -39,13 +43,23 @@ export function useSessionBrowser(conversationId: string | undefined, native: bo
       const value = await invoke<BrowserState>('chat_browser', { conversationId, method, params });
       if (!live.current || !visibleRef.current || epoch !== visibilityEpoch.current || sequence < applied.current) return;
       applied.current = sequence;
-      if (value?.pages) setState(previous=>(previous?.revision||0)>(value.revision||0)?previous:value);
+      if (value?.pages) setState(previous=>newerBrowserState(previous,value));
       setError('');
       return value;
     } catch (cause) {
       if (live.current && visibleRef.current && epoch === visibilityEpoch.current && sequence >= applied.current) setError(String(cause));
     } finally { pending.current--; }
   }, [conversationId, native]);
+  useEffect(() => {
+    if (!restore || !native || !conversationId) return;
+    let current = true;
+    void invoke<BrowserState>('chat_browser', { conversationId, method: 'status', params: {} }).then(value => {
+      if (!current) return;
+      setState(previous => newerBrowserState(previous,value));
+      if (value.pages.length) setStarted(true);
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [conversationId, native, restore]);
   const start = useCallback(async (method = 'status') => {
     if (waiting) return;
     setWaiting(true);

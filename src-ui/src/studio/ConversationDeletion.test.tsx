@@ -13,10 +13,10 @@ describe('人工会话删除与恢复',()=>{
   const {api,user,data}=await setup();const current=data.conversations[1],target=data.conversations[0];
   await deletionMenu(user,target.title);await user.click(screen.getByRole('button',{name:'删除会话'}));
   const dialog=screen.getByRole('dialog');expect(within(dialog).getByText(`「${target.title}」`)).toBeVisible();
-  expect(screen.getByRole('heading',{name:current.title})).toBeVisible();
+  expect(screen.getByRole('tab',{name:current.title,selected:true})).toBeVisible();
   await user.click(within(dialog).getByRole('button',{name:'取消'}));expect((await api.call<Workspace>('snapshot')).conversations.some(x=>x.id===target.id)).toBe(true);
   await deletionMenu(user,target.title);await user.click(screen.getByRole('button',{name:'删除会话'}));await user.click(within(screen.getByRole('dialog')).getByRole('button',{name:'移入已删除'}));
-  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(screen.getByRole('heading',{name:current.title})).toBeVisible();
+  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());expect(screen.getByRole('tab',{name:current.title,selected:true})).toBeVisible();
   expect((await api.call<Workspace>('snapshot')).conversations.some(x=>x.id===target.id)).toBe(false);
   await user.click(screen.getByRole('button',{name:'任务'}));await user.click(screen.getByRole('button',{name:'已删除'}));
   const deleted=screen.getByRole('dialog');expect(within(deleted).getByText(target.title)).toBeVisible();await user.click(within(deleted).getByRole('button',{name:`恢复会话 ${target.title}`}));
@@ -38,12 +38,12 @@ describe('人工会话删除与恢复',()=>{
   await user.click(screen.getByRole('button',{name:`${target.title} 会话菜单`}));
   await user.click(screen.getByRole('button',{name:'删除会话'}));await user.click(within(screen.getByRole('dialog')).getByRole('button',{name:'移入已删除'}));
   await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-  expect(screen.getByRole('heading',{name:data.conversations[0].title})).toBeVisible();
+  expect(screen.getByRole('tab',{name:data.conversations[0].title,selected:true})).toBeVisible();
   await user.click(screen.getByRole('button',{name:'任务'}));await user.click(screen.getByRole('button',{name:'已删除'}));
   await user.click(await screen.findByRole('button',{name:`恢复会话 ${target.title}`}));
   await waitFor(()=>expect(screen.queryByRole('button',{name:`恢复会话 ${target.title}`})).not.toBeInTheDocument());
   await user.click(within(screen.getByRole('dialog')).getByRole('button',{name:'关闭'}));
-  await user.click(document.querySelector(`[data-task-row="diff"] .session-chip[title="${target.title}"]`)!);
+  await user.click(within(document.querySelector('[data-task-row="diff"] .sessions-cell')!).getByRole('button',{name:target.title}));
   expect(await screen.findByRole('textbox',{name:'聊天输入'})).toHaveValue('这段草稿不能丢');
  });
  it('排队或正在提取结果的会话不可删除，失败时保持会话可见',async()=>{

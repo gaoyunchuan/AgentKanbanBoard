@@ -192,3 +192,18 @@
   .studio .inspector-body,.studio .right-dock .inspector-body {padding: 16px;}
   .studio .property-groups {gap: 20px;}
 }
+
+/* 项目搜索浮层放到 portal，避免新建任务弹窗裁剪候选。 */
+.studio .project-select-popup {position:fixed;z-index:220;padding:6px;background:#fff;border:1px solid var(--control-border);border-radius:10px;box-shadow:0 14px 38px -10px #172a482e;display:flex;overflow:hidden;}
+.studio .project-select-popup .project-picker {display:flex;flex-direction:column;width:100%;min-height:0;}
+.studio .project-select-popup .project-options {min-height:0;max-height:none;overflow-y:auto;}
+.studio .project-select-popup .picker-search {flex:none;}
+.studio .project-picker .picker-row[data-highlighted=true],.studio .filter-options label[data-highlighted=true] {background:var(--control-hover);}
+/* 延续原下拉的无边框文字列表；项目卡片的边框和文件夹图标不进入下拉。 */
+.studio .project-select-popup .picker-row {position:relative;min-height:32px;padding:6px 12px 6px 30px;margin:0;gap:0;border:0;border-radius:6px;outline:none;box-shadow:none;}
+.studio .project-select-popup .picker-row .name {font-size:13px;line-height:20px;}
+.studio .project-select-popup .picker-row > svg:first-child {display:none;}
+.studio .project-select-popup .picker-row > svg:last-child {position:absolute;left:9px;top:9px;}
+.studio .project-select-popup .picker-row.chosen {background:var(--control-selected);color:#315eaf;}
+.studio .project-select-popup .picker-search input {width:100%;min-width:0;font-size:13px;}
+.studio .project-select-popup .empty-search {font-size:13px;padding:12px;}

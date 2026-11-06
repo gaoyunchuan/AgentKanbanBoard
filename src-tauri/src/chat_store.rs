@@ -44,6 +44,8 @@ fn value_row(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Value> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
+    #[serde(flatten, default)]
+    pub activity: crate::conversation_activity::Activity,
     pub id: String,
     pub task_id: String,
     pub title: String,
@@ -66,6 +68,7 @@ pub struct Conversation {
 }
 fn conversation_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Conversation> {
     Ok(Conversation {
+        activity: Default::default(),
         id: r.get(0)?,
         task_id: r.get(1)?,
         title: r.get(2)?,
@@ -296,6 +299,7 @@ impl Repository {
         };
         result.resource_hold = self.resource_hold(&owner)?;
         result.codex_binding = self.codex_binding(cid)?;
+        result.activity = crate::conversation_activity::load(&self.connection, cid).map_err(db)?;
         if result
             .resource_hold
             .as_ref()
@@ -877,6 +881,24 @@ impl Repository {
         self.connection.execute("INSERT INTO chat_events(conversation_id,run_id,kind,payload_json,created_at) VALUES(?1,?2,?3,?4,?5)",params![cid,run_id,kind,encoded(payload)?,self.now_text()]).map_err(db)?;
         Ok(())
     }
+    pub(crate) fn chat_pending_interactions(&self, c: &Conversation) -> Result<Vec<Value>, String> {
+        if c.mode == "auto" {
+            return self.pending_work_interactions(&c.task_id, c.current_run_id.as_deref());
+        }
+        let Some(run) = &c.current_run_id else { return Ok(Vec::new()); };
+        let mut statement = self.connection.prepare(
+            "SELECT id,request_id_json,method,payload_json,created_at FROM chat_requests
+             WHERE conversation_id=?1 AND run_id=?2 AND status='pending' ORDER BY created_at,id LIMIT 16"
+        ).map_err(db)?;
+        let rows = statement.query_map(params![c.id,run], |r| {
+            let method: String = r.get(2)?;
+            Ok(json!({"id":r.get::<_,String>(0)?,"task_id":c.task_id,"run_id":run,
+                "request_id":value_row(r,1)?,"method":method,"kind":if method.contains("Approval"){"approval"}else{"input"},
+                "payload":value_row(r,3)?,"status":"pending","created_at":r.get::<_,String>(4)?}))
+        }).map_err(db)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(db)
+    }
+
     pub fn chat_detail(&self, cid: &str) -> Result<Value, String> {
         let c = self.chat_conversation(cid)?;
         if c.mode == "auto" {
@@ -978,6 +1000,7 @@ impl Repository {
         if c.current_run_id.is_some() || self.chat_active_run(cid)?.is_some() {
             return Err("请等待当前执行结束后提取结果".into());
         }
+        self.check_extraction_size(&c, 600_000)?;
         let detail = self.chat_detail(cid)?;
         let events = detail["events"].as_array().ok_or("没有可提取的会话记录")?;
         let boundary = events.last().and_then(|e| e["id"].as_i64()).unwrap_or(0);
@@ -1146,6 +1169,227 @@ mod tests {
         )
         .unwrap();
     }
+    #[test]
+    fn paged_history_handles_large_records_and_keeps_sends_independent() {
+        let r = repo();
+        let tid = task(&r, "长会话", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        let other = r.chat_create_conversation(&tid, None).unwrap();
+        let large = format!("原始标记{}", "x".repeat(35 * 1024 * 1024));
+        for _ in 0..3 {
+            r.chat_event(&c.id, None, "item/completed", &json!({"text":large})).unwrap();
+        }
+        let mut ids = Vec::new();
+        for i in 0..200 {
+            r.chat_event(&c.id, None, "user_message", &json!({"text":format!("历史问题{i}")})).unwrap();
+        }
+        let state = r.conversation_state(&c.id).unwrap();
+        assert!(state["events"].as_array().unwrap().is_empty());
+        let mut query = json!({});
+        loop {
+            let page = r.conversation_history(&c.id, &query).unwrap();
+            assert!(page.to_string().len() < 1024 * 1024);
+            let events = page["events"].as_array().unwrap();
+            ids.extend(events.iter().rev().map(|e| e["id"].as_i64().unwrap()));
+            if page["older"] != true { break; }
+            query = json!({"before":events[0]["id"]});
+        }
+        assert_eq!(ids.len(), 203);
+        assert!(ids.windows(2).all(|w| w[0] > w[1]));
+        let first = *ids.last().unwrap();
+        assert!(r.conversation_event_chunk(&other.id, first, 0).is_err());
+        let chunk = r.conversation_event_chunk(&c.id, first, 0).unwrap();
+        assert!(chunk["text"].as_str().unwrap().contains("原始标记"));
+        assert_eq!(chunk["next"], 32768);
+        let next = r.conversation_event_chunk(&c.id, first, 32768).unwrap();
+        assert_eq!(next["text"].as_str().unwrap(), "x".repeat(32768));
+        assert!(r.chat_queue_extraction(&c.id).is_err());
+        r.chat_queue(&c.id, "继续提问", &[], false).unwrap();
+        let delta = r.conversation_history(&c.id, &json!({"after":ids[0]})).unwrap();
+        assert_eq!(delta["events"][0]["payload"]["text"], "继续提问");
+    }
+
+    #[test]
+    fn transcript_history_excludes_completed_response_fragments_but_preserves_live_streaming() {
+        let r = repo();
+        let tid = task(&r, "流式回答", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        let run = r.chat_queue(&c.id, "问题", &[], false).unwrap();
+        r.chat_event(&c.id, Some(&run.id), "item/agentMessage/delta",
+            &json!({"itemId":"answer","delta":"回答尾部"})).unwrap();
+        let live = r.conversation_history(&c.id, &json!({"transcript":true})).unwrap();
+        assert_eq!(live["events"][1]["kind"], "item/agentMessage/delta");
+        r.chat_event(&c.id, Some(&run.id), "item/completed",
+            &json!({"item":{"id":"answer","type":"agentMessage","phase":"final_answer","text":"完整回答尾部"}})).unwrap();
+        r.connection.execute("UPDATE chat_runs SET status='completed',ended_at=started_at WHERE id=?1", [&run.id]).unwrap();
+        let completed = r.conversation_history(&c.id, &json!({"transcript":true})).unwrap();
+        let events = completed["events"].as_array().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1]["payload"]["item"]["text"], "完整回答尾部");
+        let older = r.conversation_history(&c.id, &json!({"transcript":true,"before":events[1]["id"]})).unwrap();
+        assert_eq!(older["events"].as_array().unwrap().len(), 1);
+        assert_eq!(older["events"][0]["kind"], "user_message");
+    }
+
+    #[test]
+    fn large_user_history_loads_each_image_without_inlining_the_record() {
+        let r = repo();
+        let tid = task(&r, "历史图片", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        let other = r.chat_create_conversation(&tid, None).unwrap();
+        let url = format!("data:image/png;base64,{}", "AAAA".repeat(20_000));
+        r.chat_event(&c.id, None, "user_message", &json!({"text":"带图", "attachments":[
+            {"type":"image","url":url}, {"type":"image","url":"https://example.invalid/image.png"}
+        ]})).unwrap();
+        r.chat_event(&c.id, None, "item/completed", &json!({"item":{"id":"message","type":"userMessage",
+            "content":[{"type":"text","text":"旧会话图片"},{"type":"image","image_url":url}]
+        }})).unwrap();
+        let page = r.conversation_history(&c.id, &json!({"transcript":true})).unwrap();
+        assert!(page.to_string().len() < 2_048);
+        let events = page["events"].as_array().unwrap();
+        for (event, slot) in events.iter().zip([0, 1]) {
+            let id = event["id"].as_i64().unwrap();
+            assert_eq!(event["payload"]["image_slots"], json!([slot]));
+            assert_eq!(r.conversation_event_image(&c.id, id, slot).unwrap(), url);
+            assert!(r.conversation_event_image(&other.id, id, slot).is_err());
+            assert!(r.conversation_event_image(&c.id, id, 16).is_err());
+        }
+        assert!(r.conversation_event_image(&c.id, events[0]["id"].as_i64().unwrap(), 1).is_err());
+    }
+
+    #[test]
+    fn generated_image_is_loaded_from_its_own_conversation_event() {
+        let r = repo();
+        let tid = task(&r, "生图", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        let other = r.chat_create_conversation(&tid, None).unwrap();
+        let result = "AAAA".repeat(20_000);
+        r.chat_event(&c.id, None, "item/completed", &json!({"params":{
+            "turnId":"turn",
+            "item":{"id":"generated","type":"imageGeneration","status":"completed","result":result,
+                    "savedPath":"/路径已不可用.png"}
+        }})).unwrap();
+        let page = r.conversation_history(&c.id, &json!({"transcript":true})).unwrap();
+        assert!(page.to_string().len() < 2_048);
+        let event = &page["events"][0];
+        let id = event["id"].as_i64().unwrap();
+        assert_eq!(event["payload"]["item_type"], "imageGeneration");
+        assert_eq!(event["payload"]["image_slots"], json!([0]));
+        assert_eq!(r.conversation_event_image(&c.id, id, 0).unwrap(), format!("data:image/png;base64,{result}"));
+        assert!(r.conversation_event_image(&c.id, id, 1).is_err());
+        assert!(r.conversation_event_image(&other.id, id, 0).is_err());
+    }
+
+    #[test]
+    fn transcript_history_keeps_human_feedback_and_answers() {
+        let r = repo();
+        let tid = task(&r, "人工反馈", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        r.chat_event(&c.id, None, "question_answered", &json!({"response":{"text":"用户回答"}})).unwrap();
+        r.chat_event(&c.id, None, "task_action", &json!({"action":"rework","feedback":"重新核对"})).unwrap();
+        r.chat_event(&c.id, None, "task_action", &json!({"action":"pause"})).unwrap();
+        let page = r.conversation_history(&c.id, &json!({"transcript":true})).unwrap();
+        let events = page["events"].as_array().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["payload"]["response"]["text"], "用户回答");
+        assert_eq!(events[1]["payload"]["feedback"], "重新核对");
+    }
+
+    #[test]
+    fn work_context_watermark_requires_a_bound_turn_on_the_same_thread() {
+        let r = repo();
+        let tid = task(&r, "上下文", None);
+        delegate(&r, &tid, ReviewPolicy::Human);
+        r.send_work_message(&tid, "首次决定", None).unwrap();
+        let task = r.get_work_task(&tid).unwrap().unwrap();
+        let prompt = r.work_turn_prompt(&task).unwrap();
+        assert!(prompt.contains("首次决定"));
+        let run = r.claim_work_task(&tid, &prompt).unwrap();
+        r.bind_work_run(&tid, &run.id, "thread", None).unwrap();
+        let task = r.get_work_task(&tid).unwrap().unwrap();
+        assert!(r.work_turn_prompt(&task).unwrap().contains("首次决定"));
+        r.bind_work_run(&tid, &run.id, "thread", Some("turn")).unwrap();
+        r.send_work_message(&tid, "新决定", None).unwrap();
+        let mut task = r.get_work_task(&tid).unwrap().unwrap();
+        let prompt = r.work_turn_prompt(&task).unwrap();
+        assert!(!prompt.contains("首次决定"));
+        assert!(prompt.contains("新决定"));
+        task.thread_id = Some("replacement".into());
+        assert!(r.work_turn_prompt(&task).unwrap().contains("首次决定"));
+    }
+
+    #[test]
+    fn conversation_activity_user_and_model_but_not_tools() {
+        let r = repo();
+        let tid = task(&r, "活动任务", None);
+        let c = r.chat_create_conversation(&tid, None).unwrap();
+        r.chat_event(&c.id, None, "user_message", &json!({"text":"问题"})).unwrap();
+        let user = serde_json::to_value(r.chat_conversation(&c.id).unwrap()).unwrap();
+        assert_eq!(user["activity_at"], json!(r.now_text()));
+        assert_eq!(user["unread"], false);
+        r.chat_event(&c.id, None, "item/agentMessage/delta", &json!({"delta":"新回复"})).unwrap();
+        let model = serde_json::to_value(r.chat_conversation(&c.id).unwrap()).unwrap();
+        assert_eq!(model["unread"], true);
+        assert!(model["last_output_event_id"].as_i64().unwrap() > 0);
+        r.chat_event(&c.id, None, "item/commandExecution/outputDelta", &json!({"delta":"工具日志"})).unwrap();
+        let tool = serde_json::to_value(r.chat_conversation(&c.id).unwrap()).unwrap();
+        assert_eq!(tool["last_output_event_id"], model["last_output_event_id"]);
+    }
+
+    #[test]
+    fn conversation_activity_read_boundary_and_manual_unread_survive_late_ack() {
+        let r=repo();let tid=task(&r,"阅读任务",None);let c=r.chat_create_conversation(&tid,None).unwrap();
+        r.chat_event(&c.id,None,"assistant_message",&json!({"text":"第一条"})).unwrap();
+        let first=r.chat_conversation(&c.id).unwrap().activity;
+        r.chat_event(&c.id,None,"assistant_message",&json!({"text":"第二条"})).unwrap();
+        r.mark_conversation_read(&c.id,first.last_output_event_id,first.read_version).unwrap();
+        assert!(r.chat_conversation(&c.id).unwrap().activity.unread);
+        let current=r.chat_conversation(&c.id).unwrap().activity;
+        r.mark_conversation_unread(&c.id).unwrap();
+        r.mark_conversation_read(&c.id,current.last_output_event_id,current.read_version).unwrap();
+        assert!(r.chat_conversation(&c.id).unwrap().activity.manual_unread);
+        let marked=r.chat_conversation(&c.id).unwrap().activity;
+        r.mark_conversation_read(&c.id,marked.last_output_event_id,marked.read_version).unwrap();
+        assert!(!r.chat_conversation(&c.id).unwrap().activity.unread);
+        assert!(r.mark_conversation_read(&c.id,marked.last_output_event_id+1,marked.read_version).is_err());
+    }
+
+    #[test]
+    fn conversation_activity_migration_backfills_once_and_preserves_unread() {
+        let r=repo();let tid=task(&r,"旧任务",None);let c=r.chat_create_conversation(&tid,None).unwrap();
+        r.chat_event(&c.id,None,"assistant_message",&json!({"text":"旧回复"})).unwrap();
+        r.connection.execute_batch("DROP TRIGGER activity_chat_events_insert; DROP TRIGGER activity_work_events_insert; DROP TRIGGER activity_auto_conversation_insert; DROP TABLE conversation_activity").unwrap();
+        crate::conversation_activity::migrate(&r.connection).unwrap();
+        let old=r.chat_conversation(&c.id).unwrap().activity;
+        assert!(!old.unread);assert!(old.activity_at.is_some());
+        r.mark_conversation_unread(&c.id).unwrap();
+        crate::conversation_activity::migrate(&r.connection).unwrap();
+        assert!(r.chat_conversation(&c.id).unwrap().activity.unread);
+    }
+
+    #[test]
+    fn conversation_activity_auto_events_ignore_child_and_tool_noise() {
+        let r=repo();let tid=task(&r,"自动任务",None);delegate(&r,&tid,ReviewPolicy::Human);
+        let cid=format!("main:{tid}");
+        r.append_work_event(&tid,None,"item/agentMessage/delta",&json!({"delta":"主回复"})).unwrap();
+        let first=r.chat_conversation(&cid).unwrap().activity;
+        assert!(first.unread);
+        r.append_work_event(&tid,None,"item/agentMessage/delta",&json!({"threadId":"child","delta":"子回复"})).unwrap();
+        r.append_work_event(&tid,None,"item/reasoning/textDelta",&json!({"delta":"推理"})).unwrap();
+        assert_eq!(r.chat_conversation(&cid).unwrap().activity.last_output_event_id,first.last_output_event_id);
+    }
+
+    #[test]
+    fn conversation_activity_legacy_auto_created_after_migration_has_activity() {
+        let r=repo();let tid=task(&r,"旧自动任务",None);delegate(&r,&tid,ReviewPolicy::Human);
+        let cid=format!("main:{tid}");
+        r.append_work_event(&tid,None,"assistant_message",&json!({"text":"原回复"})).unwrap();
+        r.connection.execute("DELETE FROM chat_conversations WHERE id=?1",[&cid]).unwrap();
+        ensure_main(&r.connection,&tid,&r.now_text()).unwrap();
+        let activity=r.chat_conversation(&cid).unwrap().activity;
+        assert!(activity.activity_at.is_some());assert!(!activity.unread);
+    }
+
     fn delivery(r: &Repository, tid: &str) -> String {
         let run = r.claim_work_task(tid, "run").unwrap();
         r.bind_work_run(tid, &run.id, &format!("thread-{tid}"), Some("turn"))

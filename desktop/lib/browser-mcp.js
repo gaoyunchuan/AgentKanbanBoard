@@ -17,9 +17,16 @@ async function evaluate(manager, conversationId, expression) {
 
 async function callTool(manager, conversationId, args) {
   if (!conversationId) throw new Error('请先打开该会话的侧边浏览器');
-  manager.activateConversation(conversationId);
   const operation = args.operation;
   if (operation === 'list_pages' || operation === 'status') return manager.handle(conversationId, 'status');
+  return manager.withConversation(conversationId, () => operateOnBrowser(manager, conversationId, args));
+}
+
+async function operateOnBrowser(manager, conversationId, args) {
+  const operation = args.operation;
+  if (!['close_page', 'select_page', 'activate_page', 'navigate', 'open_page'].includes(operation)) {
+    manager.activateConversation(conversationId);
+  }
   if (operation === 'navigate' || operation === 'open_page') return manager.handle(conversationId, 'navigate', { url: args.url });
   if (['close_page', 'select_page', 'activate_page'].includes(operation)) return manager.handle(conversationId, operation, args);
   if (operation === 'snapshot') {

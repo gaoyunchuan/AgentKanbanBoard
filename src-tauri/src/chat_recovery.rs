@@ -14,6 +14,8 @@ impl Scheduler {
                 | "config"
                 | "context"
                 | "visit"
+                | "mark_read"
+                | "mark_unread"
                 | "list"
                 | "workspace_config"
                 | "browser_owner"
@@ -315,6 +317,7 @@ for line in sys.stdin:
             runtime: None,
             emergency_runtime: Arc::new(Mutex::new(None)),
             executable: String::new(),
+            account_channel: None,
             resolved_executable: None,
             runtime_error: None,
             sender,

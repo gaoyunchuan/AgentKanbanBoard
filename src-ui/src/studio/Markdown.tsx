@@ -3,6 +3,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {MermaidDiagram} from './MermaidDiagram';
 export function isFileLink(href:string){
+ if(/^file:\/\//i.test(href)&&!/[\u0000-\u001f]/.test(href)){
+  try{
+   const url=new URL(href);
+   return !url.host&&url.pathname.startsWith('/')&&!url.pathname.startsWith('//');
+  }catch{return false}
+ }
  return Boolean(href)&&!href.startsWith('#')&&!href.startsWith('//')&&!href.startsWith('\\\\')&&!/[\u0000-\u001f]/.test(href)&&(!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(href)||/^[A-Za-z]:[\\/]/.test(href));
 }
 function safeUrl(href:string){
